@@ -252,7 +252,7 @@ function getAllIncompleteTasks() {
   const tasks = [];
   for (const cat of state.categories) {
     for (const t of (cat.tasks || [])) {
-      if (t.status !== 'done') tasks.push({ ...t, catName: cat.name, catColor: cat.color });
+      if (t.status !== 'done' && !t.recurring) tasks.push({ ...t, catName: cat.name, catColor: cat.color, catId: cat.id });
     }
   }
   return tasks;
@@ -395,7 +395,16 @@ function renderOverview() {
       const score = urgencyScore(t);
       const days = daysUntil(t.dueDate);
       const daysStr = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`;
-      html += `<div class="urgency-item"><div class="urgency-name">${t.name}</div><div class="urgency-track"><div class="urgency-fill" style="width:${(score/maxScore)*100}%;background:${urgencyColor(score)}"></div></div><div class="urgency-score">${daysStr}</div></div>`;
+      const oCheckClass = t.status === 'done' ? 'done' : t.status === 'in progress' ? 'in-progress' : '';
+      const oCheckMark = t.status === 'done' ? '✓' : t.status === 'in progress' ? '●' : '';
+      html += `<div class="urgency-item" style="cursor:default">
+        <div style="display:flex;align-items:center;gap:8px;overflow:hidden">
+          <div class="task-check ${oCheckClass}" style="flex-shrink:0;cursor:pointer" onclick="cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${oCheckMark}</div>
+          <div class="urgency-name">${t.name}</div>
+        </div>
+        <div class="urgency-track"><div class="urgency-fill" style="width:${(score/maxScore)*100}%;background:${urgencyColor(score)}"></div></div>
+        <div class="urgency-score">${daysStr}</div>
+      </div>`;
     }
     html += `</div></div>`;
   }
@@ -414,9 +423,11 @@ function renderUrgent() {
       const score = urgencyScore(t);
       const days = daysUntil(t.dueDate);
       const daysStr = days === null ? 'No due date' : days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`;
+      const uCheckClass = t.status === 'done' ? 'done' : t.status === 'in progress' ? 'in-progress' : '';
+      const uCheckMark = t.status === 'done' ? '✓' : t.status === 'in progress' ? '●' : '';
       html += `<div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 14px;margin-bottom:4px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-          <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
+          <div class="task-check ${uCheckClass}" style="cursor:pointer;flex-shrink:0" onclick="cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${uCheckMark}</div>
           <span style="font-size:13px;font-weight:500;flex:1">${t.name}</span>
           <span style="font-size:11px;color:var(--color-text-secondary)">${t.catName}</span>
           <span style="font-size:12px;font-weight:500;color:${urgencyColor(score)}">${score}</span>
@@ -911,6 +922,18 @@ render();
     calMonth++;
     if (calMonth > 11) { calMonth = 0; calYear++; }
     renderCalendar();
+  }
+
+  
+  function cycleStatusById(catId, taskId) {
+    const cat = state.categories.find(c => c.id === catId);
+    if (!cat) return;
+    const task = cat.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const cycle = ['not started', 'in progress', 'done'];
+    const cur = cycle.indexOf(task.status || 'not started');
+    task.status = cycle[(cur + 1) % cycle.length];
+    render();
   }
 
   </script>
