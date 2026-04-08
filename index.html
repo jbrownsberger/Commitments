@@ -212,13 +212,11 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
   <div class="tabs">
     <div class="tab active" onclick="switchTab('overview', this)">Overview</div>
     <div class="tab" onclick="switchTab('categories', this)">Categories</div>
-    <div class="tab" onclick="switchTab('urgent', this)">Urgency queue</div>
     <div class="tab" onclick="switchTab('calendar', this)">Calendar</div>
-    <div class="tab" onclick="switchTab('plan', this)">Plan week</div>
+    <div class="tab" onclick="switchTab('plan', this)">Plan &amp; Queue</div>
   </div>
   <div id="tab-overview"></div>
   <div id="tab-categories" style="display:none"></div>
-  <div id="tab-urgent" style="display:none"></div>
   <div id="tab-calendar" style="display:none"></div>
   <div id="tab-plan" style="display:none"></div>
 </div>
@@ -378,7 +376,6 @@ function render() {
   save();
   renderOverview();
   renderCategories();
-  renderUrgent();
   if (_activeTab === 'calendar') renderCalendar();
   if (_activeTab === 'plan') renderPlan();
 }
@@ -387,7 +384,7 @@ function switchTab(tab, el) {
   _activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  ['overview','categories','urgent','calendar','plan'].forEach(t => {
+  ['overview','categories','calendar','plan'].forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
   });
   if (tab === 'calendar') renderCalendar();
@@ -1229,9 +1226,21 @@ function renderPlan() {
   for (const t of tasks) {
     const rem = remainingHours(t);
     const days = daysUntil(t.dueDate);
-    // Hours to do this week: proportional share capped at remaining
-    const weeksLeft  = Math.max(days / 7, 0.14);
-    const weeklyShare = Math.min(rem, rem / weeksLeft);
+    const weeksLeft = Math.max(days / 7, 0.14);
+
+    // How much this task would naturally absorb in future weeks (beyond this one)
+    // at the baseline rate of weekAvail hours/week, spread proportionally.
+    // This week's share = whatever's left over that future weeks can't absorb,
+    // plus the task's fair proportional slice of this week.
+    const futureWeeks = Math.max(weeksLeft - 1, 0);
+    // Proportional share of weekAvail that this task "claims" each week
+    const weeklyRate  = rem / weeksLeft;
+    // Future weeks will absorb futureWeeks * weeklyRate, but
+    // cap that at rem so we never exceed total remaining hours
+    const futureAbsorption = Math.min(futureWeeks * weeklyRate, rem);
+    // This week must cover: whatever future weeks can't handle
+    const weeklyShare = Math.min(rem, Math.max(weeklyRate, rem - futureAbsorption));
+
     if (allocated + weeklyShare <= weekAvail * 1.1) {
       inBudget.push({ t, weeklyShare });
       allocated += weeklyShare;
@@ -1264,14 +1273,21 @@ function renderPlan() {
       const days  = daysUntil(t.dueDate);
       const daysStr = days === 0 ? 'Due today' : `${days}d left`;
       const [lvl] = urgencyLabel(score);
-      html += `<div class="plan-card" style="cursor:pointer" onclick="openTaskPanel('${t.catId}','${t.id}')">
-        <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500">${t.name}</div>
-          <div style="font-size:11px;color:var(--color-text-secondary)">${t.catName} · ${daysStr}</div>
+      const ck = t.status==='done'?'done':t.status==='in progress'?'in-progress':'';
+      const cm = t.status==='done'?'✓':t.status==='in progress'?'●':'';
+      html += `<div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 14px;margin-bottom:6px;cursor:pointer" onclick="openTaskPanel('${t.catId}','${t.id}')">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div class="task-check ${ck}" style="cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${cm}</div>
+          <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
+          <span style="font-size:13px;font-weight:500;flex:1">${t.name}</span>
+          <span style="font-size:11px;color:var(--color-text-secondary)">${t.catName}</span>
+          <span style="font-size:12px;font-weight:500;color:${urgencyColor(score)}">${score}</span>
         </div>
-        <span class="badge badge-${lvl}" style="flex-shrink:0">${score}</span>
-        <span class="plan-hours-badge">${weeklyShare.toFixed(1)}h this week</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="urgency-track" style="flex:1"><div class="urgency-fill" style="width:${score}%;background:${urgencyColor(score)}"></div></div>
+          <span class="plan-hours-badge">${weeklyShare.toFixed(1)}h this week</span>
+          <span style="font-size:11px;color:var(--color-text-secondary);white-space:nowrap">${daysStr}</span>
+        </div>
       </div>`;
     }
   }
@@ -1279,11 +1295,34 @@ function renderPlan() {
   if (overflow.length > 0) {
     html += `<div style="font-size:12px;font-weight:500;color:var(--color-text-secondary);margin:16px 0 8px">Later / lower priority</div>`;
     for (const { t } of overflow) {
+      const score = urgencyScore(t);
+      const days  = daysUntil(t.dueDate);
+      const daysStr = days === 0 ? 'Due today' : `${days}d left`;
+      const rem = remainingHours(t);
       html += `<div class="plan-card" style="cursor:pointer;opacity:0.65" onclick="openTaskPanel('${t.catId}','${t.id}')">
         <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500">${t.name}</div>
-          <div style="font-size:11px;color:var(--color-text-secondary)">${t.catName} · ${daysUntil(t.dueDate)}d left</div>
+          <div style="font-size:11px;color:var(--color-text-secondary)">${t.catName} · ${daysStr}${rem > 0 ? ' · ' + rem.toFixed(1) + 'h rem.' : ''}</div>
+        </div>
+        <span class="badge badge-${urgencyLabel(score)[0]}" style="flex-shrink:0">${score}</span>
+      </div>`;
+    }
+  }
+
+  // ── Full urgency queue (all tasks with no-date included) ──────────────
+  const noDue = getAllIncompleteTasks().filter(t => !t.dueDate);
+  if (noDue.length > 0) {
+    html += `<div style="font-size:12px;font-weight:500;color:var(--color-text-secondary);margin:16px 0 8px">No due date</div>`;
+    for (const t of noDue) {
+      const rem = remainingHours(t);
+      const ck = t.status==='done'?'done':t.status==='in progress'?'in-progress':'';
+      const cm = t.status==='done'?'✓':t.status==='in progress'?'●':'';
+      html += `<div class="plan-card" style="cursor:pointer" onclick="openTaskPanel('${t.catId}','${t.id}')">
+        <div class="task-check ${ck}" style="cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();cycleStatusById('${t.catId}','${t.id}')">${cm}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${t.name}</div>
+          <div style="font-size:11px;color:var(--color-text-secondary)">${t.catName}${rem > 0 ? ' · ' + rem.toFixed(1) + 'h rem.' : ''}</div>
         </div>
       </div>`;
     }
