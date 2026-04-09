@@ -62,6 +62,8 @@
       align-items: center;
       margin-right: 4px;
     }
+    #undo-btn:disabled { opacity: 0.35; cursor: default; }
+    #undo-btn:not(:disabled) { opacity: 1; }
 
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -203,6 +205,7 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
       <span class="toolbar-label">Data:</span>
       <button class="btn btn-sm" onclick="exportData()" title="Download your data as a JSON backup file">⬇ Export</button>
       <label class="btn btn-sm" style="cursor:pointer" title="Load a previously exported JSON backup">⬆ Import<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label>
+      <button id="undo-btn" class="btn btn-sm" onclick="undo()" title="Undo last action" disabled style="opacity:0.45">↩ Undo</button>
     </div>
 <div class="app" id="app">
   <div class="header">
@@ -210,15 +213,13 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
     <button class="btn btn-primary" onclick="openAddCategory()">+ Add category</button>
   </div>
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('overview', this)">Overview</div>
+    <div class="tab active" onclick="switchTab('plan', this)">Overview &amp; Queue</div>
     <div class="tab" onclick="switchTab('categories', this)">Categories</div>
     <div class="tab" onclick="switchTab('calendar', this)">Calendar</div>
-    <div class="tab" onclick="switchTab('plan', this)">Plan &amp; Queue</div>
   </div>
-  <div id="tab-overview"></div>
+  <div id="tab-plan"></div>
   <div id="tab-categories" style="display:none"></div>
   <div id="tab-calendar" style="display:none"></div>
-  <div id="tab-plan" style="display:none"></div>
 </div>
 
 <div id="modal-root"></div>
@@ -238,6 +239,27 @@ function broadcast() { if (bc) bc.postMessage('update'); }
 
 // ── Persistence ───────────────────────────────────────────────────────
 let state = { categories: [], openCats: {}, openTasks: {}, weeklyHours: 20 };
+let _undoStack = [];
+const UNDO_LIMIT = 30;
+
+function pushUndo() {
+  _undoStack.push(JSON.stringify(state));
+  if (_undoStack.length > UNDO_LIMIT) _undoStack.shift();
+  updateUndoBtn();
+}
+
+function undo() {
+  if (_undoStack.length === 0) return;
+  state = JSON.parse(_undoStack.pop());
+  save();
+  render();
+  updateUndoBtn();
+}
+
+function updateUndoBtn() {
+  const btn = document.getElementById('undo-btn');
+  if (btn) btn.disabled = _undoStack.length === 0;
+}
 
 function save() {
   try { localStorage.setItem('dltracker', JSON.stringify(state)); } catch(e){}
@@ -370,25 +392,24 @@ function expandRecurring(template) {
 }
 
 // ── Render orchestration ───────────────────────────────────────────────
-let _activeTab = 'overview';
+let _activeTab = 'plan';
 
 function render() {
   save();
-  renderOverview();
+  renderPlan();
   renderCategories();
   if (_activeTab === 'calendar') renderCalendar();
-  if (_activeTab === 'plan') renderPlan();
+  updateUndoBtn();
 }
 
 function switchTab(tab, el) {
   _activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  ['overview','categories','calendar','plan'].forEach(t => {
+  ['plan','categories','calendar'].forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
   });
   if (tab === 'calendar') renderCalendar();
-  if (tab === 'plan') renderPlan();
 }
 
 // ── getAllIncompleteTasks — excludes done, overdue-hidden, and templates ─
@@ -694,6 +715,7 @@ function toggleTask(id) { state.openTasks[id]  = !state.openTasks[id]; renderCat
 
 function cycleStatus(e, catId, taskId) {
   e.stopPropagation();
+  pushUndo();
   const cat  = state.categories.find(c => c.id === catId);
   const task = cat.tasks.find(t => t.id === taskId);
   const cycle = ['not started','in progress','done'];
@@ -704,6 +726,7 @@ function cycleStatus(e, catId, taskId) {
 }
 
 function cycleStatusById(catId, taskId) {
+  pushUndo();
   const cat  = state.categories.find(c => c.id === catId);
   if (!cat) return;
   const task = cat.tasks.find(t => t.id === taskId);
@@ -716,6 +739,7 @@ function cycleStatusById(catId, taskId) {
 }
 
 function toggleSubstep(catId, taskId, idx) {
+  pushUndo();
   const cat  = state.categories.find(c => c.id === catId);
   const task = cat.tasks.find(t => t.id === taskId);
   task.substeps[idx].done = !task.substeps[idx].done;
@@ -725,6 +749,7 @@ function toggleSubstep(catId, taskId, idx) {
 }
 
 function deleteTask(catId, taskId) {
+  pushUndo();
   const cat = state.categories.find(c => c.id === catId);
   cat.tasks = cat.tasks.filter(t => t.id !== taskId);
   render();
@@ -738,6 +763,7 @@ function deleteRecurringSeries(catId, templateId) {
 }
 
 function deleteCategory(catId) {
+  pushUndo();
   if (!confirm('Delete this category and all its tasks?')) return;
   state.categories = state.categories.filter(c => c.id !== catId);
   render();
@@ -775,6 +801,7 @@ function selectColor(color, el) {
 }
 
 function saveCategory() {
+  pushUndo();
   const name = document.getElementById('f-name').value.trim();
   if (!name) return;
   const color = window._selectedColor || COLORS[0];
@@ -828,6 +855,7 @@ function openAddRecurring(catId) {
 }
 
 function saveRecurring() {
+  pushUndo();
   const name = document.getElementById('f-tname').value.trim();
   const dueDate   = document.getElementById('f-due').value;
   const seriesEnd = document.getElementById('f-series-end').value;
@@ -862,6 +890,7 @@ function removeSubstep(i) {
 }
 
 function saveTask() {
+  pushUndo();
   const name = document.getElementById('f-tname').value.trim(); if (!name) return;
   const cat  = state.categories.find(c => c.id === editingCatId);
   const data = {
@@ -886,6 +915,7 @@ function openCapacitySettings() {
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCapacity()">Save</button></div>`);
 }
 function saveCapacity() {
+  pushUndo();
   const val = parseInt(document.getElementById('f-weekly').value);
   if (val > 0) state.weeklyHours = val;
   closeModal(); render();
@@ -1170,6 +1200,7 @@ function openQuickAdd() {
 }
 
 function saveQuickAdd() {
+  pushUndo();
   const name  = document.getElementById('qa-name').value.trim();
   const catId = document.getElementById('qa-cat').value;
   if (!name) return;
@@ -1192,7 +1223,47 @@ function renderPlan() {
   // Score: urgency + proportion of remaining hours relative to days
   tasks.sort((a,b) => urgencyScore(b) - urgencyScore(a));
 
-  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+  // ── Metric summary ────────────────────────────────────────────────────
+  const allTasks  = state.categories.flatMap(c => (c.tasks||[]).filter(t => !t.recurring));
+  const total     = allTasks.length;
+  const doneCount = allTasks.filter(t => t.status === 'done').length;
+  const overdueCount = allTasks.filter(t => t.status !== 'done' && t.dueDate && daysUntil(t.dueDate) < 0).length;
+  const dueWeek   = allTasks.filter(t => t.status !== 'done' && t.dueDate && daysUntil(t.dueDate) >= 0 && daysUntil(t.dueDate) <= 7).length;
+
+  let html = `<div class="overview-grid">
+    <div class="metric"><div class="metric-label">Total tasks</div><div class="metric-val">${total}</div></div>
+    <div class="metric"><div class="metric-label">Completed</div><div class="metric-val">${doneCount}</div></div>
+    <div class="metric"><div class="metric-label">Due this week</div><div class="metric-val">${dueWeek}</div></div>
+    <div class="metric"><div class="metric-label">Overdue</div><div class="metric-val" style="color:${overdueCount>0?'var(--color-text-danger)':'inherit'}">${overdueCount}</div></div>
+  </div>`;
+
+  // ── Top 5 urgent tasks bar chart ──────────────────────────────────────
+  const pendingTop = getAllIncompleteTasks().filter(t => t.dueDate && daysUntil(t.dueDate) >= 0);
+  pendingTop.sort((a,b) => urgencyScore(b) - urgencyScore(a));
+  const top5 = pendingTop.slice(0,5);
+  if (top5.length > 0) {
+    const maxScore = urgencyScore(top5[0]) || 1;
+    html += `<div class="urgency-bar-wrap" style="margin-bottom:1.5rem"><div class="urgency-bar-label">Top urgent tasks</div><div class="urgency-list">`;
+    for (const t of top5) {
+      const score   = urgencyScore(t);
+      const days    = daysUntil(t.dueDate);
+      const daysStr = days === 0 ? 'Due today' : `${days}d left`;
+      const ck = t.status==='done'?'done':t.status==='in progress'?'in-progress':'';
+      const cm = t.status==='done'?'✓':t.status==='in progress'?'●':'';
+      html += `<div class="urgency-item">
+        <div style="display:flex;align-items:center;gap:8px;overflow:hidden;min-width:0">
+          <div class="task-check ${ck}" style="flex-shrink:0;cursor:pointer" onclick="cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${cm}</div>
+          <div class="urgency-name" style="cursor:pointer;text-decoration-line:underline;text-decoration-style:dotted;text-underline-offset:3px" onclick="openTaskPanel('${t.catId}','${t.id}')">${t.name}</div>
+        </div>
+        <div class="urgency-track"><div class="urgency-fill" style="width:${(score/maxScore)*100}%;background:${urgencyColor(score)}"></div></div>
+        <div class="urgency-score">${daysStr}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // ── Weekly focus header ───────────────────────────────────────────────
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
     <div>
       <div style="font-size:15px;font-weight:500">This week's focus</div>
       <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">
@@ -1202,13 +1273,16 @@ function renderPlan() {
     <button class="btn btn-sm" onclick="openCapacitySettings()">⚙ ${weekAvail}h/week</button>
   </div>`;
 
-  // Overdue section
+    // Overdue section
   const overdue = getAllIncompleteTasks().filter(t => t.dueDate && daysUntil(t.dueDate) < 0);
   if (overdue.length > 0) {
     html += `<div style="font-size:12px;font-weight:500;color:var(--color-text-danger);margin-bottom:8px">⚠ Overdue — handle first</div>`;
     for (const t of overdue) {
       const rem = remainingHours(t);
+      const ck = t.status==='done'?'done':t.status==='in progress'?'in-progress':'';
+      const cm = t.status==='done'?'✓':t.status==='in progress'?'●':'';
       html += `<div class="plan-card" style="cursor:pointer;border-color:var(--color-border-danger)" onclick="openTaskPanel('${t.catId}','${t.id}')">
+        <div class="task-check ${ck}" style="cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${cm}</div>
         <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500">${t.name}</div>
@@ -1220,47 +1294,74 @@ function renderPlan() {
     html += `<div style="margin-bottom:16px"></div>`;
   }
 
-  // Allocate tasks up to weekly budget
+  // Greedy bin-packing: committed load for week 1
+  const allForPacking = [];
+  for (const cat of state.categories) {
+    for (const t of (cat.tasks || [])) {
+      if (t.status === 'done' || t.recurring) continue;
+      allForPacking.push({ ...t, catName: cat.name, catColor: cat.color, catId: cat.id });
+    }
+  }
+  allForPacking.sort((a, b) => {
+    const da = a.dueDate ? daysUntil(a.dueDate) : 9999;
+    const db = b.dueDate ? daysUntil(b.dueDate) : 9999;
+    return da - db;
+  });
+  const WEEKS = 52;
+  const buckets = new Array(WEEKS).fill(0);
+  for (const t of allForPacking) {
+    let rem = remainingHours(t);
+    if (rem <= 0) continue;
+    const dueDays = t.dueDate ? daysUntil(t.dueDate) : (WEEKS - 1) * 7;
+    const lastWeek = Math.min(Math.max(Math.floor(dueDays / 7), 0), WEEKS - 1);
+    for (let w = lastWeek; w >= 0 && rem > 0; w--) {
+      const space = Math.max(weekAvail - buckets[w], 0);
+      const take  = Math.min(rem, space);
+      buckets[w] += take;
+      rem -= take;
+    }
+    if (rem > 0) buckets[0] += rem;
+  }
+  const week1Load   = buckets[0];
+  const overloadHrs = week1Load - weekAvail;
+  const barPct      = (week1Load / Math.max(weekAvail, 1)) * 100;
+  const barColor    = week1Load > weekAvail ? 'var(--color-text-danger)'
+                    : barPct >= 80         ? '#BA7517'
+                    :                        'var(--color-text-success)';
+  const barWidth    = Math.min(barPct, 100);
+  const overloadMsg = overloadHrs > 0
+    ? '<div style="font-size:11px;color:var(--color-text-danger);margin-top:4px">&#9888; Overcommitted by '
+      + overloadHrs.toFixed(1) + 'h — consider deferring or reducing scope</div>'
+    : '';
+  html += '<div style="margin-bottom:12px">'
+    + '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px">'
+    + '<span>Committed load this week <span style="font-size:11px;opacity:0.7">(greedy forecast)</span></span>'
+    + '<span style="color:' + barColor + ';font-weight:500">' + week1Load.toFixed(1) + 'h / ' + weekAvail + 'h</span>'
+    + '</div>'
+    + '<div style="background:var(--color-background-secondary);border-radius:4px;height:8px;overflow:hidden">'
+    + '<div style="height:100%;width:' + barWidth + '%;background:' + barColor + ';border-radius:4px;transition:width 0.4s"></div>'
+    + '</div>'
+    + overloadMsg
+    + '</div>';
+
+  // Suggested focus task list (urgency-ranked proportional allocation)
   let allocated = 0;
   const inBudget = [], overflow = [];
   for (const t of tasks) {
     const rem = remainingHours(t);
     const days = daysUntil(t.dueDate);
     const weeksLeft = Math.max(days / 7, 0.14);
-
-    // How much this task would naturally absorb in future weeks (beyond this one)
-    // at the baseline rate of weekAvail hours/week, spread proportionally.
-    // This week's share = whatever's left over that future weeks can't absorb,
-    // plus the task's fair proportional slice of this week.
     const futureWeeks = Math.max(weeksLeft - 1, 0);
-    // Proportional share of weekAvail that this task "claims" each week
     const weeklyRate  = rem / weeksLeft;
-    // Future weeks will absorb futureWeeks * weeklyRate, but
-    // cap that at rem so we never exceed total remaining hours
     const futureAbsorption = Math.min(futureWeeks * weeklyRate, rem);
-    // This week must cover: whatever future weeks can't handle
     const weeklyShare = Math.min(rem, Math.max(weeklyRate, rem - futureAbsorption));
-
-    if (allocated + weeklyShare <= weekAvail * 1.1) {
+    if (allocated + weeklyShare <= weekAvail) {
       inBudget.push({ t, weeklyShare });
       allocated += weeklyShare;
     } else {
       overflow.push({ t, weeklyShare });
     }
   }
-
-  const pct = Math.min(100, Math.round((allocated / Math.max(weekAvail,1)) * 100));
-  const barColor = pct >= 100 ? 'var(--color-text-danger)' : pct >= 80 ? '#BA7517' : 'var(--color-text-success)';
-
-  html += `<div style="margin-bottom:12px">
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px">
-      <span>Suggested load this week</span>
-      <span style="color:${barColor};font-weight:500">${allocated.toFixed(1)}h / ${weekAvail}h</span>
-    </div>
-    <div style="background:var(--color-background-secondary);border-radius:4px;height:8px;overflow:hidden">
-      <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px;transition:width 0.4s"></div>
-    </div>
-  </div>`;
 
   if (inBudget.length === 0 && overdue.length === 0) {
     html += `<div style="text-align:center;padding:2rem;font-size:13px;color:var(--color-text-secondary)">🎉 Nothing urgent this week!</div>`;
