@@ -41,7 +41,7 @@
     }
 
     #root {
-      max-width: 800px;
+      max-width: 1080px;
       margin: 0 auto;
       padding: 0 1.5rem;
     }
@@ -194,6 +194,29 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
       background: var(--color-background-primary); color: var(--color-text-primary); }
     .search-input:focus { outline: none; border-color: var(--color-text-primary); }
 
+
+    /* Quick-tasks panel */
+    .plan-layout { display: grid; grid-template-columns: 1fr 260px; gap: 1.5rem; align-items: start; }
+    @media (max-width: 680px) { .plan-layout { grid-template-columns: 1fr; } .quick-panel { order: -1; } }
+    .quick-panel { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg);
+      background: var(--color-background-primary); padding: 14px 16px; position: sticky; top: 1rem; }
+    .quick-panel-title { font-size: 13px; font-weight: 500; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .quick-add-row { display: flex; gap: 6px; margin-bottom: 10px; }
+    .quick-add-input { flex: 1; font-family: var(--font-sans); font-size: 12px; padding: 5px 8px;
+      border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md);
+      background: var(--color-background-primary); color: var(--color-text-primary); }
+    .quick-add-input:focus { outline: none; border-color: var(--color-text-primary); }
+    .quick-task-item { display: flex; align-items: center; gap: 7px; padding: 5px 0;
+      border-bottom: 0.5px solid var(--color-border-tertiary); font-size: 12px; }
+    .quick-task-item:last-child { border-bottom: none; }
+    .quick-task-check { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--color-border-secondary);
+      flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 9px; }
+    .quick-task-check.done { background: var(--color-background-success); border-color: var(--color-border-success); color: var(--color-text-success); }
+    .quick-task-name { flex: 1; cursor: pointer; }
+    .quick-task-name.done { text-decoration: line-through; color: var(--color-text-secondary); }
+    .quick-task-meta { font-size: 10px; color: var(--color-text-tertiary); white-space: nowrap; }
+    .quick-task-del { font-size: 11px; color: var(--color-text-tertiary); cursor: pointer; opacity: 0; transition: opacity 0.15s; padding: 0 2px; }
+    .quick-task-item:hover .quick-task-del { opacity: 1; }
     /* Drag-to-reorder */
     .task-item.dragging { opacity: 0.4; }
     .task-item.drag-over { border-top: 2px solid var(--color-text-primary); }
@@ -210,7 +233,7 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
 <div class="app" id="app">
   <div class="header">
     <h1>Commitments</h1>
-    <button class="btn btn-primary" onclick="openAddCategory()">+ Add category</button>
+    <button class="btn btn-primary" onclick="openAddTaskGlobal()">+ Add task</button>
   </div>
   <div class="tabs">
     <div class="tab active" onclick="switchTab('plan', this)">Overview &amp; Queue</div>
@@ -327,10 +350,15 @@ function hoursDemandedinWindow(windowDays) {
       if (days === null || days < 0) continue;
       const rem = remainingHours(t);
       const totalDays = Math.max(days, 1);
-      // Fraction of remaining hours that fall within the window
       const fraction = Math.min(windowDays, totalDays) / totalDays;
       total += rem * fraction;
     }
+  }
+  // Add quick task weekly load (proportional to window)
+  for (const qt of (state.quickTasks || [])) {
+    if (qt.done) continue;
+    const weeklyH = (qt.timeframeMinutes || 15) / 60;
+    total += weeklyH * (windowDays / 7);
   }
   return total;
 }
@@ -542,11 +570,12 @@ function renderUrgent() {
 
 // ── Categories ─────────────────────────────────────────────────────────
 function renderCategories() {
+  const catHeader = `<div style="display:flex;justify-content:flex-end;margin-bottom:1rem"><button class="btn btn-sm" onclick="openAddCategory()">+ Add category</button></div>`;
   if (state.categories.length === 0) {
-    document.getElementById('tab-categories').innerHTML = `<div style="font-size:13px;color:var(--color-text-secondary);text-align:center;padding:2rem 0">No categories yet. Click "+ Add category" to start.</div>`;
+    document.getElementById('tab-categories').innerHTML = catHeader + `<div style="font-size:13px;color:var(--color-text-secondary);text-align:center;padding:2rem 0">No categories yet. Use the button above to add one.</div>`;
     return;
   }
-  let html = `<div class="cat-list">`;
+  let html = catHeader + `<div class="cat-list">`;
   for (const cat of state.categories) {
     const tasks     = cat.tasks || [];
     const templates = tasks.filter(t => t.recurring);
@@ -866,12 +895,12 @@ function openEditTask(catId, taskId) {
 function showTaskModal(task) {
   const v = task || {};
   showModal(`<h2>${task?'Edit task':'Add task'}</h2>
-    <div class="form-field"><label>Task name</label><input id="f-tname" placeholder="Task name" value="${v.name||''}"></div>
+    <div class="form-field"><label>Task name</label><input id="f-tname" placeholder="Task name" value="${v.name||''}" onkeydown="if(event.key==='Enter'){event.preventDefault();saveTask();}"></div>
     <div class="form-field"><label>Due date</label><input id="f-due" type="date" value="${v.dueDate||''}"></div>
     <div class="form-field"><label>Estimated hours</label><input id="f-est" type="number" min="0" step="0.5" placeholder="e.g. 3" value="${v.estimatedHours||''}"></div>
     <div class="form-field"><label>Priority</label><select id="f-pri"><option value="">—</option><option ${v.priority==='Low'?'selected':''}>Low</option><option ${v.priority==='Medium'?'selected':''}>Medium</option><option ${v.priority==='High'?'selected':''}>High</option><option ${v.priority==='Critical'?'selected':''}>Critical</option></select></div>
     <div class="form-field"><label>Substeps</label>
-      <div class="substep-entry"><input id="f-substep" placeholder="Add a substep..."><button class="btn btn-sm" onclick="addSubstep()">Add</button></div>
+      <div class="substep-entry"><input id="f-substep" placeholder="Add a substep..." onkeydown="if(event.key==='Enter'){event.preventDefault();addSubstep();}"><button class="btn btn-sm" onclick="addSubstep()">Add</button></div>
       <div class="added-substeps" id="substep-list">${renderTempSubsteps()}</div>
     </div>
     <div class="form-field"><label>Notes</label><textarea id="f-notes" placeholder="Any additional notes...">${v.notes||''}</textarea></div>
@@ -882,7 +911,7 @@ function openAddRecurring(catId) {
   editingCatId = catId;
   const today = new Date().toISOString().slice(0,10);
   showModal(`<h2>Add recurring task</h2>
-    <div class="form-field"><label>Task name</label><input id="f-tname" placeholder="e.g. Prepare for Roman Law"></div>
+    <div class="form-field"><label>Task name</label><input id="f-tname" placeholder="e.g. Prepare for Roman Law" onkeydown="if(event.key==='Enter'){event.preventDefault();saveRecurring();}"></div>
     <div class="form-field"><label>First occurrence (due date)</label><input id="f-due" type="date" value="${today}"></div>
     <div class="form-field"><label>Frequency</label>
       <select id="f-freq"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option><option value="daily">Daily</option></select></div>
@@ -1228,7 +1257,7 @@ function openQuickAdd() {
     <div class="form-field"><label>Category</label>
       <select id="qa-cat">${catOptions}</select></div>
     <div class="form-field"><label>Task name</label>
-      <input id="qa-name" placeholder="Task name" autofocus></div>
+      <input id="qa-name" placeholder="Task name" autofocus onkeydown="if(event.key==='Enter'){event.preventDefault();saveQuickAdd();}"></div>
     <div class="form-field"><label>Due date</label>
       <input id="qa-due" type="date"></div>
     <div class="form-field"><label>Estimated hours</label>
@@ -1475,7 +1504,9 @@ function renderPlan() {
     }
   }
 
-  document.getElementById('tab-plan').innerHTML = html;
+  if (!state.quickTasks) state.quickTasks = [];
+  document.getElementById('tab-plan').innerHTML =
+    `<div class="plan-layout"><div>${html}</div>${renderQuickPanel()}</div>`;
 }
 
 // ── DRAG TO REORDER ────────────────────────────────────────────────────
@@ -1522,6 +1553,132 @@ function onDrop(e, catId, taskId) {
   tasks.splice(toIdx, 0, moved);
   _dragTaskId = null; _dragOverTaskId = null;
   render();
+}
+
+
+// ── GLOBAL ADD TASK (Change 1) ────────────────────────────────────────────
+function openAddTaskGlobal() {
+  editingCatId = null; editingTaskId = null; tempSubsteps = [];
+  const catOptions = state.categories.map(c =>
+    `<option value="${c.id}">${c.name}</option>`).join('');
+  if (!catOptions) { openAddCategory(); return; }
+  showModal(`<h2>Add task</h2>
+    <div class="form-field"><label>Category</label>
+      <select id="f-cat-sel">${catOptions}</select></div>
+    <div class="form-field"><label>Task name</label>
+      <input id="f-tname" placeholder="Task name" onkeydown="if(event.key==='Enter'){event.preventDefault();saveTaskGlobal();}"></div>
+    <div class="form-field"><label>Due date</label><input id="f-due" type="date"></div>
+    <div class="form-field"><label>Estimated hours</label><input id="f-est" type="number" min="0" step="0.5" placeholder="e.g. 3"></div>
+    <div class="form-field"><label>Priority</label><select id="f-pri"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
+    <div class="form-field"><label>Substeps</label>
+      <div class="substep-entry"><input id="f-substep" placeholder="Add a substep..." onkeydown="if(event.key==='Enter'){event.preventDefault();addSubstep();}"><button class="btn btn-sm" onclick="addSubstep()">Add</button></div>
+      <div class="added-substeps" id="substep-list"></div>
+    </div>
+    <div class="form-field"><label>Notes</label><textarea id="f-notes" placeholder="Any additional notes..."></textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveTaskGlobal()">Add task</button></div>`);
+}
+
+function saveTaskGlobal() {
+  pushUndo();
+  const name = document.getElementById('f-tname').value.trim(); if (!name) return;
+  const catId = document.getElementById('f-cat-sel').value;
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat) return;
+  cat.tasks.push({
+    id: uid(), status: 'not started', manualProgress: 0,
+    name,
+    dueDate:        document.getElementById('f-due').value,
+    estimatedHours: document.getElementById('f-est').value,
+    priority:       document.getElementById('f-pri').value,
+    notes:          document.getElementById('f-notes').value.trim(),
+    substeps:       tempSubsteps.map(s=>({...s}))
+  });
+  closeModal(); render();
+}
+
+// ── QUICK TASKS (Change 2) ────────────────────────────────────────────────
+function renderQuickPanel() {
+  const qts = state.quickTasks || [];
+  const active = qts.filter(t => !t.done);
+  const done   = qts.filter(t => t.done);
+  const totalMins = active.reduce((s,t) => s + (t.timeframeMinutes||15), 0);
+
+  let items = '';
+  for (const t of [...active, ...done]) {
+    const deadlineStr = t.deadline ? `· ${formatDate(t.deadline)}` : '';
+    const minsStr = (t.timeframeMinutes && t.timeframeMinutes !== 15) ? `${t.timeframeMinutes}m` : '';
+    const meta = [minsStr, deadlineStr].filter(Boolean).join(' ');
+    items += `<div class="quick-task-item">
+      <div class="quick-task-check ${t.done?'done':''}" onclick="toggleQuickTask('${t.id}')">${t.done?'✓':''}</div>
+      <div class="quick-task-name ${t.done?'done':''}" onclick="editQuickTask('${t.id}')">${t.name}</div>
+      ${meta ? `<div class="quick-task-meta">${meta}</div>` : ''}
+      <div class="quick-task-del" onclick="deleteQuickTask('${t.id}')" title="Remove">×</div>
+    </div>`;
+  }
+
+  return `<div class="quick-panel">
+    <div class="quick-panel-title">
+      <span>Quick tasks</span>
+      <span style="font-size:11px;color:var(--color-text-tertiary)">${(totalMins/60).toFixed(1)}h/wk</span>
+    </div>
+    <div class="quick-add-row">
+      <input class="quick-add-input" id="qt-input" placeholder="Task name, press Enter…"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();addQuickTask();}">
+    </div>
+    ${items || '<div style="font-size:12px;color:var(--color-text-tertiary);text-align:center;padding:8px 0">No quick tasks yet</div>'}
+  </div>`;
+}
+
+function addQuickTask() {
+  const inp = document.getElementById('qt-input');
+  const name = inp.value.trim(); if (!name) return;
+  if (!state.quickTasks) state.quickTasks = [];
+  pushUndo();
+  state.quickTasks.push({ id: uid(), name, done: false, deadline: '', timeframeMinutes: 15 });
+  inp.value = '';
+  save(); renderPlan();
+  // Re-focus input after re-render
+  setTimeout(() => { const el = document.getElementById('qt-input'); if (el) el.focus(); }, 30);
+}
+
+function toggleQuickTask(id) {
+  if (!state.quickTasks) return;
+  const t = state.quickTasks.find(t => t.id === id);
+  if (t) { t.done = !t.done; save(); renderPlan(); }
+}
+
+function deleteQuickTask(id) {
+  if (!state.quickTasks) return;
+  pushUndo();
+  state.quickTasks = state.quickTasks.filter(t => t.id !== id);
+  save(); renderPlan();
+}
+
+function editQuickTask(id) {
+  if (!state.quickTasks) return;
+  const t = state.quickTasks.find(t => t.id === id);
+  if (!t) return;
+  showModal(`<h2>Edit quick task</h2>
+    <div class="form-field"><label>Name</label>
+      <input id="qt-name" value="${t.name}" onkeydown="if(event.key==='Enter'){event.preventDefault();saveQuickTaskEdit('${id}');}"></div>
+    <div class="form-field"><label>Deadline (optional)</label>
+      <input id="qt-deadline" type="date" value="${t.deadline||''}"></div>
+    <div class="form-field"><label>Time commitment (minutes/week)</label>
+      <input id="qt-mins" type="number" min="1" step="5" value="${t.timeframeMinutes||15}"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveQuickTaskEdit('${id}')">Save</button>
+    </div>`);
+}
+
+function saveQuickTaskEdit(id) {
+  const t = state.quickTasks.find(t => t.id === id);
+  if (!t) return;
+  pushUndo();
+  t.name = document.getElementById('qt-name').value.trim() || t.name;
+  t.deadline = document.getElementById('qt-deadline').value;
+  t.timeframeMinutes = parseInt(document.getElementById('qt-mins').value) || 15;
+  closeModal(); save(); renderPlan();
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────
