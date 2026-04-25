@@ -62,8 +62,8 @@
       align-items: center;
       margin-right: 4px;
     }
-    #undo-btn:disabled { opacity: 0.35; cursor: default; }
-    #undo-btn:not(:disabled) { opacity: 1; }
+    #undo-btn:disabled, #redo-btn:disabled { opacity: 0.35; cursor: default; }
+    #undo-btn:not(:disabled), #redo-btn:not(:disabled) { opacity: 1; }
 
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -250,6 +250,7 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
       <button class="btn btn-sm" onclick="exportData()" title="Download your data as a JSON backup file">⬇ Export</button>
       <label class="btn btn-sm" style="cursor:pointer" title="Load a previously exported JSON backup">⬆ Import<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label>
       <button id="undo-btn" class="btn btn-sm" onclick="undo()" title="Undo last action" disabled>↩ Undo</button>
+      <button id="redo-btn" class="btn btn-sm" onclick="redo()" title="Redo last undone action" disabled>↪ Redo</button>
     </div>
 <div class="app" id="app">
   <div class="header">
@@ -286,25 +287,39 @@ function broadcast() { if (bc) bc.postMessage('update'); }
 // ── Persistence ───────────────────────────────────────────────────────
 let state = { categories: [], openCats: {}, openTasks: {}, weeklyHours: 20 };
 let _undoStack = [];
+let _redoStack = [];
 const UNDO_LIMIT = 30;
 
 function pushUndo() {
   _undoStack.push(JSON.stringify(state));
   if (_undoStack.length > UNDO_LIMIT) _undoStack.shift();
+  _redoStack = []; // new action clears redo history
   updateUndoBtn();
 }
 
 function undo() {
   if (_undoStack.length === 0) return;
+  _redoStack.push(JSON.stringify(state));
   state = JSON.parse(_undoStack.pop());
   save();
   render();
   updateUndoBtn();
 }
 
+function redo() {
+  if (_redoStack.length === 0) return;
+  _undoStack.push(JSON.stringify(state));
+  state = JSON.parse(_redoStack.pop());
+  save();
+  render();
+  updateUndoBtn();
+}
+
 function updateUndoBtn() {
-  const btn = document.getElementById('undo-btn');
-  if (btn) btn.disabled = _undoStack.length === 0;
+  const undoBtn = document.getElementById('undo-btn');
+  if (undoBtn) undoBtn.disabled = _undoStack.length === 0;
+  const redoBtn = document.getElementById('redo-btn');
+  if (redoBtn) redoBtn.disabled = _redoStack.length === 0;
 }
 
 function save() {
@@ -364,44 +379,114 @@ function remainingHours(task) {
 // ── Capacity-aware urgency ─────────────────────────────────────────────
 // Spread a task's remaining hours proportionally across weeks until its deadline,
 // capped at weekly budget, then sum overload in the nearest window.
-function hoursDemandedinWindow(windowDays) {
-  // Day-level greedy simulation — same algorithm as renderForecast
-  const dayAvail   = state.weeklyHours / 7;
-  const DAYS       = Math.max(windowDays, 1);
-  const dayBuckets = new Float64Array(DAYS);
-  let total        = 0;
 
-  const allTasks = [];
+// ── Shared greedy packing (rolling weeks from today) ──────────────────────
+// Returns { weekLoads, taskWeeks, deadlines } for WEEKS weeks starting today.
+// Week 0 = today..today+6, week 1 = today+7..today+13, etc.
+function greedyPack(WEEKS) {
+  const weekAvail = state.weeklyHours;
+  const dayAvail  = weekAvail / 7;
+  const DAYS      = WEEKS * 7;
+
+  const allForPacking = [];
   for (const cat of state.categories) {
     for (const t of (cat.tasks || [])) {
       if (t.status === 'done' || t.recurring) continue;
-      const days = daysUntil(t.dueDate);
-      if (days === null || days < 0) continue;
-      allTasks.push({ t, days });
+      allForPacking.push({ ...t, catName: cat.name, catColor: cat.color, catId: cat.id });
     }
   }
-  allTasks.sort((a, b) => a.days - b.days);
+  allForPacking.sort((a, b) => {
+    const da = a.dueDate ? daysUntil(a.dueDate) : 9999;
+    const db = b.dueDate ? daysUntil(b.dueDate) : 9999;
+    return da - db;
+  });
 
-  for (const { t, days } of allTasks) {
-    let rem     = remainingHours(t);
-    const lastD = Math.min(days, DAYS - 1);
-    for (let d = lastD; d >= 0 && rem > 0; d--) {
+  const dayBuckets   = new Float64Array(DAYS);
+  const taskDayAlloc = {};
+
+  for (const t of allForPacking) {
+    let rem = remainingHours(t);
+    if (rem <= 0) continue;
+    const dueDays = t.dueDate ? Math.max(daysUntil(t.dueDate), 0) : DAYS - 1;
+    const lastDay = Math.min(dueDays, DAYS - 1);
+    taskDayAlloc[t.id] = new Float64Array(DAYS);
+
+    const dailyNeed = rem / Math.max(lastDay + 1, 1);
+    // Forward even-spread pass
+    for (let d = 0; d <= lastDay && rem > 0; d++) {
       const space = Math.max(dayAvail - dayBuckets[d], 0);
-      const take  = Math.min(rem, space);
-      if (take > 0) { dayBuckets[d] += take; rem -= take; }
+      const take  = Math.min(dailyNeed, rem, space);
+      if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
     }
-    if (rem > 0) { dayBuckets[0] += rem; }
+    // Second pass: fill remaining capacity within window
+    if (rem > 0.001) {
+      for (let d = 0; d <= lastDay && rem > 0; d++) {
+        const space = Math.max(dayAvail - dayBuckets[d], 0);
+        const take  = Math.min(rem, space);
+        if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+      }
+    }
+    // True overflow onto due day
+    if (rem > 0.001) {
+      dayBuckets[lastDay]         += rem;
+      taskDayAlloc[t.id][lastDay] += rem;
+    }
   }
 
-  for (let d = 0; d < DAYS; d++) total += dayBuckets[d];
-
-  // Add quick task load (daily rate × window)
+  // Quick tasks: spread evenly across week 0 only (standing commitment)
+  const quickWeek0 = [];
   for (const qt of (state.quickTasks || [])) {
     if (qt.done) continue;
-    total += ((qt.timeframeMinutes || 15) / 60 / 7) * windowDays;
+    const weeklyH = (qt.timeframeMinutes || 15) / 60;
+    const dailyH  = weeklyH / 7;
+    for (let d = 0; d < 7; d++) dayBuckets[d] += dailyH;
+    quickWeek0.push({ task: { id: qt.id, name: qt.name, catColor: '#999', catName: 'Quick tasks', isQuick: true }, hours: weeklyH });
+  }
+
+  // Aggregate to weeks: rolling from today (week 0 = today..today+6)
+  const weekLoads = new Float64Array(WEEKS);
+  const taskWeeks = Array.from({length: WEEKS}, () => []);
+  for (let w = 0; w < WEEKS; w++) {
+    for (let d = w * 7; d < w * 7 + 7 && d < DAYS; d++) weekLoads[w] += dayBuckets[d];
+  }
+  for (const t of allForPacking) {
+    const alloc = taskDayAlloc[t.id];
+    if (!alloc) continue;
+    for (let w = 0; w < WEEKS; w++) {
+      let wHrs = 0;
+      for (let d = w * 7; d < w * 7 + 7 && d < DAYS; d++) wHrs += alloc[d];
+      if (wHrs > 0.001) taskWeeks[w].push({ task: t, hours: wHrs });
+    }
+  }
+  for (const qa of quickWeek0) taskWeeks[0].push(qa);
+
+  // Deadline map
+  const deadlines = {};
+  for (const t of allForPacking) {
+    if (!t.dueDate) continue;
+    const days = daysUntil(t.dueDate);
+    if (days < 0 || days >= DAYS) continue;
+    const w = Math.floor(days / 7);
+    if (!deadlines[w]) deadlines[w] = [];
+    deadlines[w].push(t);
+  }
+
+  return { weekLoads, taskWeeks, deadlines, dayBuckets };
+}
+
+function hoursDemandedinWindow(windowDays) {
+  // Delegate to shared packing — use enough weeks to cover the window
+  const weeks = Math.ceil(windowDays / 7);
+  const { weekLoads } = greedyPack(Math.max(weeks, 1));
+  let total = 0;
+  // Sum only the days within windowDays (last week may be partial)
+  for (let w = 0; w < weeks; w++) {
+    const daysThisWeek = Math.min(7, windowDays - w * 7);
+    total += weekLoads[w] * (daysThisWeek / 7);
   }
   return total;
 }
+
 
 function capacityPressure(windowDays) {
   const available = (state.weeklyHours / 7) * windowDays;
@@ -756,7 +841,7 @@ function renderTaskItem(cat, task) {
             <span style="font-size:10px;color:var(--color-text-tertiary);margin:0 2px">wt:</span>
             <input type="number" min="0.1" step="0.1" value="${s.weight||1}" style="width:40px;font-size:11px;padding:1px 4px;border:0.5px solid var(--color-border-secondary);border-radius:3px;text-align:center" oninput="setSubstepWeight('${cat.id}','${task.id}',${i},this.value)" onclick="event.stopPropagation()" title="Substep weight">
           </div>`).join('')}</div>` : ''}
-      ${task.notes ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-top:6px;margin-bottom:2px">Notes</div><div class="notes-text">${task.notes}</div>` : ''}
+      ${task.notes ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-top:6px;margin-bottom:2px">Notes</div><div class="notes-text">${renderNotes(task.notes)}</div>` : ''}
       <div class="task-actions">
         <button class="btn btn-sm" onclick="openEditTask('${cat.id}','${task.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteTask('${cat.id}','${task.id}')">Delete</button>
@@ -782,7 +867,9 @@ function setManualProgress(catId, taskId, val) {
   const task = cat.tasks.find(t => t.id === taskId);
   task.manualProgress = parseInt(val);
   if (task.manualProgress === 100) task.status = 'done';
-  save(); // Don't full re-render, just save
+  save();
+  renderPlan();
+  if (_activeTab === 'forecast') renderForecast();
 }
 
 function bump10(catId, taskId) {
@@ -1210,7 +1297,7 @@ function openTaskPanel(catId, taskId) {
           </div>`).join('')}
       </div>` : ''}
 
-    ${task.notes ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;font-weight:500">Notes</div><div class="notes-text" style="margin-bottom:14px">${task.notes}</div>` : ''}
+    ${task.notes ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;font-weight:500">Notes</div><div class="notes-text" style="margin-bottom:14px">${renderNotes(task.notes)}</div>` : ''}
 
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <span style="font-size:11px;color:var(--color-text-secondary)">Snooze:</span>
@@ -1245,8 +1332,8 @@ function panelProgressSave(catId, taskId, val) {
   task.manualProgress = parseInt(val);
   if (task.manualProgress === 100) task.status = 'done';
   save();
-  // Re-render the panel in place
   openTaskPanel(catId, taskId);
+  render();
 }
 
 function panelCycleStatus(catId, taskId) {
@@ -1257,8 +1344,8 @@ function panelCycleStatus(catId, taskId) {
   task.status = cycle[(cur + 1) % 3];
   if (task.status === 'done') task.manualProgress = 100;
   save();
-  openTaskPanel(catId, taskId); // refresh panel
-  renderOverview(); renderUrgent(); renderCategories();
+  openTaskPanel(catId, taskId);
+  render();
 }
 
 function panelToggleSubstep(catId, taskId, idx) {
@@ -1269,7 +1356,7 @@ function panelToggleSubstep(catId, taskId, idx) {
   else if (task.substeps.some(s => s.done) && task.status === 'not started') task.status = 'in progress';
   save();
   openTaskPanel(catId, taskId);
-  renderCategories();
+  render();
 }
 
 
@@ -1726,92 +1813,13 @@ function saveQuickTaskEdit(id) {
 
 // ── FORECAST VIEW ─────────────────────────────────────────────────────────
 function renderForecast() {
-  const weekAvail  = state.weeklyHours;
-  const dayAvail   = weekAvail / 7;
-  const WEEKS      = 16;
-  const DAYS       = WEEKS * 7;
+  const weekAvail = state.weeklyHours;
+  const WEEKS     = 16;
+  const { weekLoads, taskWeeks, deadlines } = greedyPack(WEEKS);
 
-  // ── Build task list ────────────────────────────────────────────────────
-  const allForPacking = [];
-  for (const cat of state.categories) {
-    for (const t of (cat.tasks || [])) {
-      if (t.status === 'done' || t.recurring) continue;
-      allForPacking.push({ ...t, catName: cat.name, catColor: cat.color, catId: cat.id });
-    }
-  }
-  allForPacking.sort((a, b) => {
-    const da = a.dueDate ? daysUntil(a.dueDate) : 9999;
-    const db = b.dueDate ? daysUntil(b.dueDate) : 9999;
-    return da - db;
-  });
-
-  // ── Day-level greedy packing ───────────────────────────────────────────
-  // dayBuckets[d] = total hours allocated on day d
-  // taskDayAlloc[taskId][d] = hours allocated for that task on day d
-  const dayBuckets   = new Float64Array(DAYS);
-  const taskDayAlloc = {}; // taskId -> Float64Array(DAYS)
-
-  for (const t of allForPacking) {
-    let rem = remainingHours(t);
-    if (rem <= 0) continue;
-    const dueDays  = t.dueDate ? Math.max(daysUntil(t.dueDate), 0) : DAYS - 1;
-    const lastDay  = Math.min(dueDays, DAYS - 1);
-    taskDayAlloc[t.id] = new Float64Array(DAYS);
-
-    for (let d = lastDay; d >= 0 && rem > 0; d--) {
-      const space = Math.max(dayAvail - dayBuckets[d], 0);
-      const take  = Math.min(rem, space);
-      if (take > 0) {
-        dayBuckets[d]          += take;
-        taskDayAlloc[t.id][d]  += take;
-        rem -= take;
-      }
-    }
-    // Any remaining overflow piles into day 0
-    if (rem > 0) {
-      dayBuckets[0]         += rem;
-      taskDayAlloc[t.id][0] += rem;
-    }
-  }
-
-  // ── Quick tasks: one entry on day 0 only ──────────────────────────────
-  const quickAllocs = []; // [{task, hours}] for week 0
-  for (const qt of (state.quickTasks || [])) {
-    if (qt.done) continue;
-    const weeklyH = (qt.timeframeMinutes || 15) / 60;
-    const dailyH  = weeklyH / 7;
-    for (let d = 0; d < 7; d++) {
-      dayBuckets[d] += dailyH;
-    }
-    quickAllocs.push({ task: { id: qt.id, name: qt.name, catColor: '#999', catName: 'Quick tasks', isQuick: true }, hours: weeklyH });
-  }
-
-  // ── Aggregate days → weeks ─────────────────────────────────────────────
-  // weekLoad[w] = total hours in week w
-  // taskWeeks[w] = [{task, hours}] — merge per-task allocations by week
-  const weekLoad  = new Float64Array(WEEKS);
-  const taskWeeks = Array.from({length: WEEKS}, () => []);
-
-  for (let w = 0; w < WEEKS; w++) {
-    for (let d = w * 7; d < w * 7 + 7; d++) weekLoad[w] += dayBuckets[d];
-  }
-
-  for (const t of allForPacking) {
-    const alloc = taskDayAlloc[t.id];
-    if (!alloc) continue;
-    for (let w = 0; w < WEEKS; w++) {
-      let wHrs = 0;
-      for (let d = w * 7; d < w * 7 + 7; d++) wHrs += alloc[d];
-      if (wHrs > 0.001) taskWeeks[w].push({ task: t, hours: wHrs });
-    }
-  }
-
-  // Inject quick task aggregates into week 0
-  for (const qa of quickAllocs) taskWeeks[0].push(qa);
-
-  // ── Display range ──────────────────────────────────────────────────────
+  // Find display range
   let lastActiveWeek = 0;
-  for (let w = 0; w < WEEKS; w++) { if (weekLoad[w] > 0.001) lastActiveWeek = w; }
+  for (let w = 0; w < WEEKS; w++) { if (weekLoads[w] > 0.001) lastActiveWeek = w; }
   const showWeeks = Math.min(lastActiveWeek + 1, WEEKS);
 
   if (showWeeks === 0) {
@@ -1820,67 +1828,56 @@ function renderForecast() {
     return;
   }
 
-  const maxLoad = Math.max(...Array.from({length: showWeeks}, (_,w) => weekLoad[w]), weekAvail * 1.2, 1);
+  const maxLoad = Math.max(...Array.from({length: showWeeks}, (_,w) => weekLoads[w]), weekAvail * 1.2, 1);
 
-  // ── Deadline list per week ─────────────────────────────────────────────
-  const deadlines = {};
-  for (const t of allForPacking) {
-    if (!t.dueDate) continue;
-    const days = daysUntil(t.dueDate);
-    if (days < 0 || days >= DAYS) continue;
-    const w = Math.floor(days / 7);
-    if (!deadlines[w]) deadlines[w] = [];
-    deadlines[w].push(t);
+  // Week label: rolling from today
+  function weekLabel(w) {
+    const start = new Date(); start.setHours(0,0,0,0); start.setDate(start.getDate() + w * 7);
+    const end   = new Date(start); end.setDate(end.getDate() + 6);
+    const fmt   = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (w === 0) return `This week (${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')})`;
+    return `${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')}`;
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────
-  function weekStartDate(w) {
-    const d = new Date(); d.setHours(0,0,0,0);
-    d.setDate(d.getDate() - d.getDay() + w * 7);
-    return d;
-  }
-  function shortDate(d) {
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-
-  // ── Legend ─────────────────────────────────────────────────────────────
+  // Legend
   let legendHtml = '<div class="forecast-legend">';
   for (const cat of state.categories) {
     const hasWork = taskWeeks.slice(0, showWeeks).some(wk => wk.some(a => a.task.catId === cat.id));
     if (!hasWork) continue;
     legendHtml += `<div class="forecast-legend-item"><div class="forecast-legend-dot" style="background:${cat.color}"></div>${cat.name}</div>`;
   }
-  if (quickAllocs.length > 0) {
+  if ((state.quickTasks||[]).some(qt => !qt.done)) {
     legendHtml += `<div class="forecast-legend-item"><div class="forecast-legend-dot" style="background:#999"></div>Quick tasks</div>`;
   }
   legendHtml += `<div class="forecast-legend-item"><div style="width:10px;height:10px;border-left:2px solid #333;opacity:0.3;flex-shrink:0"></div>${weekAvail}h limit</div>`;
   legendHtml += '</div>';
 
   const capNote = `<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:14px">
-    Scheduled at day-level granularity (${dayAvail.toFixed(1)}h/day), aggregated by week for display.
-    Thin vertical line = ${weekAvail}h/week limit. Deadlines listed to the right.
+    Rolling weeks from today. Each bar is color-coded by category. Thin vertical line = ${weekAvail}h/week limit. Bars past the line = overcommitted.
   </div>`;
 
-  // ── Build rows ─────────────────────────────────────────────────────────
+  // Rows
   let rowsHtml = '';
   for (let w = 0; w < showWeeks; w++) {
-    const load       = weekLoad[w];
+    const load       = weekLoads[w];
     const overloaded = load > weekAvail + 0.05;
-    const label      = w === 0 ? 'This week' : w === 1 ? 'Next week' : shortDate(weekStartDate(w));
     const capLinePct = (weekAvail / maxLoad * 100).toFixed(1);
-
-    const segs = [...taskWeeks[w]].sort((a,b) => (a.task.catColor||'').localeCompare(b.task.catColor||''));
+    const segs       = [...taskWeeks[w]].sort((a,b) => (a.task.catColor||'').localeCompare(b.task.catColor||''));
 
     let barHtml = '';
     for (const seg of segs) {
-      const segPct  = (seg.hours / maxLoad * 100).toFixed(2);
-      const showLbl = (seg.hours / maxLoad) > 0.07;
-      const lbl     = showLbl ? (seg.task.isQuick ? '⚡' : seg.task.name.slice(0, 14) + (seg.task.name.length > 14 ? '…' : '')) : '';
+      const segPct   = (seg.hours / maxLoad * 100).toFixed(2);
+      const showLbl  = (seg.hours / maxLoad) > 0.07;
+      const lbl      = showLbl ? (seg.task.isQuick ? '⚡' : seg.task.name.slice(0,14) + (seg.task.name.length > 14 ? '…' : '')) : '';
       const safeName = seg.task.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const clickHandler = seg.task.isQuick
+        ? `editQuickTask('${seg.task.id}')`
+        : `openTaskPanel('${seg.task.catId}','${seg.task.id}')`;
       barHtml += `<div class="forecast-seg"
-        style="width:${segPct}%;background:${seg.task.catColor};"
-        onmouseenter="showForecastTip(event,'${safeName} — ${seg.hours.toFixed(1)}h · ${seg.task.catName}')"
-        onmouseleave="hideForecastTip()">${lbl}</div>`;
+        style="width:${segPct}%;background:${seg.task.catColor};cursor:pointer;"
+        onmouseenter="showForecastTip(event,'${safeName} — ${seg.hours.toFixed(1)}h · ${seg.task.catName} (click to open)')"
+        onmouseleave="hideForecastTip()"
+        onclick="${clickHandler}">${lbl}</div>`;
     }
     barHtml += `<div class="forecast-cap-line" style="left:${capLinePct}%"></div>`;
 
@@ -1888,10 +1885,10 @@ function renderForecast() {
     if (deadlines[w] && deadlines[w].length > 0) {
       deadlineCol = deadlines[w].map(dt => {
         const days   = daysUntil(dt.dueDate);
-        const dayStr = days === 0 ? 'today' : days === 1 ? 'tomorrow' : shortDate(new Date(dt.dueDate + 'T00:00:00'));
+        const dayStr = days === 0 ? 'today' : days === 1 ? 'tomorrow' : new Date(dt.dueDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
         return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
           <div style="width:7px;height:7px;border-radius:50%;background:${dt.catColor};flex-shrink:0"></div>
-          <span style="font-size:10px;color:var(--color-text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="${dt.name}">${dt.name}</span>
+          <span style="font-size:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="${dt.name}">${dt.name}</span>
           <span style="font-size:10px;color:var(--color-text-secondary);white-space:nowrap">${dayStr}</span>
         </div>`;
       }).join('');
@@ -1899,7 +1896,7 @@ function renderForecast() {
 
     rowsHtml += `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
       <div class="forecast-week-label ${overloaded?'overloaded':''}">
-        <span>${label}</span>
+        <span>${weekLabel(w)}</span>
         <span style="font-size:10px;${overloaded?'color:var(--color-text-danger)':''}">${load.toFixed(1)}h${overloaded?' ⚠':''}</span>
       </div>
       <div style="flex:1;min-width:0">
@@ -1932,6 +1929,19 @@ function showForecastTip(e, text) {
 function hideForecastTip() {
   const tip = document.getElementById('forecast-tooltip');
   if (tip) tip.style.display = 'none';
+}
+
+// ── Notes link renderer ───────────────────────────────────────────────────
+function renderNotes(text) {
+  if (!text) return '';
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped.replace(
+    /(https?:\/\/[^\s<>"]+)/g,
+    '<a href="$1" target="_blank" rel="noopener" style="color:var(--color-text-info);word-break:break-all;">$1</a>'
+  );
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────
