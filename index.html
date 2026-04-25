@@ -365,23 +365,40 @@ function remainingHours(task) {
 // Spread a task's remaining hours proportionally across weeks until its deadline,
 // capped at weekly budget, then sum overload in the nearest window.
 function hoursDemandedinWindow(windowDays) {
-  let total = 0;
+  // Day-level greedy simulation — same algorithm as renderForecast
+  const dayAvail   = state.weeklyHours / 7;
+  const DAYS       = Math.max(windowDays, 1);
+  const dayBuckets = new Float64Array(DAYS);
+  let total        = 0;
+
+  const allTasks = [];
   for (const cat of state.categories) {
     for (const t of (cat.tasks || [])) {
       if (t.status === 'done' || t.recurring) continue;
       const days = daysUntil(t.dueDate);
       if (days === null || days < 0) continue;
-      const rem = remainingHours(t);
-      const totalDays = Math.max(days, 1);
-      const fraction = Math.min(windowDays, totalDays) / totalDays;
-      total += rem * fraction;
+      allTasks.push({ t, days });
     }
   }
-  // Add quick task weekly load (proportional to window)
+  allTasks.sort((a, b) => a.days - b.days);
+
+  for (const { t, days } of allTasks) {
+    let rem     = remainingHours(t);
+    const lastD = Math.min(days, DAYS - 1);
+    for (let d = lastD; d >= 0 && rem > 0; d--) {
+      const space = Math.max(dayAvail - dayBuckets[d], 0);
+      const take  = Math.min(rem, space);
+      if (take > 0) { dayBuckets[d] += take; rem -= take; }
+    }
+    if (rem > 0) { dayBuckets[0] += rem; }
+  }
+
+  for (let d = 0; d < DAYS; d++) total += dayBuckets[d];
+
+  // Add quick task load (daily rate × window)
   for (const qt of (state.quickTasks || [])) {
     if (qt.done) continue;
-    const weeklyH = (qt.timeframeMinutes || 15) / 60;
-    total += weeklyH * (windowDays / 7);
+    total += ((qt.timeframeMinutes || 15) / 60 / 7) * windowDays;
   }
   return total;
 }
@@ -1709,10 +1726,12 @@ function saveQuickTaskEdit(id) {
 
 // ── FORECAST VIEW ─────────────────────────────────────────────────────────
 function renderForecast() {
-  const weekAvail = state.weeklyHours;
-  const WEEKS = 16;
+  const weekAvail  = state.weeklyHours;
+  const dayAvail   = weekAvail / 7;
+  const WEEKS      = 16;
+  const DAYS       = WEEKS * 7;
 
-  // ── Greedy packing (tracks per-task per-week allocation) ───────────────
+  // ── Build task list ────────────────────────────────────────────────────
   const allForPacking = [];
   for (const cat of state.categories) {
     for (const t of (cat.tasks || [])) {
@@ -1726,40 +1745,73 @@ function renderForecast() {
     return da - db;
   });
 
-  const taskWeeks = Array.from({length: WEEKS}, () => []);
-  const buckets   = new Array(WEEKS).fill(0);
+  // ── Day-level greedy packing ───────────────────────────────────────────
+  // dayBuckets[d] = total hours allocated on day d
+  // taskDayAlloc[taskId][d] = hours allocated for that task on day d
+  const dayBuckets   = new Float64Array(DAYS);
+  const taskDayAlloc = {}; // taskId -> Float64Array(DAYS)
 
   for (const t of allForPacking) {
     let rem = remainingHours(t);
     if (rem <= 0) continue;
-    const dueDays  = t.dueDate ? daysUntil(t.dueDate) : (WEEKS - 1) * 7;
-    const lastWeek = Math.min(Math.max(Math.floor(dueDays / 7), 0), WEEKS - 1);
-    const alloc = {};
-    // Fill from deadline backward — tasks naturally span multiple weeks
-    for (let w = lastWeek; w >= 0 && rem > 0; w--) {
-      const space = Math.max(weekAvail - buckets[w], 0);
+    const dueDays  = t.dueDate ? Math.max(daysUntil(t.dueDate), 0) : DAYS - 1;
+    const lastDay  = Math.min(dueDays, DAYS - 1);
+    taskDayAlloc[t.id] = new Float64Array(DAYS);
+
+    for (let d = lastDay; d >= 0 && rem > 0; d--) {
+      const space = Math.max(dayAvail - dayBuckets[d], 0);
       const take  = Math.min(rem, space);
-      if (take > 0) { buckets[w] += take; alloc[w] = (alloc[w]||0) + take; rem -= take; }
+      if (take > 0) {
+        dayBuckets[d]          += take;
+        taskDayAlloc[t.id][d]  += take;
+        rem -= take;
+      }
     }
-    if (rem > 0) { buckets[0] += rem; alloc[0] = (alloc[0]||0) + rem; }
-    for (const [w, hrs] of Object.entries(alloc)) {
-      taskWeeks[parseInt(w)].push({ task: t, hours: hrs });
+    // Any remaining overflow piles into day 0
+    if (rem > 0) {
+      dayBuckets[0]         += rem;
+      taskDayAlloc[t.id][0] += rem;
     }
   }
 
-  // ── Quick tasks: one entry per task, in its earliest scheduled week ────
+  // ── Quick tasks: one entry on day 0 only ──────────────────────────────
+  const quickAllocs = []; // [{task, hours}] for week 0
   for (const qt of (state.quickTasks || [])) {
     if (qt.done) continue;
     const weeklyH = (qt.timeframeMinutes || 15) / 60;
-    // Place in week 0 (current week) as a standing commitment
-    const w = 0;
-    taskWeeks[w].push({ task: { id: qt.id, name: qt.name, catColor: '#999', catName: 'Quick tasks', isQuick: true }, hours: weeklyH });
-    buckets[w] += weeklyH;
+    const dailyH  = weeklyH / 7;
+    for (let d = 0; d < 7; d++) {
+      dayBuckets[d] += dailyH;
+    }
+    quickAllocs.push({ task: { id: qt.id, name: qt.name, catColor: '#999', catName: 'Quick tasks', isQuick: true }, hours: weeklyH });
   }
 
-  // ── Find range to display ──────────────────────────────────────────────
+  // ── Aggregate days → weeks ─────────────────────────────────────────────
+  // weekLoad[w] = total hours in week w
+  // taskWeeks[w] = [{task, hours}] — merge per-task allocations by week
+  const weekLoad  = new Float64Array(WEEKS);
+  const taskWeeks = Array.from({length: WEEKS}, () => []);
+
+  for (let w = 0; w < WEEKS; w++) {
+    for (let d = w * 7; d < w * 7 + 7; d++) weekLoad[w] += dayBuckets[d];
+  }
+
+  for (const t of allForPacking) {
+    const alloc = taskDayAlloc[t.id];
+    if (!alloc) continue;
+    for (let w = 0; w < WEEKS; w++) {
+      let wHrs = 0;
+      for (let d = w * 7; d < w * 7 + 7; d++) wHrs += alloc[d];
+      if (wHrs > 0.001) taskWeeks[w].push({ task: t, hours: wHrs });
+    }
+  }
+
+  // Inject quick task aggregates into week 0
+  for (const qa of quickAllocs) taskWeeks[0].push(qa);
+
+  // ── Display range ──────────────────────────────────────────────────────
   let lastActiveWeek = 0;
-  for (let w = 0; w < WEEKS; w++) { if (taskWeeks[w].length > 0) lastActiveWeek = w; }
+  for (let w = 0; w < WEEKS; w++) { if (weekLoad[w] > 0.001) lastActiveWeek = w; }
   const showWeeks = Math.min(lastActiveWeek + 1, WEEKS);
 
   if (showWeeks === 0) {
@@ -1768,15 +1820,14 @@ function renderForecast() {
     return;
   }
 
-  // ── Scale: maxLoad sets full bar width. Bars can exceed capacity line. ─
-  const maxLoad = Math.max(...buckets.slice(0, showWeeks), weekAvail * 1.2, 1);
+  const maxLoad = Math.max(...Array.from({length: showWeeks}, (_,w) => weekLoad[w]), weekAvail * 1.2, 1);
 
   // ── Deadline list per week ─────────────────────────────────────────────
-  const deadlines = {}; // weekIdx -> [{task}]
+  const deadlines = {};
   for (const t of allForPacking) {
     if (!t.dueDate) continue;
     const days = daysUntil(t.dueDate);
-    if (days < 0 || days >= WEEKS * 7) continue;
+    if (days < 0 || days >= DAYS) continue;
     const w = Math.floor(days / 7);
     if (!deadlines[w]) deadlines[w] = [];
     deadlines[w].push(t);
@@ -1799,30 +1850,27 @@ function renderForecast() {
     if (!hasWork) continue;
     legendHtml += `<div class="forecast-legend-item"><div class="forecast-legend-dot" style="background:${cat.color}"></div>${cat.name}</div>`;
   }
-  if ((state.quickTasks||[]).some(qt => !qt.done)) {
+  if (quickAllocs.length > 0) {
     legendHtml += `<div class="forecast-legend-item"><div class="forecast-legend-dot" style="background:#999"></div>Quick tasks</div>`;
   }
   legendHtml += `<div class="forecast-legend-item"><div style="width:10px;height:10px;border-left:2px solid #333;opacity:0.3;flex-shrink:0"></div>${weekAvail}h limit</div>`;
   legendHtml += '</div>';
 
   const capNote = `<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:14px">
-    Each bar is color-coded by category. The thin vertical line marks your ${weekAvail}h/week limit.
-    Bars extending past it mean overcommitment. Deadlines listed to the right.
+    Scheduled at day-level granularity (${dayAvail.toFixed(1)}h/day), aggregated by week for display.
+    Thin vertical line = ${weekAvail}h/week limit. Deadlines listed to the right.
   </div>`;
 
   // ── Build rows ─────────────────────────────────────────────────────────
   let rowsHtml = '';
   for (let w = 0; w < showWeeks; w++) {
-    const wStart     = weekStartDate(w);
-    const label      = w === 0 ? 'This week' : w === 1 ? 'Next week' : shortDate(wStart);
-    const load       = buckets[w];
+    const load       = weekLoad[w];
     const overloaded = load > weekAvail + 0.05;
+    const label      = w === 0 ? 'This week' : w === 1 ? 'Next week' : shortDate(weekStartDate(w));
     const capLinePct = (weekAvail / maxLoad * 100).toFixed(1);
 
-    // Sort segments by category color for visual grouping
     const segs = [...taskWeeks[w]].sort((a,b) => (a.task.catColor||'').localeCompare(b.task.catColor||''));
 
-    // Build stacked bar segments (no overflow hatching — bar just runs long)
     let barHtml = '';
     for (const seg of segs) {
       const segPct  = (seg.hours / maxLoad * 100).toFixed(2);
@@ -1834,14 +1882,12 @@ function renderForecast() {
         onmouseenter="showForecastTip(event,'${safeName} — ${seg.hours.toFixed(1)}h · ${seg.task.catName}')"
         onmouseleave="hideForecastTip()">${lbl}</div>`;
     }
-    // Capacity line overlay
     barHtml += `<div class="forecast-cap-line" style="left:${capLinePct}%"></div>`;
 
-    // Deadline column: colored dot + name + date
     let deadlineCol = '';
     if (deadlines[w] && deadlines[w].length > 0) {
       deadlineCol = deadlines[w].map(dt => {
-        const days = daysUntil(dt.dueDate);
+        const days   = daysUntil(dt.dueDate);
         const dayStr = days === 0 ? 'today' : days === 1 ? 'tomorrow' : shortDate(new Date(dt.dueDate + 'T00:00:00'));
         return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
           <div style="width:7px;height:7px;border-radius:50%;background:${dt.catColor};flex-shrink:0"></div>
