@@ -238,6 +238,66 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
       padding: 5px 9px; border-radius: 5px; pointer-events: none; z-index: 200; white-space: nowrap;
       display: none; line-height: 1.5; }
 
+
+    .seg-move-btn { font-size:9px; padding:0 2px; opacity:0; transition:opacity 0.1s;
+      vertical-align:middle; cursor:pointer; }
+    .forecast-seg:hover .seg-move-btn { opacity:0.8; }
+    .forecast-seg:hover .seg-move-btn:hover { opacity:1; }
+
+    /* ── Week Planner ─────────────────────────────────────────────── */
+    .planner-grid { display:grid; grid-template-columns:160px repeat(7,1fr); gap:6px; margin-top:8px; }
+    .planner-day-header { text-align:center; font-size:11px; font-weight:600;
+      color:var(--color-text-secondary); padding:4px 0; border-bottom:1px solid var(--color-border); }
+    .planner-day-header.today { color:var(--color-text-info); border-bottom-color:var(--color-text-info); }
+    .planner-col { min-height:120px; border-radius:6px; padding:4px;
+      background:var(--color-background-secondary); border:1px solid var(--color-border);
+      transition:background 0.15s; }
+    .planner-col.drag-over { background:var(--color-background-info);
+      border-color:var(--color-border-info); }
+    .planner-sidebar { padding:4px; }
+    .planner-task-card { border-radius:5px; padding:5px 7px; margin-bottom:4px;
+      font-size:11px; color:#fff; cursor:grab; user-select:none;
+      display:flex; align-items:flex-start; justify-content:space-between; gap:4px;
+      box-shadow:0 1px 3px rgba(0,0,0,0.15); }
+    .planner-task-card:active { cursor:grabbing; opacity:0.7; }
+    .planner-task-card .card-clear { opacity:0.7; cursor:pointer; font-size:12px;
+      flex-shrink:0; line-height:1; }
+    .planner-task-card .card-clear:hover { opacity:1; }
+    .planner-task-card .card-info { flex:1; min-width:0; }
+    .planner-task-card .card-name { font-weight:500; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; }
+    .planner-task-card .card-meta { font-size:9px; opacity:0.85; margin-top:1px; }
+    .planner-sidebar-label { font-size:10px; font-weight:600; color:var(--color-text-secondary);
+      text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; }
+    .planner-nav { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+    .planner-week-title { font-size:13px; font-weight:600; flex:1; }
+    .planner-day-load { font-size:9px; text-align:center; color:var(--color-text-secondary);
+      margin-top:3px; }
+    .planner-day-load.over { color:var(--color-text-danger); font-weight:600; }
+    .planner-day-header.past { opacity:0.45; }
+    .planner-col.past { opacity:0.45; pointer-events:none; background:var(--color-background); }
+
+
+    .hrs-badge { font-size:10px; padding:1px 5px; border-radius:8px;
+      background:rgba(255,255,255,0.2); cursor:pointer; white-space:nowrap;
+      transition:background 0.15s; }
+    .hrs-badge:hover { background:rgba(255,255,255,0.35); }
+    .hrs-badge.hrs-custom { background:rgba(255,255,255,0.35);
+      font-weight:600; }
+    .hrs-popover { margin-top:6px; padding:8px; border-radius:6px;
+      background:rgba(0,0,0,0.25); backdrop-filter:blur(4px); }
+
+    /* Forecast drag-to-reschedule */
+    .forecast-seg.picked { outline: 2px solid #fff; box-shadow: 0 0 0 3px var(--color-text-primary); z-index: 2; }
+    .forecast-drop-row { cursor: pointer; border-radius: 4px; transition: background 0.15s; }
+    .forecast-drop-row:hover { background: var(--color-background-info); }
+    .forecast-drop-row.drop-active { background: var(--color-background-info); outline: 1.5px dashed var(--color-border-info); }
+    .forecast-pin-badge { font-size: 9px; padding: 1px 5px; border-radius: 8px;
+      background: var(--color-background-info); color: var(--color-text-info);
+      display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; cursor: default; }
+    .forecast-pin-clear { cursor: pointer; opacity: 0.6; font-size: 10px; }
+    .forecast-pin-clear:hover { opacity: 1; }
+
     /* Drag-to-reorder */
     .task-item.dragging { opacity: 0.4; }
     .task-item.drag-over { border-top: 2px solid var(--color-text-primary); }
@@ -260,8 +320,7 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
   <div class="tabs">
     <div class="tab active" onclick="switchTab('plan', this)">Overview &amp; Queue</div>
     <div class="tab" onclick="switchTab('categories', this)">Categories</div>
-    <div class="tab" onclick="switchTab('forecast', this)">Forecast</div>
-    <div class="tab" onclick="switchTab('calendar', this)">Calendar</div>
+    <div class="tab" onclick="switchTab('calendar', this)">Planner</div>
   </div>
   <div id="tab-plan"></div>
   <div id="tab-categories" style="display:none"></div>
@@ -407,29 +466,89 @@ function greedyPack(WEEKS) {
   for (const t of allForPacking) {
     let rem = remainingHours(t);
     if (rem <= 0) continue;
-    const dueDays = t.dueDate ? Math.max(daysUntil(t.dueDate), 0) : DAYS - 1;
-    const lastDay = Math.min(dueDays, DAYS - 1);
+    const dueDays  = t.dueDate ? Math.max(daysUntil(t.dueDate), 0) : DAYS - 1;
+    const lastDay  = Math.min(dueDays, DAYS - 1);
     taskDayAlloc[t.id] = new Float64Array(DAYS);
 
-    const dailyNeed = rem / Math.max(lastDay + 1, 1);
-    // Forward even-spread pass
-    for (let d = 0; d <= lastDay && rem > 0; d++) {
-      const space = Math.max(dayAvail - dayBuckets[d], 0);
-      const take  = Math.min(dailyNeed, rem, space);
-      if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
-    }
-    // Second pass: fill remaining capacity within window
-    if (rem > 0.001) {
-      for (let d = 0; d <= lastDay && rem > 0; d++) {
+    if (t.scheduledDays && t.scheduledDays.length > 0) {
+      const today0 = new Date(); today0.setHours(0,0,0,0);
+      function isoToDay(s) { return Math.round((new Date(s+'T00:00:00') - today0) / 86400000); }
+      const validISOs = t.scheduledDays.filter(ds => {
+        const d = isoToDay(ds); return d >= 0 && d < DAYS;
+      });
+      if (validISOs.length > 0) {
+        // Use explicit per-day hours if set, otherwise split evenly
+        const dayHours = t.scheduledDayHours || {};
+        const explicitTotal = validISOs.reduce((s, ds) => s + (dayHours[ds] || 0), 0);
+        const unweightedDays = validISOs.filter(ds => !dayHours[ds]);
+        const remainder = Math.max(rem - explicitTotal, 0);
+        const perUnweighted = unweightedDays.length > 0 ? remainder / unweightedDays.length : 0;
+        for (const ds of validISOs) {
+          const d    = isoToDay(ds);
+          const take = Math.min(dayHours[ds] || perUnweighted, rem);
+          if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+        }
+        if (rem > 0.001) { dayBuckets[lastDay] += rem; taskDayAlloc[t.id][lastDay] += rem; }
+      } else {
+        const dailyNeed = rem / Math.max(lastDay + 1, 1);
+        for (let d = 0; d <= lastDay && rem > 0; d++) {
+          const space = Math.max(dayAvail - dayBuckets[d], 0);
+          const take  = Math.min(dailyNeed, rem, space);
+          if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+        }
+        if (rem > 0.001) { dayBuckets[lastDay] += rem; taskDayAlloc[t.id][lastDay] += rem; }
+      }
+    } else if (t.scheduleWeekPin) {
+      // Pinned: fill target week first (handles both earlier AND later pins),
+      // then spread remaining hours across all available days up to deadline.
+      const pinStart = Math.max(daysUntil(t.scheduleWeekPin), 0);
+      const pinEnd   = Math.min(pinStart + 6, lastDay);
+
+      // Pass 1: fill pinned week evenly
+      const pinSpan   = Math.max(pinEnd - pinStart + 1, 1);
+      const pinNeed   = rem / pinSpan;
+      for (let d = pinStart; d <= pinEnd && rem > 0; d++) {
         const space = Math.max(dayAvail - dayBuckets[d], 0);
-        const take  = Math.min(rem, space);
+        const take  = Math.min(pinNeed, rem, space);
         if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
       }
-    }
-    // True overflow onto due day
-    if (rem > 0.001) {
-      dayBuckets[lastDay]         += rem;
-      taskDayAlloc[t.id][lastDay] += rem;
+      // Pass 2: spread remainder from day 0 to lastDay (skip pinned week — already filled)
+      if (rem > 0.001) {
+        const otherSpan = Math.max(lastDay + 1 - pinSpan, 1);
+        const otherNeed = rem / otherSpan;
+        for (let d = 0; d <= lastDay && rem > 0; d++) {
+          if (d >= pinStart && d <= pinEnd) continue; // already handled
+          const space = Math.max(dayAvail - dayBuckets[d], 0);
+          const take  = Math.min(otherNeed, rem, space);
+          if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+        }
+      }
+      // Final overflow pass (capacity exhausted everywhere)
+      if (rem > 0.001) {
+        for (let d = 0; d <= lastDay && rem > 0; d++) {
+          const space = Math.max(dayAvail - dayBuckets[d], 0);
+          const take  = Math.min(rem, space);
+          if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+        }
+      }
+      if (rem > 0.001) { dayBuckets[lastDay] += rem; taskDayAlloc[t.id][lastDay] += rem; }
+
+    } else {
+      // No pin: normal even-spread from day 0 to lastDay
+      const dailyNeed = rem / Math.max(lastDay + 1, 1);
+      for (let d = 0; d <= lastDay && rem > 0; d++) {
+        const space = Math.max(dayAvail - dayBuckets[d], 0);
+        const take  = Math.min(dailyNeed, rem, space);
+        if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+      }
+      if (rem > 0.001) {
+        for (let d = 0; d <= lastDay && rem > 0; d++) {
+          const space = Math.max(dayAvail - dayBuckets[d], 0);
+          const take  = Math.min(rem, space);
+          if (take > 0) { dayBuckets[d] += take; taskDayAlloc[t.id][d] += take; rem -= take; }
+        }
+      }
+      if (rem > 0.001) { dayBuckets[lastDay] += rem; taskDayAlloc[t.id][lastDay] += rem; }
     }
   }
 
@@ -552,8 +671,7 @@ function render() {
   save();
   renderPlan();
   renderCategories();
-  if (_activeTab === 'calendar') renderCalendar();
-  if (_activeTab === 'forecast') renderForecast();
+  if (_activeTab === 'calendar') renderPlanner();
   updateUndoBtn();
 }
 
@@ -564,8 +682,7 @@ function switchTab(tab, el) {
   ['plan','categories','forecast','calendar'].forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
   });
-  if (tab === 'calendar') renderCalendar();
-  if (tab === 'forecast') renderForecast();
+  if (tab === 'calendar') renderPlanner();
 }
 
 // ── getAllIncompleteTasks — excludes done, overdue-hidden, and templates ─
@@ -596,7 +713,9 @@ function renderOverview() {
   const capFill      = capPct >= 100 ? 'var(--color-text-danger)' : capPct >= 75 ? '#BA7517' : 'var(--color-text-success)';
   const capLabel     = capPct >= 100 ? 'var(--color-text-danger)' : capPct >= 75 ? '#854F0B' : 'var(--color-text-success)';
 
-  let html = `<div class="overview-grid">
+  const todayStr = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  let html = `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px;">📅 ${todayStr}</div>
+  <div class="overview-grid">
     <div class="metric"><div class="metric-label">Total tasks</div><div class="metric-val">${total}</div></div>
     <div class="metric"><div class="metric-label">Completed</div><div class="metric-val">${done}</div></div>
     <div class="metric"><div class="metric-label">Due this week</div><div class="metric-val">${dueWeek}</div></div>
@@ -1431,7 +1550,9 @@ function renderPlan() {
   const overdueCount = allTasks.filter(t => t.status !== 'done' && t.dueDate && daysUntil(t.dueDate) < 0).length;
   const dueWeek   = allTasks.filter(t => t.status !== 'done' && t.dueDate && daysUntil(t.dueDate) >= 0 && daysUntil(t.dueDate) <= 7).length;
 
-  let html = `<div class="overview-grid">
+  const todayDateStr = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  let html = `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px;">${todayDateStr}</div>
+  <div class="overview-grid">
     <div class="metric"><div class="metric-label">Total tasks</div><div class="metric-val">${total}</div></div>
     <div class="metric"><div class="metric-label">Completed</div><div class="metric-val">${doneCount}</div></div>
     <div class="metric"><div class="metric-label">Due this week</div><div class="metric-val">${dueWeek}</div></div>
@@ -1635,7 +1756,7 @@ function renderPlan() {
 
   if (!state.quickTasks) state.quickTasks = [];
   document.getElementById('tab-plan').innerHTML =
-    `<div class="plan-layout"><div>${html}</div>${renderQuickPanel()}</div>`;
+    `<div class="plan-layout"><div>${html}</div><div style="display:flex;flex-direction:column;gap:12px;">${renderQuickPanel()}${renderTodayPanel()}</div></div>`;
 }
 
 // ── DRAG TO REORDER ────────────────────────────────────────────────────
@@ -1726,6 +1847,60 @@ function saveTaskGlobal() {
 }
 
 // ── QUICK TASKS (Change 2) ────────────────────────────────────────────────
+function renderTodayPanel() {
+  const todayISO = new Date().toISOString().slice(0,10);
+  const todayTasks = [];
+  for (const cat of state.categories) {
+    for (const t of (cat.tasks||[])) {
+      if (t.status === 'done') continue;
+      if (t.scheduledDays && t.scheduledDays.includes(todayISO)) {
+        todayTasks.push({...t, catColor: cat.color, catId: cat.id});
+      }
+    }
+  }
+
+  if (todayTasks.length === 0) return `<div class="quick-panel">
+    <div class="quick-panel-title">📅 Today's plan</div>
+    <div style="font-size:12px;color:var(--color-text-secondary);padding:8px 0">
+      Nothing scheduled for today.<br>
+      <span style="cursor:pointer;color:var(--color-text-info);"
+        onclick="switchTab('calendar', document.querySelector('.tab:last-child'))">Open Planner →</span>
+    </div>
+  </div>`;
+
+  const totalHrs = todayTasks.reduce((s, t) => {
+    const rem = remainingHours(t);
+    const fut = (t.scheduledDays||[]).filter(d => d >= todayISO);
+    return s + (fut.length > 0 ? rem / fut.length : 0);
+  }, 0);
+
+  const items = todayTasks.map(t => {
+    const rem  = remainingHours(t);
+    const fut  = (t.scheduledDays||[]).filter(d => d >= todayISO);
+    const hrs  = fut.length > 0 ? (rem / fut.length).toFixed(1) : '?';
+    const ck   = t.status === 'done' ? 'done' : t.status === 'in progress' ? 'in-progress' : '';
+    const cm   = t.status === 'done' ? '✓' : t.status === 'in progress' ? '●' : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;
+        border-bottom:1px solid var(--color-border);cursor:pointer;"
+        onclick="openTaskPanel('${t.catId}','${t.id}')">
+      <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.name}</div>
+        <div style="font-size:10px;color:var(--color-text-secondary);">${hrs}h planned today</div>
+      </div>
+      <div class="task-check ${ck}" style="cursor:pointer;flex-shrink:0"
+        onclick="event.stopPropagation();cycleStatusById('${t.catId}','${t.id}')">${cm}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="quick-panel">
+    <div class="quick-panel-title">📅 Today's plan
+      <span style="font-size:11px;font-weight:400;color:var(--color-text-secondary);margin-left:6px">${totalHrs.toFixed(1)}h</span>
+    </div>
+    ${items}
+  </div>`;
+}
+
 function renderQuickPanel() {
   const qts = state.quickTasks || [];
   const active = qts.filter(t => !t.done);
@@ -1817,7 +1992,6 @@ function renderForecast() {
   const WEEKS     = 16;
   const { weekLoads, taskWeeks, deadlines } = greedyPack(WEEKS);
 
-  // Find display range
   let lastActiveWeek = 0;
   for (let w = 0; w < WEEKS; w++) { if (weekLoads[w] > 0.001) lastActiveWeek = w; }
   const showWeeks = Math.min(lastActiveWeek + 1, WEEKS);
@@ -1830,13 +2004,13 @@ function renderForecast() {
 
   const maxLoad = Math.max(...Array.from({length: showWeeks}, (_,w) => weekLoads[w]), weekAvail * 1.2, 1);
 
-  // Week label: rolling from today
   function weekLabel(w) {
     const start = new Date(); start.setHours(0,0,0,0); start.setDate(start.getDate() + w * 7);
     const end   = new Date(start); end.setDate(end.getDate() + 6);
     const fmt   = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    if (w === 0) return `This week (${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')})`;
-    return `${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')}`;
+    return w === 0
+      ? `This week (${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')})`
+      : `${fmt(start)}–${fmt(end).replace(/[A-Za-z]+ /,'')}`;
   }
 
   // Legend
@@ -1852,11 +2026,18 @@ function renderForecast() {
   legendHtml += `<div class="forecast-legend-item"><div style="width:10px;height:10px;border-left:2px solid #333;opacity:0.3;flex-shrink:0"></div>${weekAvail}h limit</div>`;
   legendHtml += '</div>';
 
-  const capNote = `<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:14px">
-    Rolling weeks from today. Each bar is color-coded by category. Thin vertical line = ${weekAvail}h/week limit. Bars past the line = overcommitted.
-  </div>`;
+  // Pick-mode banner
+  const pickBanner = _pickedTask
+    ? `<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;
+         background:var(--color-background-info);color:var(--color-text-info);
+         border:1px solid var(--color-border-info);border-radius:6px;padding:7px 12px;margin-bottom:10px">
+        <span>📌 Moving <strong>${_pickedTask.name}</strong> — click <strong>Place here</strong> on the target week</span>
+        <button class="btn btn-sm" onclick="cancelForecastPick()" style="margin-left:16px">✕ Cancel</button>
+       </div>`
+    : `<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px">
+        Hover a segment and click <strong>↕</strong> to reschedule it to a different week.
+       </div>`;
 
-  // Rows
   let rowsHtml = '';
   for (let w = 0; w < showWeeks; w++) {
     const load       = weekLoads[w];
@@ -1864,43 +2045,84 @@ function renderForecast() {
     const capLinePct = (weekAvail / maxLoad * 100).toFixed(1);
     const segs       = [...taskWeeks[w]].sort((a,b) => (a.task.catColor||'').localeCompare(b.task.catColor||''));
 
+    // Build bar segments
     let barHtml = '';
     for (const seg of segs) {
-      const segPct   = (seg.hours / maxLoad * 100).toFixed(2);
-      const showLbl  = (seg.hours / maxLoad) > 0.07;
-      const lbl      = showLbl ? (seg.task.isQuick ? '⚡' : seg.task.name.slice(0,14) + (seg.task.name.length > 14 ? '…' : '')) : '';
-      const safeName = seg.task.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      const clickHandler = seg.task.isQuick
-        ? `editQuickTask('${seg.task.id}')`
-        : `openTaskPanel('${seg.task.catId}','${seg.task.id}')`;
-      barHtml += `<div class="forecast-seg"
-        style="width:${segPct}%;background:${seg.task.catColor};cursor:pointer;"
-        onmouseenter="showForecastTip(event,'${safeName} — ${seg.hours.toFixed(1)}h · ${seg.task.catName} (click to open)')"
-        onmouseleave="hideForecastTip()"
-        onclick="${clickHandler}">${lbl}</div>`;
+      const segPct  = (seg.hours / maxLoad * 100).toFixed(2);
+      const showLbl = (seg.hours / maxLoad) > 0.07;
+      const lbl     = showLbl ? (seg.task.isQuick ? '⚡' : seg.task.name.slice(0,14) + (seg.task.name.length > 14 ? '…' : '')) : '';
+      const sn      = seg.task.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const isPicked = _pickedTask && _pickedTask.taskId === seg.task.id;
+
+      if (seg.task.isQuick) {
+        barHtml += `<div class="forecast-seg"
+          style="width:${segPct}%;background:${seg.task.catColor};cursor:pointer;"
+          onmouseenter="showForecastTip(event,'${sn} — ${seg.hours.toFixed(1)}h')"
+          onmouseleave="hideForecastTip()"
+          onclick="editQuickTask('${seg.task.id}')">${lbl}</div>`;
+      } else if (_pickedTask) {
+        // Pick mode: segments are inert, just visual
+        barHtml += `<div class="forecast-seg${isPicked ? ' picked' : ''}"
+          style="width:${segPct}%;background:${seg.task.catColor};cursor:default;opacity:${isPicked?'1':'0.5'};"
+          onmouseenter="showForecastTip(event,'${sn} — ${seg.hours.toFixed(1)}h')"
+          onmouseleave="hideForecastTip()">${lbl}</div>`;
+      } else {
+        // Normal mode: click=open, ↕ button=pick
+        barHtml += `<div class="forecast-seg"
+          style="width:${segPct}%;background:${seg.task.catColor};cursor:pointer;position:relative;"
+          onmouseenter="showForecastTip(event,'${sn} — ${seg.hours.toFixed(1)}h · click to open, ↕ to move')"
+          onmouseleave="hideForecastTip()"
+          onclick="openTaskPanel('${seg.task.catId}','${seg.task.id}')">
+          ${lbl}<span class="seg-move-btn"
+            onclick="event.stopPropagation();pickForecastTask('${seg.task.catId}','${seg.task.id}','${sn}','${seg.task.catColor}')"
+            title="Move to a different week">↕</span></div>`;
+      }
     }
     barHtml += `<div class="forecast-cap-line" style="left:${capLinePct}%"></div>`;
 
+    // Pin badges
+    let pinBadges = '';
+    for (const seg of taskWeeks[w]) {
+      if (seg.task.scheduleWeekPin) {
+        const pd = new Date(seg.task.scheduleWeekPin + 'T00:00:00')
+          .toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        const sn2 = seg.task.name.replace(/'/g,"\\'");
+        pinBadges += `<span class="forecast-pin-badge">📌 ${seg.task.name.slice(0,12)}${seg.task.name.length>12?'…':''}
+          <span class="forecast-pin-clear" onclick="clearSchedulePin('${seg.task.catId}','${seg.task.id}')">×</span></span> `;
+      }
+    }
+
+    // "Place here" button shown only in pick mode
+    const placeBtn = _pickedTask
+      ? `<button class="btn btn-sm" style="font-size:10px;padding:2px 8px;margin-top:4px;display:block;"
+           onclick="dropForecastTask(${w})">Place here</button>`
+      : '';
+
+    // Deadline column
     let deadlineCol = '';
     if (deadlines[w] && deadlines[w].length > 0) {
       deadlineCol = deadlines[w].map(dt => {
-        const days   = daysUntil(dt.dueDate);
-        const dayStr = days === 0 ? 'today' : days === 1 ? 'tomorrow' : new Date(dt.dueDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        const days = daysUntil(dt.dueDate);
+        const ds   = days === 0 ? 'today' : days === 1 ? 'tomorrow'
+          : new Date(dt.dueDate+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
         return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
           <div style="width:7px;height:7px;border-radius:50%;background:${dt.catColor};flex-shrink:0"></div>
           <span style="font-size:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="${dt.name}">${dt.name}</span>
-          <span style="font-size:10px;color:var(--color-text-secondary);white-space:nowrap">${dayStr}</span>
+          <span style="font-size:10px;color:var(--color-text-secondary);white-space:nowrap">${ds}</span>
         </div>`;
       }).join('');
     }
 
-    rowsHtml += `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+    rowsHtml += `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;
+        padding:3px 4px;border-radius:6px;${_pickedTask?'outline:1px dashed var(--color-border-info);':''}">
       <div class="forecast-week-label ${overloaded?'overloaded':''}">
         <span>${weekLabel(w)}</span>
         <span style="font-size:10px;${overloaded?'color:var(--color-text-danger)':''}">${load.toFixed(1)}h${overloaded?' ⚠':''}</span>
+        ${placeBtn}
       </div>
       <div style="flex:1;min-width:0">
         <div class="forecast-bar-wrap"><div class="forecast-bar">${barHtml}</div></div>
+        ${pinBadges ? `<div style="margin-top:3px">${pinBadges}</div>` : ''}
       </div>
       <div style="width:200px;flex-shrink:0;padding-top:4px">${deadlineCol}</div>
     </div>`;
@@ -1909,7 +2131,7 @@ function renderForecast() {
   document.getElementById('tab-forecast').innerHTML =
     `<div id="forecast-tooltip" class="forecast-tooltip"></div>
      <div style="font-size:15px;font-weight:500;margin-bottom:8px">Greedy forecast</div>
-     ${capNote}${legendHtml}
+     ${pickBanner}${legendHtml}
      <div style="display:flex;gap:10px;margin-bottom:4px">
        <div style="width:90px;flex-shrink:0"></div>
        <div style="flex:1;font-size:10px;color:var(--color-text-tertiary)">hours →</div>
@@ -1943,6 +2165,465 @@ function renderNotes(text) {
     '<a href="$1" target="_blank" rel="noopener" style="color:var(--color-text-info);word-break:break-all;">$1</a>'
   );
 }
+
+
+// ── FORECAST SCHEDULE PINNING ──────────────────────────────────────────────
+let _plannerWeekOffset = 0;
+let _plannerForecastOpen = true; // weeks from today
+let _pickedTask = null; // { catId, taskId, name, color } or null
+
+function pickForecastTask(catId, taskId, name, color, segEl) {
+  if (_pickedTask && _pickedTask.taskId === taskId) {
+    _pickedTask = null;
+  } else {
+    _pickedTask = { catId, taskId, name, color };
+  }
+  renderForecast(); // re-render so banner, highlights, and drop targets all update
+}
+
+function forecastRowClick(weekIndex) {
+  if (!_pickedTask) return; // nothing picked, ignore
+  dropForecastTask(weekIndex);
+}
+
+function dropForecastTask(weekIndex) {
+  if (!_pickedTask) return;
+  const { catId, taskId } = _pickedTask;
+  // Monday of the target week
+  const d = new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + weekIndex * 7);
+  const newPin = d.toISOString().slice(0, 10);
+
+  // Warn if pin week starts after deadline
+  let dueDate = null;
+  for (const cat of state.categories) {
+    const t = cat.tasks.find(t => t.id === taskId);
+    if (t) { dueDate = t.dueDate; break; }
+  }
+  if (dueDate && newPin > dueDate) {
+    if (!confirm(`"${_pickedTask.name}" is due ${dueDate}. That week starts after the deadline — the task will overflow. Continue?`)) {
+      _pickedTask = null; renderForecast(); return;
+    }
+  }
+
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (task) {
+    task.scheduleWeekPin = newPin;
+    delete task.scheduleNotBefore;
+  }
+  _pickedTask = null;
+  render();
+}
+
+function clearSchedulePin(catId, taskId) {
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  delete task.scheduleWeekPin;
+  delete task.scheduleNotBefore;
+  render();
+}
+
+function cancelForecastPick() {
+  _pickedTask = null;
+  renderForecast();
+}
+
+
+// ── WEEK PLANNER ───────────────────────────────────────────────────────────
+function renderPlanner() {
+  const weekAvail  = state.weeklyHours;
+  const dayAvail   = weekAvail / 7;
+  const SHOW_WEEKS = 4;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  function toISO(d) { return d.toISOString().slice(0,10); }
+  const todayISO = toISO(today);
+
+  const anchor = new Date(today);
+  const dow = anchor.getDay();
+  anchor.setDate(anchor.getDate() + (dow === 0 ? -6 : 1 - dow) + _plannerWeekOffset * 7);
+
+  const allDays = Array.from({length: SHOW_WEEKS * 7}, (_, i) => {
+    const d = new Date(anchor); d.setDate(d.getDate() + i); return d;
+  });
+  const allISOs  = allDays.map(toISO);
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  // Only non-done tasks
+  const allTasks = [];
+  for (const cat of state.categories) {
+    for (const t of (cat.tasks||[])) {
+      if (t.status === 'done') continue;
+      allTasks.push({...t, catName: cat.name, catColor: cat.color, catId: cat.id});
+    }
+  }
+
+  const dayLoad        = {};
+  const scheduledOnDay = {};
+  const dueOnDay       = {};
+  allISOs.forEach(iso => { dayLoad[iso] = 0; scheduledOnDay[iso] = []; dueOnDay[iso] = []; });
+
+  for (const t of allTasks) {
+    if (t.dueDate && dueOnDay[t.dueDate] !== undefined) dueOnDay[t.dueDate].push(t);
+    if (!t.scheduledDays || t.scheduledDays.length === 0) continue;
+    const rem        = remainingHours(t);
+    if (rem <= 0) continue;
+    const futureDays = t.scheduledDays.filter(d => d >= todayISO);
+    if (!futureDays.length) continue;
+    const dayHours   = t.scheduledDayHours || {};
+    const explicitTotal = futureDays.reduce((s, d) => s + (dayHours[d] || 0), 0);
+    const unweighted    = futureDays.filter(d => !dayHours[d]);
+    const perUnweighted = unweighted.length > 0 ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
+    for (const d of futureDays) {
+      const hrs = dayHours[d] || perUnweighted;
+      if (dayLoad[d]        !== undefined) dayLoad[d]        += hrs;
+      if (scheduledOnDay[d] !== undefined) scheduledOnDay[d].push(t);
+    }
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  }
+
+  function dayCard(t, iso) {
+    const rem        = remainingHours(t);
+    const futureDays = (t.scheduledDays||[]).filter(d => d >= todayISO);
+    const dayHours   = t.scheduledDayHours || {};
+    const explicitTotal = futureDays.reduce((s, d) => s + (dayHours[d] || 0), 0);
+    const unweighted    = futureDays.filter(d => !dayHours[d]);
+    const perUnweighted = unweighted.length > 0 ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
+    const hrsDay        = dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
+    const isCustom      = dayHours[iso] !== undefined;
+    const due           = t.dueDate ? ` · due ${fmtDate(t.dueDate)}` : '';
+    const popoverId     = `hp-${t.id}-${iso}`;
+    return `<div class="planner-task-card" style="background:${t.catColor};"
+        draggable="true"
+        ondragstart="plannerDragStart(event,'${t.catId}','${t.id}')"
+        ondragend="plannerDragEnd(event)"
+        onclick="openTaskPanel('${t.catId}','${t.id}')"
+        title="Click to open · drag to move">
+      <div class="card-info">
+        <div class="card-name">${t.name.slice(0,20)}${t.name.length>20?'…':''}</div>
+        <div class="card-meta" style="display:flex;align-items:center;gap:4px;">
+          <span class="hrs-badge${isCustom?' hrs-custom':''}"
+            onclick="event.stopPropagation();toggleHrsPopover('${popoverId}','${t.catId}','${t.id}','${iso}',${hrsDay.toFixed(1)})"
+            title="Click to adjust hours">${hrsDay.toFixed(1)}h</span>
+          ${due ? `<span style="opacity:0.85">${due}</span>` : ''}
+        </div>
+        <div id="${popoverId}" class="hrs-popover" style="display:none" onclick="event.stopPropagation()">
+          <div style="font-size:10px;margin-bottom:4px;opacity:0.85">Hours on this day</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input id="${popoverId}-inp" type="number" min="0" step="0.5" value="${hrsDay.toFixed(1)}"
+              style="width:54px;font-size:13px;padding:3px 6px;border-radius:4px;
+                border:1px solid rgba(255,255,255,0.5);background:rgba(255,255,255,0.15);
+                color:inherit;text-align:center;"
+              onkeydown="if(event.key==='Enter'){plannerSetDayHours('${t.catId}','${t.id}','${iso}',+this.value);}"
+            />
+            <button style="font-size:11px;padding:3px 8px;border-radius:4px;border:none;
+              background:rgba(255,255,255,0.25);color:inherit;cursor:pointer;"
+              onclick="plannerSetDayHours('${t.catId}','${t.id}','${iso}',+document.getElementById('${popoverId}-inp').value)">Set</button>
+            ${isCustom ? `<button style="font-size:11px;padding:3px 6px;border-radius:4px;border:none;
+              background:rgba(255,255,255,0.15);color:inherit;cursor:pointer;opacity:0.8;"
+              onclick="plannerClearDayHours('${t.catId}','${t.id}','${iso}')" title="Reset to auto">↺</button>` : ''}
+          </div>
+        </div>
+      </div>
+      <span class="card-clear" onclick="event.stopPropagation();plannerRemoveDay('${t.catId}','${t.id}','${iso}')">×</span>
+    </div>`;
+  }
+  function sidebarCard(t) {
+    const rem       = remainingHours(t);
+    const due       = t.dueDate ? `due ${fmtDate(t.dueDate)}` : 'no deadline';
+    const scheduled = (t.scheduledDays||[]).filter(d => allISOs.includes(d));
+    const badges    = scheduled.map(d =>
+      `<span style="font-size:9px;padding:1px 4px;border-radius:3px;
+         background:rgba(255,255,255,0.3);margin:1px;cursor:pointer;"
+         onclick="event.stopPropagation();plannerRemoveDay('${t.catId}','${t.id}','${d}')">${fmtDate(d)} ×</span>`
+    ).join('');
+    return `<div class="planner-task-card" style="background:${t.catColor};"
+        draggable="true"
+        ondragstart="plannerDragStart(event,'${t.catId}','${t.id}')"
+        ondragend="plannerDragEnd(event)"
+        onclick="openTaskPanel('${t.catId}','${t.id}')"
+        title="Click to open · drag to schedule">
+      <div class="card-info">
+        <div class="card-name">${t.name.slice(0,20)}${t.name.length>20?'…':''}</div>
+        <div class="card-meta">${rem.toFixed(1)}h · ${due}</div>
+        ${badges ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:1px">${badges}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // ── Forecast bar section (collapsible) ──────────────────────────────────
+  const FORECAST_WEEKS = SHOW_WEEKS + _plannerWeekOffset;
+  const { weekLoads }  = greedyPack(Math.max(FORECAST_WEEKS + 1, SHOW_WEEKS + 1));
+  const visLoads       = Array.from({length: SHOW_WEEKS}, (_, w) => weekLoads[w + _plannerWeekOffset] || 0);
+  const maxLoad        = Math.max(...visLoads, weekAvail * 1.2, 1);
+  let forecastBarsHtml = '';
+  for (let w = 0; w < SHOW_WEEKS; w++) {
+    const load    = visLoads[w];
+    const over    = load > weekAvail + 0.05;
+    const capPct  = (weekAvail / maxLoad * 100).toFixed(1);
+    const barPct  = Math.min(load / maxLoad * 100, 130).toFixed(1);
+    const ws      = allDays[w * 7].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    forecastBarsHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+      <div style="width:72px;font-size:10px;color:var(--color-text-secondary);flex-shrink:0">${ws}</div>
+      <div style="flex:1;height:12px;background:var(--color-background-secondary);border-radius:3px;position:relative;">
+        <div style="height:100%;width:${barPct}%;background:${over?'var(--color-text-danger)':'var(--color-text-info)'};border-radius:3px;opacity:0.7;"></div>
+        <div style="position:absolute;top:0;bottom:0;left:${capPct}%;width:1.5px;background:rgba(0,0,0,0.25);"></div>
+      </div>
+      <div style="width:36px;font-size:10px;text-align:right;flex-shrink:0;${over?'color:var(--color-text-danger);font-weight:600':'color:var(--color-text-secondary)'}">
+        ${load.toFixed(1)}h${over?' ⚠':''}
+      </div>
+    </div>`;
+  }
+  const forecastSection = `<div style="margin-bottom:12px;border:1px solid var(--color-border);border-radius:6px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;
+        background:var(--color-background-secondary);cursor:pointer;"
+        onclick="_plannerForecastOpen=!_plannerForecastOpen;renderPlanner()">
+      <span style="font-size:12px;font-weight:600">📊 Workload forecast</span>
+      <span style="font-size:11px;color:var(--color-text-secondary)">${_plannerForecastOpen?'▲ hide':'▼ show'}</span>
+    </div>
+    ${_plannerForecastOpen ? `<div style="padding:8px 10px">${forecastBarsHtml}</div>` : ''}
+  </div>`;
+
+  // ── Sidebar ──────────────────────────────────────────────────────────────
+  const allSorted = [...allTasks].sort((a,b) => (a.dueDate||'9999') < (b.dueDate||'9999') ? -1 : 1);
+  const sidebarHtml = `
+    <div class="planner-sidebar-label">All tasks (${allTasks.length})</div>
+    <button class="btn btn-sm" style="width:100%;margin-bottom:6px;" onclick="plannerAutoFill()">⚡ Auto-fill</button>
+    <div id="planner-sidebar" style="max-height:70vh;overflow-y:auto;"
+      ondragover="event.preventDefault()" ondrop="plannerDropSidebar(event)">
+      ${allSorted.length === 0
+        ? `<div style="font-size:11px;color:var(--color-text-secondary);padding:8px 0">No tasks</div>`
+        : allSorted.map(t => sidebarCard(t)).join('')}
+    </div>`;
+
+  // ── Week rows ─────────────────────────────────────────────────────────────
+  let weeksHtml = '';
+  for (let w = 0; w < SHOW_WEEKS; w++) {
+    let dayColsHtml = '';
+    for (let i = 0; i < 7; i++) {
+      const iso     = allISOs[w * 7 + i];
+      const load    = dayLoad[iso] || 0;
+      const over    = load > dayAvail + 0.05;
+      const isToday = iso === todayISO;
+      const isPast  = iso < todayISO;
+      const tasksHtml = scheduledOnDay[iso].map(t => dayCard(t, iso)).join('');
+      const dueBadges = dueOnDay[iso].map(t =>
+        `<div style="font-size:9px;padding:2px 5px;border-radius:8px;margin-top:2px;
+           background:${t.catColor};color:#fff;cursor:pointer;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+           onclick="openTaskPanel('${t.catId}','${t.id}')"
+           title="Due: ${t.name}">📅 ${t.name.slice(0,12)}${t.name.length>12?'…':''}</div>`
+      ).join('');
+      dayColsHtml += `<div>
+        <div class="planner-day-header${isToday?' today':''}${isPast?' past':''}">
+          ${dayNames[i]}<br>
+          <span style="font-weight:400">${fmtDate(iso)}</span>
+        </div>
+        <div class="planner-col${isPast?' past':''}" id="planner-col-${iso}"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="plannerDrop(event,'${iso}')">
+          ${tasksHtml}
+          ${dueBadges}
+        </div>
+        <div class="planner-day-load${over?' over':''}">
+          ${load > 0.05 ? load.toFixed(1)+'h' : ''}${over?' ⚠':''}
+        </div>
+      </div>`;
+    }
+    const ws = allDays[w*7].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const we = allDays[w*7+6].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    weeksHtml += `<div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:4px;">${ws} – ${we}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;">${dayColsHtml}</div>
+    </div>`;
+  }
+
+  const wTitle = `${allDays[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${allDays[allDays.length-1].toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+  const navHtml = `<div class="planner-nav">
+    <button class="btn btn-sm" onclick="plannerNav(-1)">← Earlier</button>
+    <span class="planner-week-title">${wTitle}</span>
+    <button class="btn btn-sm" onclick="plannerNav(1)">Later →</button>
+    ${_plannerWeekOffset !== 0 ? `<button class="btn btn-sm" onclick="plannerNav(0,true)">Today</button>` : ''}
+  </div>`;
+
+  document.getElementById('tab-calendar').innerHTML = `
+    ${navHtml}
+    ${forecastSection}
+    <div style="display:grid;grid-template-columns:170px 1fr;gap:12px;align-items:start;">
+      <div class="planner-sidebar">${sidebarHtml}</div>
+      <div>${weeksHtml}</div>
+    </div>`;
+}
+
+function plannerNav(dir, reset) {
+  _plannerWeekOffset = reset ? 0 : _plannerWeekOffset + dir;
+  renderPlanner();
+}
+
+// Drag state
+let _dragging = null;
+
+function plannerDragStart(e, catId, taskId) {
+  _dragging = {catId, taskId};
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', taskId);
+}
+function plannerDragEnd(e) {
+  document.querySelectorAll('.planner-col').forEach(el => el.classList.remove('drag-over'));
+}
+
+function plannerDrop(e, iso) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!_dragging) return;
+  plannerAddDay(_dragging.catId, _dragging.taskId, iso);
+  _dragging = null;
+}
+
+function plannerDropSidebar(e) {
+  e.preventDefault();
+  if (!_dragging) return;
+  const {catId, taskId} = _dragging;
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (task) task.scheduledDays = [];
+  _dragging = null;
+  render();
+}
+
+function plannerAddDay(catId, taskId, iso) {
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!task.scheduledDays) task.scheduledDays = [];
+  if (!task.scheduledDays.includes(iso)) task.scheduledDays.push(iso);
+  render();
+}
+
+function plannerRemoveDay(catId, taskId, iso) {
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task || !task.scheduledDays) return;
+  task.scheduledDays = task.scheduledDays.filter(d => d !== iso);
+  if (task.scheduledDayHours) delete task.scheduledDayHours[iso];
+  render();
+}
+
+function plannerSetDayHours(catId, taskId, iso, hrs) {
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!task.scheduledDayHours) task.scheduledDayHours = {};
+  if (isNaN(hrs) || hrs < 0) hrs = 0;
+  task.scheduledDayHours[iso] = hrs;
+  render();
+}
+
+function plannerClearDayHours(catId, taskId, iso) {
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task || !task.scheduledDayHours) return;
+  delete task.scheduledDayHours[iso];
+  render();
+}
+
+let _openHrsPopover = null;
+function toggleHrsPopover(popoverId, catId, taskId, iso, currentHrs) {
+  // Close any open popover first
+  if (_openHrsPopover && _openHrsPopover !== popoverId) {
+    const old = document.getElementById(_openHrsPopover);
+    if (old) old.style.display = 'none';
+  }
+  const el = document.getElementById(popoverId);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  _openHrsPopover = isOpen ? null : popoverId;
+  if (!isOpen) {
+    // Focus the input
+    setTimeout(() => {
+      const inp = document.getElementById(popoverId + '-inp');
+      if (inp) { inp.focus(); inp.select(); }
+    }, 50);
+  }
+}
+
+// Auto-fill: for each unscheduled task, spread across available workdays up to deadline
+function plannerAutoFill() {
+  pushUndo();
+  const today = new Date(); today.setHours(0,0,0,0);
+  function toISO(d) { return d.toISOString().slice(0,10); }
+  const todayISO = toISO(today);
+
+  // Build day load from already-scheduled tasks
+  const dayLoad = {};
+  const allTasks = [];
+  for (const cat of state.categories) {
+    for (const t of (cat.tasks||[])) {
+      if (t.status === 'done') continue;
+      allTasks.push({...t, catId: cat.id});
+    }
+  }
+  for (const t of allTasks) {
+    if (!t.scheduledDays) continue;
+    const rem = remainingHours(t);
+    const futureDays = t.scheduledDays.filter(d => d >= todayISO);
+    if (!futureDays.length) continue;
+    const perDay = rem / futureDays.length;
+    for (const d of futureDays) dayLoad[d] = (dayLoad[d]||0) + perDay;
+  }
+
+  const dayAvail = state.weeklyHours / 7;
+  const DAYS     = 16 * 7;
+
+  // Unscheduled tasks sorted by due date
+  const unscheduled = allTasks
+    .filter(t => !t.scheduledDays || t.scheduledDays.every(d => d < todayISO))
+    .sort((a,b) => (a.dueDate||'9999') < (b.dueDate||'9999') ? -1 : 1);
+
+  for (const t of unscheduled) {
+    const cat  = state.categories.find(c => c.id === t.catId);
+    const task = cat && cat.tasks.find(tk => tk.id === t.id);
+    if (!task) continue;
+    let rem = remainingHours(task);
+    if (rem <= 0) continue;
+
+    const lastISO = task.dueDate || (() => {
+      const d = new Date(today); d.setDate(d.getDate() + DAYS); return toISO(d);
+    })();
+
+    // Collect available days from today to deadline
+    const assignedDays = [];
+    const cur = new Date(today);
+    while (toISO(cur) <= lastISO && rem > 0.05) {
+      const iso   = toISO(cur);
+      const space = Math.max(dayAvail - (dayLoad[iso]||0), 0);
+      if (space > 0.05) {
+        assignedDays.push(iso);
+        dayLoad[iso] = (dayLoad[iso]||0) + Math.min(rem / Math.max(1, assignedDays.length), space);
+        rem -= Math.min(rem / Math.max(1, assignedDays.length), space);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (assignedDays.length > 0) task.scheduledDays = assignedDays;
+  }
+
+  render();
+}
+
 
 // ── Boot ───────────────────────────────────────────────────────────────
 render();
