@@ -134,6 +134,9 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
 .substep-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .substep { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .substep-check { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--color-border-secondary); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 9px; }
+.substep-drag-handle { width:14px;height:14px;flex-shrink:0;cursor:grab;display:flex;align-items:center;justify-content:center;opacity:0.35;color:var(--color-text-secondary); }
+.substep-drag-handle:active { cursor:grabbing; }
+.substep.drag-over { border-top: 2px solid var(--color-text-info,#1a5ca8); margin-top:-2px; }
 .substep-check.done { background: var(--color-background-success); border-color: var(--color-border-success); color: var(--color-text-success); }
 .substep-text { flex: 1; }
 .substep-text.done { text-decoration: line-through; color: var(--color-text-secondary); }
@@ -1405,10 +1408,15 @@ function openTaskPanel(catId, taskId) {
     </div>
 
     ${(task.substeps && task.substeps.length > 0) ? `
-      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px;font-weight:500">Substeps</div>
-      <div class="substep-list" style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px;font-weight:500">Substeps <span style="font-size:10px;opacity:0.5;font-weight:400">— drag to reorder</span></div>
+      <div class="substep-list" style="margin-bottom:14px" id="substep-panel-list-${taskId}">
         ${task.substeps.map((s,i) =>
-          `<div class="substep">
+          `<div class="substep" draggable="true"
+            ondragstart="event.dataTransfer.setData('text/plain','${i}');event.currentTarget.style.opacity='0.4';"
+            ondragend="event.currentTarget.style.opacity='1';document.querySelectorAll('.substep.drag-over').forEach(e=>e.classList.remove('drag-over'));"
+            ondragover="event.preventDefault();document.querySelectorAll('.substep.drag-over').forEach(e=>e.classList.remove('drag-over'));event.currentTarget.classList.add('drag-over');"
+            ondrop="event.preventDefault();event.currentTarget.classList.remove('drag-over');const from=+event.dataTransfer.getData('text/plain');moveSubstep('${catId}','${taskId}',from,${i});">
+            <div class="substep-drag-handle" title="Drag to reorder"><svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='currentColor'><circle cx='3' cy='2' r='1.2'/><circle cx='7' cy='2' r='1.2'/><circle cx='3' cy='7' r='1.2'/><circle cx='7' cy='7' r='1.2'/><circle cx='3' cy='12' r='1.2'/><circle cx='7' cy='12' r='1.2'/></svg></div>
             <div class="substep-check ${s.done?'done':''}" onclick="panelToggleSubstep('${catId}','${taskId}',${i})">${s.done?'✓':''}</div>
             <span class="substep-text ${s.done?'done':''}" style="flex:1">${s.text}</span>
             <span style="font-size:10px;color:var(--color-text-tertiary);margin:0 2px">wt:</span>
@@ -1480,6 +1488,19 @@ function panelToggleSubstep(catId, taskId, idx) {
 
 
 // ── SNOOZE ─────────────────────────────────────────────────────────────
+function moveSubstep(catId, taskId, fromIdx, toIdx) {
+  if (fromIdx === toIdx) return;
+  pushUndo();
+  const cat  = state.categories.find(c => c.id === catId);
+  const task = cat && cat.tasks.find(t => t.id === taskId);
+  if (!task || !task.substeps) return;
+  const moved = task.substeps.splice(fromIdx, 1)[0];
+  task.substeps.splice(toIdx, 0, moved);
+  save();
+  openTaskPanel(catId, taskId);
+  render();
+}
+
 function snoozeTask(catId, taskId, days) {
   const cat  = state.categories.find(c => c.id === catId);
   const task = cat.tasks.find(t => t.id === taskId);
@@ -1717,11 +1738,25 @@ function renderPlan() {
       const days  = daysUntil(t.dueDate);
       const daysStr = days === 0 ? 'Due today' : `${days}d left`;
       const rem = remainingHours(t);
-      html += `<div class="plan-card" style="cursor:pointer;opacity:0.65" onclick="openTaskPanel('${t.catId}','${t.id}')">
+      const ck = t.status==='done'?'done':t.status==='in progress'?'in-progress':'';
+      const cm = t.status==='done'?'✓':t.status==='in progress'?'●':'';
+      const nsArr = t.substeps || [];
+      const nsIdx = nsArr.findIndex(s=>!s.done);
+      const nsHtml = nsIdx >= 0 ? (() => {
+        const ns = nsArr[nsIdx];
+        return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--color-text-secondary);margin-bottom:5px;padding-left:2px">
+          <div class="substep-check ${ns.done?'done':''}" style="flex-shrink:0;cursor:pointer"
+            onclick="event.stopPropagation();toggleSubstep('${t.catId}','${t.id}',${nsIdx});renderPlan();">${ns.done?'✓':''}</div>
+          <span>Next: <em>${ns.text}</em></span>
+        </div>`;
+      })() : '';
+      html += `<div class="plan-card" style="cursor:pointer" onclick="openTaskPanel('${t.catId}','${t.id}')">
+        <div class="task-check ${ck}" style="cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();cycleStatusById('${t.catId}','${t.id}')" title="Click to cycle status">${cm}</div>
         <div style="width:8px;height:8px;border-radius:50%;background:${t.catColor};flex-shrink:0"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500">${t.name}</div>
           <div style="font-size:11px;color:var(--color-text-secondary)">${t.catName} · ${daysStr}${rem > 0 ? ' · ' + rem.toFixed(1) + 'h rem.' : ''}</div>
+          ${nsHtml}
         </div>
         <span class="badge badge-${urgencyLabel(score)[0]}" style="flex-shrink:0">${score}</span>
       </div>`;
