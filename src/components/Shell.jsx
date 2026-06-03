@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { signOut, downloadICS } from '../lib/db.js';
 import Categories from './Categories.jsx';
+import Overview from './Overview.jsx';
 import '../styles/shell.css';
 
 const TABS = [
-  { id: 'categories', label: 'Categories' },
   { id: 'overview',   label: 'Overview & Queue' },
+  { id: 'categories', label: 'Categories' },
   { id: 'planner',    label: 'Planner' },
   { id: 'calendar',   label: 'Calendar' },
 ];
 
 export default function Shell({ userId, userEmail, appData }) {
-  const [activeTab, setActiveTab] = useState('categories');
+  const [activeTab, setActiveTab] = useState('overview');
   const { categories, tasks, preferences, undo, redo, canUndo, canRedo } = appData;
 
-  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y
   useEffect(() => {
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
@@ -26,8 +26,10 @@ export default function Shell({ userId, userEmail, appData }) {
 
   const handleExportICS  = () => downloadICS(tasks, categories);
   const handleExportJSON = () => {
-    const blob = new Blob([JSON.stringify({ categories, tasks, preferences }, null, 2)],
-      { type: 'application/json' });
+    const blob = new Blob(
+      [JSON.stringify({ categories, tasks, preferences }, null, 2)],
+      { type: 'application/json' }
+    );
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'commitments-backup.json';
@@ -62,8 +64,8 @@ export default function Shell({ userId, userEmail, appData }) {
         </div>
 
         <div className="tab-content">
+          {activeTab === 'overview'   && <Overview   appData={appData} userId={userId} />}
           {activeTab === 'categories' && <Categories appData={appData} userId={userId} />}
-          {activeTab === 'overview'   && <div className="placeholder">Overview & Queue — coming soon</div>}
           {activeTab === 'planner'    && <div className="placeholder">Planner — coming soon</div>}
           {activeTab === 'calendar'   && <div className="placeholder">Calendar — coming soon</div>}
         </div>
