@@ -1,8 +1,9 @@
 /**
  * Shell — top-level layout: nav tabs + page routing.
- * Quick Tasks panel is always accessible via the sidebar on every page.
+ * Quick Tasks panel is always visible in the right sidebar on every page.
  */
 import React, { useState } from 'react';
+import { signOut } from '../lib/db.js';
 import Overview    from './Overview.jsx';
 import Categories  from './Categories.jsx';
 import Planner     from './Planner.jsx';
@@ -14,9 +15,13 @@ const TABS = [
   { id: 'planner',     label: 'Planner' },
 ];
 
-export default function Shell({ appData, userId, onSignOut }) {
+export default function Shell({ appData, userId, userEmail }) {
   const [tab, setTab] = useState('overview');
-  const { quickTasks, saveQuickTask, removeQuickTask } = appData;
+  const { quickTasks = [], saveQuickTask, removeQuickTask } = appData;
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -40,8 +45,11 @@ export default function Shell({ appData, userId, onSignOut }) {
           >{t.label}</button>
         ))}
         <div style={{ flex: 1 }} />
+        {userEmail && (
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginRight: 8 }}>{userEmail}</span>
+        )}
         <button
-          onClick={onSignOut}
+          onClick={handleSignOut}
           style={{ fontSize: 12, color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px' }}
         >Sign out</button>
       </nav>
@@ -65,8 +73,8 @@ export default function Shell({ appData, userId, onSignOut }) {
           {tab === 'planner'    && <Planner    appData={appData} userId={userId} />}
         </div>
 
-        {/* Quick Tasks — always visible in sidebar */}
-        <div style={{ position: 'sticky', top: 60 }}>
+        {/* Quick Tasks — sticky sidebar on all pages */}
+        <div style={{ position: 'sticky', top: 56 }}>
           <QuickTasks
             quickTasks={quickTasks}
             onSave={saveQuickTask}
