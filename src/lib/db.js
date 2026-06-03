@@ -1,10 +1,14 @@
 /**
  * Data access layer — all Supabase queries live here.
  * Export names match exactly what useAppData.js imports.
+ *
+ * Field normalization:
+ *   DB column  `progress`           ↔  app field `manual_progress`
+ *   DB column  `timeframe_minutes`  ↔  app field `timeframeMinutes`
  */
 import { supabase } from './supabase.js';
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth ─────────────────────────────────────────────────────────────────────
 
 export const signInWithMagicLink = (email) =>
   supabase.auth.signInWithOtp({ email });
@@ -34,9 +38,10 @@ export async function fetchPreferences(userId) {
 }
 
 export async function savePreferences(prefs) {
+  const { user_id, ...rest } = prefs;
   const { data, error } = await supabase
     .from('user_preferences')
-    .upsert({ ...prefs, updated_at: new Date().toISOString() })
+    .upsert({ user_id, ...rest })
     .select()
     .single();
   if (error) throw error;
@@ -72,6 +77,20 @@ export async function removeCategory(id) {
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
+// Convert DB row → app object (progress → manual_progress)
+function dbTaskToApp(t) {
+  const { progress, scheduled_days, ...rest } = t;
+  return {
+    ...rest,
+    manual_progress:     progress ?? 0,
+    scheduled_days:      (scheduled_days || []).map(r =>
+      typeof r === 'string' ? r : r.day_date
+    ).sort(),
+    scheduled_day_hours: t.scheduled_day_hours || {},
+    substeps:            (t.substeps || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
+  };
+}
+
 export async function fetchTasks(userId) {
   const { data, error } = await supabase
     .from('tasks')
@@ -79,24 +98,32 @@ export async function fetchTasks(userId) {
     .eq('user_id', userId)
     .order('position');
   if (error) throw error;
-  return (data || []).map(t => ({
-    ...t,
-    scheduled_days:      (t.scheduled_days || []).map(r => r.day_date).sort(),
-    scheduled_day_hours: t.scheduled_day_hours || {},
-    substeps:            [],   // populated by fetchSubsteps in useAppData
-  }));
+  return (data || []).map(t => ({ ...dbTaskToApp(t), substeps: [] }));
 }
 
 export async function saveTask(task) {
-  // Strip relation / derived fields not on the tasks table
-  const { substeps, scheduled_days, catName, catColor, catId, ...row } = task;
+  // Strip derived/relation fields and rename manual_progress → progress
+  const {
+    substeps, scheduled_days,
+    catName, catColor, catId,
+    manual_progress,
+    manualProgress,
+    dueDate, estimatedHours,   // legacy camelCase aliases
+    ...rest
+  } = task;
+
+  const row = {
+    ...rest,
+    progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
+  };
+
   const { data, error } = await supabase
     .from('tasks')
     .upsert(row)
     .select()
     .single();
   if (error) throw error;
-  return data;
+  return dbTaskToApp({ ...data, scheduled_days: [] });
 }
 
 export async function removeTask(id) {
@@ -133,6 +160,12 @@ export async function removeSubstep(id) {
 
 // ── Quick Tasks ───────────────────────────────────────────────────────────────
 
+// Convert DB row → app object (timeframe_minutes → timeframeMinutes)
+function dbQtToApp(qt) {
+  const { timeframe_minutes, ...rest } = qt;
+  return { ...rest, timeframeMinutes: timeframe_minutes ?? 15 };
+}
+
 export async function fetchQuickTasks(userId) {
   const { data, error } = await supabase
     .from('quick_tasks')
@@ -140,17 +173,20 @@ export async function fetchQuickTasks(userId) {
     .eq('user_id', userId)
     .order('position');
   if (error) throw error;
-  return data || [];
+  return (data || []).map(dbQtToApp);
 }
 
 export async function saveQuickTask(qt) {
+  // Rename timeframeMinutes → timeframe_minutes for DB
+  const { timeframeMinutes, ...rest } = qt;
+  const row = { ...rest, timeframe_minutes: timeframeMinutes ?? 15 };
   const { data, error } = await supabase
     .from('quick_tasks')
-    .upsert(qt)
+    .upsert(row)
     .select()
     .single();
   if (error) throw error;
-  return data;
+  return dbQtToApp(data);
 }
 
 export async function removeQuickTask(id) {
@@ -217,7 +253,7 @@ export function generateICS(tasks, categories) {
         `DTSTAMP:${now}`,
         `DTSTART;VALUE=DATE:${d}`,
         `DTEND;VALUE=DATE:${d}`,
-        `SUMMARY:\u1f5c2 ${task.name}`,
+        `SUMMARY:\ud83d\uddc2 ${task.name}`,
         `CATEGORIES:${cat ? cat.name : 'Uncategorized'}`,
         'END:VEVENT'
       );

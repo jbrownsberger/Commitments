@@ -1,106 +1,77 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { signOut, downloadICS } from '../lib/db.js';
-import Categories from './Categories.jsx';
-import Overview from './Overview.jsx';
-import Planner from './Planner.jsx';
-import '../styles/shell.css';
+/**
+ * Shell — top-level layout: nav tabs + page routing.
+ * Quick Tasks panel is always accessible via the sidebar on every page.
+ */
+import React, { useState } from 'react';
+import Overview    from './Overview.jsx';
+import Categories  from './Categories.jsx';
+import Planner     from './Planner.jsx';
+import QuickTasks  from './QuickTasks.jsx';
 
 const TABS = [
-  { id: 'overview',   label: 'Overview & Queue' },
-  { id: 'categories', label: 'Categories' },
-  { id: 'planner',    label: 'Planner' },
+  { id: 'overview',    label: 'Overview' },
+  { id: 'categories',  label: 'Tasks' },
+  { id: 'planner',     label: 'Planner' },
 ];
 
-export default function Shell({ userId, userEmail, appData }) {
-  const [activeTab, setActiveTab] = useState('overview');
-  const { categories, tasks, preferences, undo, redo, canUndo, canRedo,
-          saveCategory, saveTask } = appData;
-  const importRef = useRef();
-
-  useEffect(() => {
-    const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [undo, redo]);
-
-  const handleExportICS  = () => downloadICS(tasks, categories);
-
-  const handleExportJSON = () => {
-    const blob = new Blob(
-      [JSON.stringify({ categories, tasks, preferences }, null, 2)],
-      { type: 'application/json' }
-    );
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'commitments-backup.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const handleImportJSON = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const json = JSON.parse(ev.target.result);
-        // Import categories first, then tasks
-        const cats  = json.categories || [];
-        const tsks  = json.tasks      || [];
-        for (const cat of cats)  await saveCategory(cat);
-        for (const t   of tsks)  await saveTask(t);
-        alert(`Imported ${cats.length} categories and ${tsks.length} tasks.`);
-      } catch (err) {
-        alert('Import failed: ' + err.message);
-      }
-      // Reset input so same file can be re-imported if needed
-      e.target.value = '';
-    };
-    reader.readAsText(file);
-  };
+export default function Shell({ appData, userId, onSignOut }) {
+  const [tab, setTab] = useState('overview');
+  const { quickTasks, saveQuickTask, removeQuickTask } = appData;
 
   return (
-    <div id="root">
-      <div className="toolbar">
-        <span className="toolbar-label">Export:</span>
-        <button className="btn btn-sm" onClick={handleExportJSON}>JSON</button>
-        <button className="btn btn-sm" onClick={handleExportICS}>📅 .ics</button>
-        <span className="toolbar-label" style={{ marginLeft: 4 }}>Import:</span>
-        <button className="btn btn-sm" onClick={() => importRef.current.click()}>JSON</button>
-        <input
-          ref={importRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: 'none' }}
-          onChange={handleImportJSON}
-        />
-        <button className="btn btn-sm" onClick={undo}  disabled={!canUndo} title="Undo (Ctrl+Z)">↩</button>
-        <button className="btn btn-sm" onClick={redo}  disabled={!canRedo} title="Redo (Ctrl+Y)">↪</button>
-        <span className="toolbar-label" style={{ marginLeft: 8 }}>{userEmail}</span>
-        <button className="btn btn-sm btn-danger" onClick={signOut}>Sign out</button>
-      </div>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Nav ── */}
+      <nav style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        padding: '0 16px', borderBottom: '1px solid var(--color-border)',
+        background: 'var(--color-background)', position: 'sticky', top: 0, zIndex: 100,
+      }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: '10px 14px', fontSize: 13, border: 'none', background: 'none',
+              cursor: 'pointer', fontWeight: tab === t.id ? 600 : 400,
+              color: tab === t.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              borderBottom: tab === t.id ? '2px solid var(--color-text-primary)' : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >{t.label}</button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={onSignOut}
+          style={{ fontSize: 12, color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px' }}
+        >Sign out</button>
+      </nav>
 
-      <div className="app">
-        <div className="header">
-          <h1>Commitments</h1>
+      {/* ── Body: main content + Quick Tasks sidebar ── */}
+      <div style={{
+        flex: 1, display: 'grid',
+        gridTemplateColumns: '1fr 260px',
+        gap: 0,
+        alignItems: 'start',
+        maxWidth: 1200,
+        margin: '0 auto',
+        width: '100%',
+        padding: '24px 16px',
+        boxSizing: 'border-box',
+      }}>
+        {/* Main page */}
+        <div style={{ minWidth: 0, paddingRight: 24 }}>
+          {tab === 'overview'   && <Overview   appData={appData} userId={userId} />}
+          {tab === 'categories' && <Categories appData={appData} userId={userId} />}
+          {tab === 'planner'    && <Planner    appData={appData} userId={userId} />}
         </div>
 
-        <div className="tabs">
-          {TABS.map(t => (
-            <div key={t.id} className={`tab${activeTab === t.id ? ' active' : ''}`}
-              onClick={() => setActiveTab(t.id)}>
-              {t.label}
-            </div>
-          ))}
-        </div>
-
-        <div className="tab-content">
-          {activeTab === 'overview'   && <Overview   appData={appData} userId={userId} />}
-          {activeTab === 'categories' && <Categories appData={appData} userId={userId} />}
-          {activeTab === 'planner'    && <Planner    appData={appData} userId={userId} />}
+        {/* Quick Tasks — always visible in sidebar */}
+        <div style={{ position: 'sticky', top: 60 }}>
+          <QuickTasks
+            quickTasks={quickTasks}
+            onSave={saveQuickTask}
+            onDelete={removeQuickTask}
+          />
         </div>
       </div>
     </div>
