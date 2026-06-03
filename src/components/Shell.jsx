@@ -3,10 +3,11 @@
  */
 import React, { useState } from 'react';
 import { signOut } from '../lib/db.js';
-import Overview   from './Overview.jsx';
-import Categories from './Categories.jsx';
-import Planner    from './Planner.jsx';
-import TaskModal  from './TaskModal.jsx';
+import Overview     from './Overview.jsx';
+import Categories   from './Categories.jsx';
+import Planner      from './Planner.jsx';
+import TaskModal    from './TaskModal.jsx';
+import ImportExport from './ImportExport.jsx';
 import '../styles/shell.css';
 
 const TABS = [
@@ -17,18 +18,15 @@ const TABS = [
 
 export default function Shell({ appData, userId, userEmail }) {
   const [tab,       setTab]       = useState('overview');
-  // { task: taskObj|null, catId: id|null }  — null means closed
   const [editModal, setEditModal] = useState(null);
 
-  const { categories, saveTask } = appData;
+  const { categories, saveTask, saveCategory } = appData;
 
-  // Open modal for new task (no pre-fill)
   const openAdd = () => {
     if (categories.length === 0) return;
     setEditModal({ task: null, catId: categories[0]?.id ?? null });
   };
 
-  // Open modal pre-filled for edit
   const openEdit = (task) => {
     setEditModal({ task, catId: task.category_id });
   };
@@ -43,6 +41,7 @@ export default function Shell({ appData, userId, userEmail }) {
       {/* ── Toolbar ── */}
       <div className="toolbar">
         {userEmail && <span className="toolbar-label">{userEmail}</span>}
+        <ImportExport appData={{ ...appData, saveCategory }} />
         <button className="btn btn-sm" onClick={() => signOut()}>Sign out</button>
       </div>
 

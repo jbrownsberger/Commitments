@@ -3,7 +3,7 @@ import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgen
 import QuickTasks from './QuickTasks.jsx';
 import '../styles/overview.css';
 
-/* ── Inline capacity editor ──────────────────────────────────────────────── */
+/* ── Inline capacity editor ─────────────────────────────────────────────── */
 function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   const [val, setVal] = useState(String(weeklyHours));
   const commit = () => {
@@ -37,7 +37,7 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   );
 }
 
-/* ── Gear SVG (Feather/Lucide settings icon, 13×13) ─────────────────────── */
+/* ── Gear SVG ────────────────────────────────────────────────────────────── */
 const GearIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -49,14 +49,14 @@ const GearIcon = () => (
   >
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
-      a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
-      A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06
-      A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
-      A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
-      A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
-      a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06
-      A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
-      a1.65 1.65 0 0 0-1.51 1z" />
+a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06
+A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
+A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06
+A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
@@ -109,10 +109,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const doneCount    = allTasks.filter(t => t.status === 'done' && !t.recurring).length;
   const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
   const overdueCount = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) < 0).length;
-
-  const topUrgent = [...allInc].filter(t => t.due_date)
-    .sort((a, b) => urgencyScore(b) - urgencyScore(a)).slice(0, 5);
-  const maxScore = Math.max(...topUrgent.map(t => urgencyScore(t)), 1);
 
   const todayISO = new Date().toISOString().slice(0, 10);
   const weekEnd  = (() => {
@@ -211,37 +207,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <Metric label="Overdue"       val={overdueCount} danger={overdueCount > 0} />
         </div>
 
-        {/* Top urgent tasks */}
-        {topUrgent.length > 0 && (
-          <div style={{ marginBottom: '1.5rem' }}>
-            <div className="section-label">Top urgent tasks</div>
-            {topUrgent.map(t => {
-              const score   = urgencyScore(t);
-              const color   = urgencyColor(score);
-              const days    = daysUntil(t.due_date);
-              const daysStr = days === null ? '' : days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'today' : `${days}d left`;
-              const pct     = Math.round((score / maxScore) * 100);
-              const nextStep = t.substeps?.find(s => !s.done);
-              return (
-                <div key={t.id} className="urgent-bar-row" onClick={() => setPanelTask(t)}>
-                  <span
-                    className={`task-check${t.status === 'done' ? ' done' : t.status === 'in progress' ? ' in-progress' : ''}`}
-                    onClick={e => { e.stopPropagation(); cycleStatus(t); }}
-                  >{t.status === 'done' ? '✓' : t.status === 'in progress' ? '…' : ''}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="urgent-bar-name">{t.name}</div>
-                    {nextStep && <div className="urgent-bar-sub">Next: <em>{nextStep.text}</em></div>}
-                    <div className="urgent-bar-track">
-                      <div className="urgent-bar-fill" style={{ width: `${pct}%`, background: color }} />
-                    </div>
-                  </div>
-                  <span className="urgent-bar-days" style={{ color }}>{daysStr}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {/* Weekly capacity */}
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -275,10 +240,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             <span style={{ color: capFill, fontWeight: 500 }}>{committedLoad.toFixed(1)}h / {weeklyHours}h</span>
           </div>
           <div className="progress-track" style={{ height: 8, marginBottom: 6 }}>
-            <div
-              className="progress-fill"
-              style={{ width: `${capPct}%`, background: capFill }}
-            />
+            <div className="progress-fill" style={{ width: `${capPct}%`, background: capFill }} />
           </div>
           {capPct >= 100 && (
             <div style={{ fontSize: 11, color: 'var(--color-text-danger)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -399,7 +361,6 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   return (
     <div className="focus-card" onClick={onOpen}>
-      {/* Row 1: status check · name · category · score */}
       <div className="focus-card-header">
         <span
           className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
@@ -411,7 +372,6 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
         <span className="focus-card-score" style={{ color }}>{score > 0 ? score : ''}</span>
       </div>
 
-      {/* Row 2: next substep */}
       {nextStep && (
         <div className="focus-card-substep-row" onClick={e => e.stopPropagation()}>
           <input
@@ -428,7 +388,6 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
         </div>
       )}
 
-      {/* Row 3: urgency bar + meta */}
       <div className="focus-card-bar-row">
         <div className="focus-bar-track">
           <div className="focus-bar-fill" style={{ width: `${pct}%`, background: color }} />
