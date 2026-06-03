@@ -1,11 +1,7 @@
 /**
- * TaskPanel — full-detail slide-in panel for a single task.
- * Mirrors the original app's openTaskPanel() functionality:
- *   - cycle status (not started → in progress → done)
- *   - substep toggle + weight + drag-to-reorder
- *   - manual progress slider + bump +10%
- *   - snooze 1 day / 1 week
- *   - edit / delete shortcuts
+ * TaskPanel — full-detail modal for a single task.
+ * Status cycle uses UI values (spaces): 'not started' | 'in progress' | 'done'
+ * Conversion to DB hyphenated format happens in db.js saveTask.
  */
 import React, { useState, useRef } from 'react';
 import Modal from './Modal.jsx';
@@ -63,9 +59,9 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
   const prog = taskProgress(localTask);
   const rem  = remainingHours(localTask);
   const days = daysUntil(localTask.due_date ?? localTask.dueDate);
-  const isDone     = localTask.status === 'done';
-  const isOverdue  = !isDone && (localTask.due_date ?? localTask.dueDate) && days < 0;
-  const daysStr    = !( localTask.due_date ?? localTask.dueDate) ? ''
+  const isDone    = localTask.status === 'done';
+  const isOverdue = !isDone && (localTask.due_date ?? localTask.dueDate) && days < 0;
+  const daysStr   = !(localTask.due_date ?? localTask.dueDate) ? ''
     : days < 0  ? `${Math.abs(days)}d overdue`
     : days === 0 ? 'Due today'
     : `${days}d left`;
@@ -76,9 +72,8 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
     onSave(next);
   };
 
-  // ── Status cycling ────────────────────────────────────────────────────────
   const cycleStatus = () => {
-    const cur = STATUS_CYCLE.indexOf(localTask.status);
+    const cur  = STATUS_CYCLE.indexOf(localTask.status);
     const next = STATUS_CYCLE[(cur + 1) % STATUS_CYCLE.length];
     save({ status: next, manual_progress: next === 'done' ? 100 : localTask.manual_progress });
   };
@@ -87,33 +82,24 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
     : localTask.status === 'in progress' ? 'Mark done'
     : 'Start';
 
-  // ── Substeps ──────────────────────────────────────────────────────────────
   const toggleSubstep = (idx) => {
-    const substeps = localTask.substeps.map((s, i) =>
+    const substeps = (localTask.substeps || []).map((s, i) =>
       i === idx ? { ...s, done: !s.done } : s
     );
-    const allDone  = substeps.every(s => s.done);
-    const anyDone  = substeps.some(s  => s.done);
-    const status   = allDone ? 'done' : anyDone ? 'in progress' : 'not started';
+    const allDone = substeps.every(s => s.done);
+    const anyDone = substeps.some(s  => s.done);
+    const status  = allDone ? 'done' : anyDone ? 'in progress' : 'not started';
     save({ substeps, status });
-  };
-
-  const setSubstepWeight = (idx, val) => {
-    const substeps = localTask.substeps.map((s, i) =>
-      i === idx ? { ...s, weight: Math.max(0.1, parseFloat(val) || 1) } : s
-    );
-    save({ substeps });
   };
 
   const moveSubstep = (from, to) => {
     if (from === to) return;
-    const substeps = [...localTask.substeps];
+    const substeps = [...(localTask.substeps || [])];
     const [moved]  = substeps.splice(from, 1);
     substeps.splice(to, 0, moved);
     save({ substeps });
   };
 
-  // ── Progress ──────────────────────────────────────────────────────────────
   const setProgress = (val) => {
     const v = parseInt(val);
     save({ manual_progress: v, status: v === 100 ? 'done' : localTask.status });
@@ -121,7 +107,6 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
 
   const bump10 = () => setProgress(Math.min(100, (localTask.manual_progress || 0) + 10));
 
-  // ── Snooze ────────────────────────────────────────────────────────────────
   const snooze = (days) => {
     const base = localTask.due_date ?? localTask.dueDate;
     if (!base) return;
@@ -142,7 +127,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
             {cat && <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{cat.name}</span>}
             {(localTask.due_date ?? localTask.dueDate) && (
               <span style={{ fontSize:12, color: isOverdue ? 'var(--color-text-danger)' : days !== null && days <= 3 ? '#BA7517' : 'var(--color-text-secondary)' }}>
-                {formatDate(localTask.due_date ?? localTask.dueDate)} · {daysStr}
+                {formatDate(localTask.due_date ?? localTask.dueDate)} &middot; {daysStr}
               </span>
             )}
             {isOverdue && <span className="badge" style={{ background:'var(--color-bg-danger)', color:'var(--color-text-danger)' }}>Overdue</span>}
@@ -153,7 +138,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
         </button>
       </div>
 
-      {/* Meta row */}
+      {/* Meta */}
       <div style={{ display:'flex', gap:16, marginBottom:14, flexWrap:'wrap' }}>
         {(localTask.estimated_hours ?? localTask.estimatedHours) && (
           <div>
@@ -161,13 +146,11 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
             <div style={{ fontSize:13, fontWeight:500 }}>{localTask.estimated_hours ?? localTask.estimatedHours}h</div>
           </div>
         )}
-        {(localTask.estimated_hours ?? localTask.estimatedHours) && (
-          <div>
-            <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Remaining</div>
-            <div style={{ fontSize:13, fontWeight:500 }}>{rem.toFixed(1)}h</div>
-          </div>
-        )}
-        {(localTask.priority) && (
+        <div>
+          <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Remaining</div>
+          <div style={{ fontSize:13, fontWeight:500 }}>{rem.toFixed(1)}h</div>
+        </div>
+        {localTask.priority && (
           <div>
             <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Priority</div>
             <div style={{ fontSize:13, fontWeight:500, textTransform:'capitalize' }}>{localTask.priority}</div>
@@ -197,8 +180,8 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
               onMouseUp={e  => setProgress(e.target.value)}
               onTouchEnd={e => setProgress(e.target.value)}
             />
-            <span style={{ fontSize:12, minWidth:34, textAlign:'right' }}>{localTask.manual_progress || 0}%</span>
-            <button className="btn btn-sm" onClick={bump10} title="+10%">+10%</button>
+            <span style={{ fontSize:12, minWidth:34 }}>{localTask.manual_progress || 0}%</span>
+            <button className="btn btn-sm" onClick={bump10}>+10%</button>
           </div>
         )}
       </div>
@@ -206,35 +189,22 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       {/* Substeps */}
       {hasSubsteps && (
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:'var(--color-text-secondary)', marginBottom:6, fontWeight:500 }}>
-            Substeps <span style={{ fontSize:10, opacity:0.5, fontWeight:400 }}>drag to reorder</span>
-          </div>
+          <div style={{ fontSize:12, color:'var(--color-text-secondary)', marginBottom:6, fontWeight:500 }}>Substeps</div>
           <div className="substep-list">
             {(localTask.substeps || []).map((s, i) => (
               <div
-                key={i}
-                className="substep"
+                key={i} className="substep"
                 draggable
                 onDragStart={e => { dragIdx.current = i; e.currentTarget.style.opacity = '0.4'; }}
                 onDragEnd={e   => { e.currentTarget.style.opacity = '1'; }}
-                onDragOver={e  => { e.preventDefault(); }}
+                onDragOver={e  => e.preventDefault()}
                 onDrop={e      => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
               >
-                <div className="substep-drag-handle" title="Drag to reorder">⋮⋮</div>
                 <span
                   className={`substep-check${s.done ? ' done' : ''}`}
                   onClick={() => toggleSubstep(i)}
                 >{s.done ? '✓' : ''}</span>
                 <span className={`substep-text${s.done ? ' done' : ''}`} style={{ flex:1 }}>{s.text}</span>
-                <span style={{ fontSize:10, color:'var(--color-text-tertiary)', margin:'0 4px' }}>w</span>
-                <input
-                  type="number" min={0.1} step={0.1}
-                  value={s.weight || 1}
-                  style={{ width:40, fontSize:11, padding:'1px 4px', border:'0.5px solid var(--color-border-secondary)', borderRadius:3, textAlign:'center' }}
-                  onChange={e => setSubstepWeight(i, e.target.value)}
-                  onClick={e => e.stopPropagation()}
-                  title="Substep weight"
-                />
               </div>
             ))}
           </div>
@@ -258,7 +228,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
             <button className="btn btn-sm" onClick={() => snooze(7)}>1 week</button>
           </>
         ) : (
-          <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>Set a due date to snooze</span>
+          <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>No due date set</span>
         )}
       </div>
 
@@ -266,7 +236,9 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Close</button>
         <button className="btn" onClick={() => { onClose(); onEdit(localTask); }}>Edit</button>
-        <button className="btn btn-danger" onClick={() => { if (window.confirm(`Delete "${localTask.name}"?`)) { onDelete(localTask.id); onClose(); } }}>Delete</button>
+        <button className="btn btn-danger"
+          onClick={() => { if (window.confirm(`Delete “${localTask.name}”?`)) { onDelete(localTask.id); onClose(); } }}
+        >Delete</button>
       </div>
     </Modal>
   );

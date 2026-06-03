@@ -1,12 +1,25 @@
 /**
  * Data access layer — all Supabase queries live here.
- * Export names match exactly what useAppData.js imports.
+ *
+ * IMPORTANT — DB status constraint: 'not-started' | 'in-progress' | 'done'
+ * (hyphenated, not space-separated)
  *
  * Field normalization:
  *   DB column  `progress`           ↔  app field `manual_progress`
  *   DB column  `timeframe_minutes`  ↔  app field `timeframeMinutes`
  */
 import { supabase } from './supabase.js';
+
+// ── Status helpers ───────────────────────────────────────────────────────────────
+// DB uses hyphens; UI may use spaces. Normalise before writing, humanise after reading.
+export function toDbStatus(s) {
+  if (!s) return 'not-started';
+  return s.replace(' ', '-');  // 'not started' → 'not-started', 'in progress' → 'in-progress'
+}
+export function toUiStatus(s) {
+  if (!s) return 'not started';
+  return s.replace('-', ' ');  // 'not-started' → 'not started'
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -64,19 +77,10 @@ export async function saveCategory(cat) {
   const isNew = !cat.id;
   let data, error;
   if (isNew) {
-    ({ data, error } = await supabase
-      .from('categories')
-      .insert(cat)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('categories').insert(cat).select().single());
   } else {
     const { id, ...fields } = cat;
-    ({ data, error } = await supabase
-      .from('categories')
-      .update(fields)
-      .eq('id', id)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('categories').update(fields).eq('id', id).select().single());
   }
   if (error) throw error;
   return data;
@@ -89,11 +93,11 @@ export async function removeCategory(id) {
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
-// Convert DB row → app object (progress → manual_progress)
 function dbTaskToApp(t) {
   const { progress, scheduled_days, ...rest } = t;
   return {
     ...rest,
+    status:              toUiStatus(rest.status),
     manual_progress:     progress ?? 0,
     scheduled_days:      (scheduled_days || []).map(r =>
       typeof r === 'string' ? r : r.day_date
@@ -114,39 +118,28 @@ export async function fetchTasks(userId) {
 }
 
 export async function saveTask(task) {
-  // Strip derived/relation fields; rename manual_progress → progress
   const {
     substeps, scheduled_days,
     catName, catColor, catId,
     manual_progress, manualProgress,
-    dueDate, estimatedHours,   // legacy camelCase aliases
+    dueDate, estimatedHours,
     ...rest
   } = task;
 
   const row = {
     ...rest,
+    status:   toDbStatus(rest.status),
     progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
   };
 
   const isNew = !row.id;
   let data, error;
-
   if (isNew) {
-    ({ data, error } = await supabase
-      .from('tasks')
-      .insert(row)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('tasks').insert(row).select().single());
   } else {
     const { id, ...fields } = row;
-    ({ data, error } = await supabase
-      .from('tasks')
-      .update(fields)
-      .eq('id', id)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('tasks').update(fields).eq('id', id).select().single());
   }
-
   if (error) throw error;
   return dbTaskToApp({ ...data, scheduled_days: [] });
 }
@@ -169,22 +162,15 @@ export async function fetchSubsteps(userId) {
 }
 
 export async function saveSubstep(substep) {
-  const isNew = !substep.id;
+  // Strip 'weight' — not a DB column
+  const { weight, ...rest } = substep;
+  const isNew = !rest.id;
   let data, error;
   if (isNew) {
-    ({ data, error } = await supabase
-      .from('substeps')
-      .insert(substep)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('substeps').insert(rest).select().single());
   } else {
-    const { id, ...fields } = substep;
-    ({ data, error } = await supabase
-      .from('substeps')
-      .update(fields)
-      .eq('id', id)
-      .select()
-      .single());
+    const { id, ...fields } = rest;
+    ({ data, error } = await supabase.from('substeps').update(fields).eq('id', id).select().single());
   }
   if (error) throw error;
   return data;
@@ -218,19 +204,10 @@ export async function saveQuickTask(qt) {
   const isNew = !row.id;
   let data, error;
   if (isNew) {
-    ({ data, error } = await supabase
-      .from('quick_tasks')
-      .insert(row)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('quick_tasks').insert(row).select().single());
   } else {
     const { id, ...fields } = row;
-    ({ data, error } = await supabase
-      .from('quick_tasks')
-      .update(fields)
-      .eq('id', id)
-      .select()
-      .single());
+    ({ data, error } = await supabase.from('quick_tasks').update(fields).eq('id', id).select().single());
   }
   if (error) throw error;
   return dbQtToApp(data);
@@ -241,7 +218,7 @@ export async function removeQuickTask(id) {
   if (error) throw error;
 }
 
-// ── Scheduled Days ────────────────────────────────────────────────────────────
+// ── Scheduled Days ────────────────────────────────────────────────────────
 
 export async function setScheduledDays(taskId, userId, dates) {
   const { error: delErr } = await supabase
@@ -271,10 +248,8 @@ export async function getScheduledDaysForRange(userId, from, to) {
 export function generateICS(tasks, categories) {
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Commitments//EN',
-    'CALSCALE:GREGORIAN',
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//Commitments//EN', 'CALSCALE:GREGORIAN',
   ];
   for (const task of tasks) {
     if (!task.due_date) continue;
