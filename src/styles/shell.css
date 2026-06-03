@@ -1,0 +1,54 @@
+#root {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.toolbar-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.app { padding: 1.5rem 0; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.header h1 { font-size: 20px; font-weight: 500; }
+
+.btn {
+  background: transparent;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+.btn:hover { background: var(--color-bg-secondary); }
+.btn:disabled { opacity: 0.35; cursor: default; }
+.btn-primary { background: var(--color-text-primary); color: var(--color-bg-primary); border-color: var(--color-text-primary); }
+.btn-primary:hover { opacity: 0.85; }
+.btn-sm { padding: 3px 10px; font-size: 12px; }
+.btn-danger { border-color: var(--color-border-danger); color: var(--color-text-danger); }
+.btn-danger:hover { background: var(--color-bg-danger); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 1.5rem; }
+.tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-text-primary); font-weight: 500; }
+
+.tab-content .placeholder {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  padding: 2rem 0;
+}
