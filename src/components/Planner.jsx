@@ -14,7 +14,8 @@ function fmtShort(iso) {
 }
 
 function taskProgress(task) {
-  if (!task.substeps || task.substeps.length === 0) return task.progress || 0;
+  if (!task.substeps || task.substeps.length === 0)
+    return task.manual_progress ?? task.manualProgress ?? 0;
   return Math.round(task.substeps.filter(s => s.done).length / task.substeps.length * 100);
 }
 
@@ -38,7 +39,7 @@ function buildISOs(weekOffset) {
 }
 
 /**
- * Given a task’s scheduled_days and scheduled_day_hours,
+ * Given a task's scheduled_days and scheduled_day_hours,
  * compute hours allocated on a specific day.
  */
 function hoursOnDay(task, iso, todayISO) {

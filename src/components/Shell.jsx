@@ -8,6 +8,7 @@ import Overview    from './Overview.jsx';
 import Categories  from './Categories.jsx';
 import Planner     from './Planner.jsx';
 import QuickTasks  from './QuickTasks.jsx';
+import '../styles/shell.css';
 
 const TABS = [
   { id: 'overview',    label: 'Overview' },

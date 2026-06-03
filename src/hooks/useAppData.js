@@ -10,6 +10,7 @@ import {
   savePreferences as dbSavePreferences,
   saveQuickTask  as dbSaveQuickTask,
   removeQuickTask as dbRemoveQuickTask,
+  setScheduledDays as dbSetScheduledDays,
 } from '../lib/db.js';
 
 const UNDO_LIMIT = 30;
@@ -58,10 +59,11 @@ export function useAppData(userId) {
 
   // ── Snapshot for undo ────────────────────────────────────────────────────
   const snapshot = useCallback(() => ({
-    categories: JSON.parse(JSON.stringify(categories)),
-    tasks:      JSON.parse(JSON.stringify(tasks)),
-    quickTasks: JSON.parse(JSON.stringify(quickTasks)),
-  }), [categories, tasks, quickTasks]);
+    categories:  JSON.parse(JSON.stringify(categories)),
+    tasks:       JSON.parse(JSON.stringify(tasks)),
+    quickTasks:  JSON.parse(JSON.stringify(quickTasks)),
+    preferences: JSON.parse(JSON.stringify(preferences)),
+  }), [categories, tasks, quickTasks, preferences]);
 
   const pushUndo = useCallback(() => {
     undoStack.current = [...undoStack.current.slice(-UNDO_LIMIT), snapshot()];
@@ -75,6 +77,7 @@ export function useAppData(userId) {
     setCategories(prev.categories);
     setTasks(prev.tasks);
     setQuickTasks(prev.quickTasks);
+    if (prev.preferences !== undefined) setPreferences(prev.preferences);
   }, [snapshot]);
 
   const redo = useCallback(() => {
@@ -84,6 +87,7 @@ export function useAppData(userId) {
     setCategories(next.categories);
     setTasks(next.tasks);
     setQuickTasks(next.quickTasks);
+    if (next.preferences !== undefined) setPreferences(next.preferences);
   }, [snapshot]);
 
   // ── Category CRUD ────────────────────────────────────────────────────────
@@ -182,6 +186,16 @@ export function useAppData(userId) {
     setQuickTasks(prev => prev.filter(q => q.id !== id));
   }, [pushUndo]);
 
+  // ── Scheduled Days ────────────────────────────────────────────────────────
+  const setTaskSchedule = useCallback(async (taskId, dates) => {
+    await dbSetScheduledDays(taskId, userId, dates);
+    setTasks(prev => prev.map(t =>
+      t.id === taskId
+        ? { ...t, scheduled_days: [...dates].sort() }
+        : t
+    ));
+  }, [userId]);
+
   return {
     categories, tasks, substeps, preferences, quickTasks,
     loading, error,
@@ -190,6 +204,7 @@ export function useAppData(userId) {
     saveSubstep, removeSubstep,
     savePreferences,
     saveQuickTask, removeQuickTask,
+    setTaskSchedule,
     undo, redo,
     canUndo: undoStack.current.length > 0,
     canRedo: redoStack.current.length > 0,
