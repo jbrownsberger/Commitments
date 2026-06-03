@@ -1,6 +1,6 @@
 # Commitments
 
-A workload-aware deadline tracker. Built with React, Vite, and Supabase.
+A workload-aware deadline tracker. Built with React, Vite, and Supabase. 
 
 ## Development
 
