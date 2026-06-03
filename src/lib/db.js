@@ -76,23 +76,25 @@ export async function deleteCategory(id) {
 export async function getTasks(userId) {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*, substeps(*), scheduled_days(day_date)')
+    .select('*, substeps(*), scheduled_days(day_date), scheduled_day_hours')
     .eq('user_id', userId)
     .order('position');
   if (error) throw error;
   // Normalize scheduled_days to a plain array of ISO strings
   return data.map(t => ({
     ...t,
-    scheduled_days: (t.scheduled_days || []).map(r => r.day_date).sort(),
-    substeps: (t.substeps || []).sort((a, b) => a.position - b.position),
+    scheduled_days:     (t.scheduled_days || []).map(r => r.day_date).sort(),
+    scheduled_day_hours: t.scheduled_day_hours || {},
+    substeps:           (t.substeps || []).sort((a, b) => a.position - b.position),
   }));
 }
 
 export async function upsertTask(task) {
+  // Strip relation fields that aren't columns on the tasks table
   const { scheduled_days, substeps, ...taskRow } = task;
   const { data, error } = await supabase
     .from('tasks')
-    .upsert(taskRow)
+    .upsert(taskRow)          // scheduled_day_hours IS a column — passes through
     .select()
     .single();
   if (error) throw error;
