@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { signOut, downloadICS } from '../lib/db.js';
 import Categories from './Categories.jsx';
 import Overview from './Overview.jsx';
+import Planner from './Planner.jsx';
 import '../styles/shell.css';
 
 const TABS = [
@@ -66,7 +67,7 @@ export default function Shell({ userId, userEmail, appData }) {
         <div className="tab-content">
           {activeTab === 'overview'   && <Overview   appData={appData} userId={userId} />}
           {activeTab === 'categories' && <Categories appData={appData} userId={userId} />}
-          {activeTab === 'planner'    && <div className="placeholder">Planner — coming soon</div>}
+          {activeTab === 'planner'    && <Planner    appData={appData} userId={userId} />}
           {activeTab === 'calendar'   && <div className="placeholder">Calendar — coming soon</div>}
         </div>
       </div>
