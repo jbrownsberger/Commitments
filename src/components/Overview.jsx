@@ -3,6 +3,64 @@ import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgen
 import QuickTasks from './QuickTasks.jsx';
 import '../styles/overview.css';
 
+/* ── Inline capacity editor ──────────────────────────────────────────────── */
+function CapacityEditor({ weeklyHours, onSave, onCancel }) {
+  const [val, setVal] = useState(String(weeklyHours));
+  const commit = () => {
+    const n = parseInt(val, 10);
+    if (n > 0 && n <= 168) onSave(n);
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <input
+        type="number" min={1} max={168} step={1}
+        value={val}
+        autoFocus
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') onCancel();
+        }}
+        style={{
+          width: 46, fontSize: 12, padding: '2px 6px',
+          border: '0.5px solid var(--color-border-secondary)',
+          borderRadius: 'var(--border-radius-sm)',
+          fontFamily: 'var(--font-sans)',
+          background: 'var(--color-background-primary)',
+          color: 'var(--color-text-primary)',
+        }}
+      />
+      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>h/wk</span>
+      <button className="btn btn-sm btn-primary" onClick={commit} style={{ padding: '2px 8px' }}>Save</button>
+      <button className="btn btn-sm" onClick={onCancel} style={{ padding: '2px 8px' }}>Cancel</button>
+    </span>
+  );
+}
+
+/* ── Gear SVG (Feather/Lucide settings icon, 13×13) ─────────────────────── */
+const GearIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="13" height="13" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2"
+    strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true"
+    style={{ display: 'inline-block', verticalAlign: '-2px' }}
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+      a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+      A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06
+      A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+      A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
+      A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+      a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06
+      A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+      a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 function hoursToday(task) {
   const todayISO = new Date().toISOString().slice(0, 10);
   if (!task.scheduled_days?.includes(todayISO)) return 0;
@@ -19,14 +77,17 @@ function statusFromProgress(prog, current) {
   return current === 'done' ? 'not started' : (current || 'not started');
 }
 
+/* ── Overview ────────────────────────────────────────────────────────────── */
 export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const {
     categories, tasks, preferences,
     quickTasks = [], saveTask, removeTask,
     saveQuickTask, removeQuickTask,
+    savePreferences,
   } = appData;
 
   const [panelTask, setPanelTask] = useState(null);
+  const [editingCapacity, setEditingCapacity] = useState(false);
 
   const weeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
@@ -125,6 +186,13 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     setPanelTask(updated);
   };
 
+  const handleSaveCapacity = async (hours) => {
+    if (savePreferences) {
+      await savePreferences({ ...preferences, weekly_hours: hours });
+    }
+    setEditingCapacity(false);
+  };
+
   const weekISOs = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
@@ -132,8 +200,10 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   return (
     <div className="plan-layout">
       <div>
+        {/* Date */}
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>{today}</div>
 
+        {/* Metrics row */}
         <div className="overview-grid" style={{ marginBottom: '1.5rem' }}>
           <Metric label="Total tasks"   val={total} />
           <Metric label="Completed"     val={doneCount} />
@@ -141,6 +211,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <Metric label="Overdue"       val={overdueCount} danger={overdueCount > 0} />
         </div>
 
+        {/* Top urgent tasks */}
         {topUrgent.length > 0 && (
           <div style={{ marginBottom: '1.5rem' }}>
             <div className="section-label">Top urgent tasks</div>
@@ -171,13 +242,27 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           </div>
         )}
 
+        {/* Weekly capacity */}
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div className="section-label" style={{ marginBottom: 0 }}>This week's focus</div>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', padding: '2px 8px',
-              border: '0.5px solid var(--color-border-tertiary)', borderRadius: 4 }}>
-              ⚙ {weeklyHours}h/week
-            </span>
+            <div className="section-label" style={{ marginBottom: 0 }}>This week’s focus</div>
+            {editingCapacity ? (
+              <CapacityEditor
+                weeklyHours={weeklyHours}
+                onSave={handleSaveCapacity}
+                onCancel={() => setEditingCapacity(false)}
+              />
+            ) : (
+              <button
+                className="btn btn-sm"
+                onClick={() => setEditingCapacity(true)}
+                title="Change weekly hours"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <GearIcon />
+                <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{weeklyHours}h/wk</span>
+              </button>
+            )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
             {weeklyHours}h available · tasks ranked by urgency · click to open
@@ -187,37 +272,29 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
               Committed load this week
               <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 4 }}>(planner + forecast)</span>
             </span>
-            <span style={{ color: capFill, fontWeight: 500 }}>{committedLoad.toFixed(1)}h / {weeklyHours}h</span>
+            <span style={{ color: capFill, fontWeight: 500 }}>{committedLoad.toFixed(1)}h / {weeklyHours}h</span>
           </div>
-          {/* Capacity bar — plain divs, no outline/shadow */}
-          <div style={{
-            background: '#e0e0e0',
-            borderRadius: 3,
-            height: 8,
-            overflow: 'hidden',
-            boxShadow: 'none',
-            outline: 'none',
-            border: 'none',
-            marginBottom: 6,
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${capPct}%`,
-              background: capFill,
-              boxShadow: 'none',
-              outline: 'none',
-              border: 'none',
-              borderRadius: 0,
-              transition: 'width 0.25s ease',
-            }} />
+          <div className="progress-track" style={{ height: 8, marginBottom: 6 }}>
+            <div
+              className="progress-fill"
+              style={{ width: `${capPct}%`, background: capFill }}
+            />
           </div>
           {capPct >= 100 && (
-            <div style={{ fontSize: 11, color: 'var(--color-text-danger)', marginBottom: 8 }}>
-              ⚠ Overcommitted by {(committedLoad - weeklyHours).toFixed(1)}h — consider deferring or reducing scope
+            <div style={{ fontSize: 11, color: 'var(--color-text-danger)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true" style={{ flexShrink: 0 }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Overcommitted by {(committedLoad - weeklyHours).toFixed(1)}h — consider deferring or reducing scope
             </div>
           )}
         </div>
 
+        {/* Suggested focus queue */}
         {focusQueue.length > 0 && (
           <div>
             <div className="section-label">Suggested focus</div>
@@ -243,12 +320,13 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         )}
       </div>
 
+      {/* Right column */}
       <div className="right-col">
         <QuickTasks quickTasks={quickTasks} onSave={saveQuickTask} onDelete={removeQuickTask} />
         {todayPlan.length > 0 && (
           <div className="today-plan-panel">
             <div className="today-plan-title">
-              <span>📅 Today's plan</span>
+              <span>📅 Today’s plan</span>
               <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{todayPlanHours.toFixed(1)}h</span>
             </div>
             {todayPlan.map(t => {
@@ -321,7 +399,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   return (
     <div className="focus-card" onClick={onOpen}>
-      {/* Row 1: status dot · task name · category · score */}
+      {/* Row 1: status check · name · category · score */}
       <div className="focus-card-header">
         <span
           className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
@@ -333,12 +411,9 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
         <span className="focus-card-score" style={{ color }}>{score > 0 ? score : ''}</span>
       </div>
 
-      {/* Row 2: next substep checkbox + label (own line, below name) */}
+      {/* Row 2: next substep */}
       {nextStep && (
-        <div
-          className="focus-card-substep-row"
-          onClick={e => e.stopPropagation()}
-        >
+        <div className="focus-card-substep-row" onClick={e => e.stopPropagation()}>
           <input
             type="checkbox"
             style={{ flexShrink: 0, cursor: 'pointer', width: 13, height: 13, margin: 0 }}
