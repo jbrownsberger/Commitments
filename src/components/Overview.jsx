@@ -1,6 +1,3 @@
-/**
- * Overview & Queue
- */
 import React, { useState } from 'react';
 import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor } from './TaskPanel.jsx';
 import QuickTasks from './QuickTasks.jsx';
@@ -16,7 +13,6 @@ function hoursToday(task) {
   return remainingHours(task) / futureDays.length;
 }
 
-// Derive status from progress value
 function statusFromProgress(prog, current) {
   if (prog >= 100) return 'done';
   if (prog > 0)    return 'in progress';
@@ -30,7 +26,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     saveQuickTask, removeQuickTask,
   } = appData;
 
-  // panelTask: the raw task object currently open in TaskPanel (kept in sync after saves)
   const [panelTask, setPanelTask] = useState(null);
 
   const weeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
@@ -49,28 +44,22 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const allTasks = tasks || [];
   const allInc   = allTasks.filter(t => t.status !== 'done' && !t.recurring).map(enrich);
 
-  // ── Metrics
   const total        = allTasks.filter(t => !t.recurring).length;
   const doneCount    = allTasks.filter(t => t.status === 'done' && !t.recurring).length;
   const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
   const overdueCount = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) < 0).length;
 
-  // ── Top urgent
   const topUrgent = [...allInc].filter(t => t.due_date)
     .sort((a, b) => urgencyScore(b) - urgencyScore(a)).slice(0, 5);
   const maxScore = Math.max(...topUrgent.map(t => urgencyScore(t)), 1);
 
-  // ── Committed load this week
-  // Use Planner hours where scheduled; fall back to remaining hours (capped at weekly budget)
   const todayISO = new Date().toISOString().slice(0, 10);
   const weekEnd  = (() => {
     const d = new Date();
-    // end of Sunday of this week
     d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7);
     return d.toISOString().slice(0, 10);
   })();
 
-  // Sum hours explicitly planned via Planner this week
   const plannedThisWeek = allInc.reduce((s, t) => {
     if (!t.scheduled_days) return s;
     const days = t.scheduled_days.filter(d => d >= todayISO && d <= weekEnd);
@@ -83,21 +72,18 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     return s + explicit + perUw * unweighted.length;
   }, 0);
 
-  // Tasks with NO scheduled days contribute their remaining hours as forecast
   const forecastUnplanned = allInc.reduce((s, t) => {
     const hasSchedule = t.scheduled_days?.some(d => d >= todayISO);
     if (hasSchedule) return s;
     return s + remainingHours(t);
   }, 0);
 
-  // Total committed = planner hours + unplanned remaining (capped to prevent absurd bars)
   const committedLoad = plannedThisWeek + Math.min(forecastUnplanned, weeklyHours * 2);
   const capPct  = Math.min(100, Math.round(committedLoad / Math.max(weeklyHours, 1) * 100));
   const capFill = capPct >= 100 ? 'var(--color-text-danger)'
     : capPct >= 75 ? '#BA7517'
     : 'var(--color-text-success)';
 
-  // ── Focus queue
   const overdue    = allInc.filter(t => t.due_date && daysUntil(t.due_date) < 0)
     .sort((a, b) => daysUntil(a.due_date) - daysUntil(b.due_date));
   const upcoming   = allInc.filter(t => t.due_date && daysUntil(t.due_date) >= 0)
@@ -106,7 +92,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const focusQueue = [...overdue, ...upcoming, ...noDue];
   const maxFocusScore = Math.max(...focusQueue.map(urgencyScore), 1);
 
-  // ── Today's plan
   const todayPlan = allTasks.map(enrich)
     .filter(t => t.status !== 'done' && t.scheduled_days?.includes(todayISO))
     .sort((a, b) => hoursToday(b) - hoursToday(a));
@@ -115,18 +100,15 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const today = new Date().toLocaleDateString('en-US',
     { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-  // ── Helpers
   const cycleStatus = async (task) => {
     const cycle = ['not started', 'in progress', 'done'];
     const next  = cycle[(cycle.indexOf(task.status) + 1) % cycle.length];
     const updated = { ...task, status: next,
       manual_progress: next === 'done' ? 100 : next === 'not started' ? 0 : task.manual_progress };
     await saveTask(updated);
-    // keep panel in sync
     if (panelTask?.id === task.id) setPanelTask(updated);
   };
 
-  // Toggle the next undone substep from a FocusCard checkbox
   const toggleNextSubstep = async (task) => {
     const idx = (task.substeps || []).findIndex(s => !s.done);
     if (idx === -1) return;
@@ -138,10 +120,9 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     if (panelTask?.id === task.id) setPanelTask(updated);
   };
 
-  // Save from TaskPanel WITHOUT closing
   const handlePanelSave = async (updated) => {
     await saveTask(updated);
-    setPanelTask(updated); // refresh panel with new data
+    setPanelTask(updated);
   };
 
   const weekISOs = Array.from({ length: 7 }, (_, i) => {
@@ -150,11 +131,9 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   return (
     <div className="plan-layout">
-      {/* ── Main column ── */}
       <div>
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>{today}</div>
 
-        {/* Metrics */}
         <div className="overview-grid" style={{ marginBottom: '1.5rem' }}>
           <Metric label="Total tasks"   val={total} />
           <Metric label="Completed"     val={doneCount} />
@@ -162,7 +141,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <Metric label="Overdue"       val={overdueCount} danger={overdueCount > 0} />
         </div>
 
-        {/* Top urgent bar chart */}
         {topUrgent.length > 0 && (
           <div style={{ marginBottom: '1.5rem' }}>
             <div className="section-label">Top urgent tasks</div>
@@ -193,11 +171,11 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           </div>
         )}
 
-        {/* This week's focus */}
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <div className="section-label" style={{ marginBottom: 0 }}>This week's focus</div>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', padding: '2px 8px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', padding: '2px 8px',
+              border: '0.5px solid var(--color-border-tertiary)', borderRadius: 4 }}>
               ⚙ {weeklyHours}h/week
             </span>
           </div>
@@ -211,8 +189,27 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             </span>
             <span style={{ color: capFill, fontWeight: 500 }}>{committedLoad.toFixed(1)}h / {weeklyHours}h</span>
           </div>
-          <div className="progress-track" style={{ height: 8, marginBottom: 6 }}>
-            <div className="progress-fill" style={{ width: `${capPct}%`, background: capFill }} />
+          {/* Capacity bar — plain divs, no outline/shadow */}
+          <div style={{
+            background: '#e0e0e0',
+            borderRadius: 3,
+            height: 8,
+            overflow: 'hidden',
+            boxShadow: 'none',
+            outline: 'none',
+            border: 'none',
+            marginBottom: 6,
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${capPct}%`,
+              background: capFill,
+              boxShadow: 'none',
+              outline: 'none',
+              border: 'none',
+              borderRadius: 0,
+              transition: 'width 0.25s ease',
+            }} />
           </div>
           {capPct >= 100 && (
             <div style={{ fontSize: 11, color: 'var(--color-text-danger)', marginBottom: 8 }}>
@@ -221,7 +218,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           )}
         </div>
 
-        {/* Suggested focus queue */}
         {focusQueue.length > 0 && (
           <div>
             <div className="section-label">Suggested focus</div>
@@ -247,10 +243,8 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         )}
       </div>
 
-      {/* ── Right column ── */}
       <div className="right-col">
         <QuickTasks quickTasks={quickTasks} onSave={saveQuickTask} onDelete={removeQuickTask} />
-
         {todayPlan.length > 0 && (
           <div className="today-plan-panel">
             <div className="today-plan-title">
@@ -279,7 +273,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         )}
       </div>
 
-      {/* ── Task detail panel ── */}
       {panelTask && (
         <TaskPanel
           task={panelTask}
@@ -328,37 +321,39 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   return (
     <div className="focus-card" onClick={onOpen}>
+      {/* Row 1: status dot · task name · category · score */}
       <div className="focus-card-header">
         <span
           className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
           style={{ flexShrink: 0, cursor: 'pointer' }}
           onClick={e => { e.stopPropagation(); onCycle(task); }}
         >{isDone ? '✓' : isInProg ? '…' : ''}</span>
-
-        {/* Next substep checkbox — clicking marks it done */}
-        {nextStep && (
-          <input
-            type="checkbox"
-            style={{ flexShrink: 0, cursor: 'pointer', width: 14, height: 14 }}
-            checked={false}
-            title={`Mark done: ${nextStep.text}`}
-            onChange={() => {}} // controlled; real action below
-            onClick={e => {
-              e.stopPropagation();
-              onToggleNextSubstep(task);
-            }}
-          />
-        )}
-
         <span className="focus-card-name">{task.name}</span>
         <span className="focus-card-cat">{task.catName}</span>
         <span className="focus-card-score" style={{ color }}>{score > 0 ? score : ''}</span>
       </div>
 
+      {/* Row 2: next substep checkbox + label (own line, below name) */}
       {nextStep && (
-        <div className="focus-card-substep">Next: <em>{nextStep.text}</em></div>
+        <div
+          className="focus-card-substep-row"
+          onClick={e => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            style={{ flexShrink: 0, cursor: 'pointer', width: 13, height: 13, margin: 0 }}
+            checked={false}
+            title={`Mark done: ${nextStep.text}`}
+            onChange={() => {}}
+            onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            Next: <em>{nextStep.text}</em>
+          </span>
+        </div>
       )}
 
+      {/* Row 3: urgency bar + meta */}
       <div className="focus-card-bar-row">
         <div className="focus-bar-track">
           <div className="focus-bar-fill" style={{ width: `${pct}%`, background: color }} />

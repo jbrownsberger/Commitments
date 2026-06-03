@@ -1,103 +1,144 @@
-/* ── Metrics grid ────────────────────────────────────────────────────── */
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-.overview-metric {
-  background: var(--color-background-secondary);
-  border-radius: var(--border-radius-md);
-  padding: 14px 16px;
-}
-.metric-val   { font-size: 28px; font-weight: 400; line-height: 1.1; }
-.metric-label { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
-
-/* ── Section label ──────────────────────────────────────────────────── */
-.section-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  margin-bottom: 10px;
-}
-
-/* ── Urgent bar rows ────────────────────────────────────────────────── */
-.urgent-bar-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 6px 0;
-  cursor: pointer;
-}
-.urgent-bar-row:hover { opacity: 0.85; }
-.urgent-bar-name  { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
-.urgent-bar-sub   { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; }
-.urgent-bar-track {
-  height: 8px;
-  background: var(--color-background-secondary);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.urgent-bar-fill  { height: 100%; border-radius: 4px; transition: width 0.3s; }
-.urgent-bar-days  { font-size: 11px; font-weight: 500; min-width: 60px; text-align: right; flex-shrink: 0; padding-top: 2px; }
-
-/* ── Focus cards ───────────────────────────────────────────────────────── */
-.focus-card {
-  padding: 12px 0 14px;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-  cursor: pointer;
-}
-.focus-card:last-child { border-bottom: none; }
-.focus-card:hover { opacity: 0.9; }
-.focus-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.focus-card-name  { font-size: 14px; font-weight: 500; flex: 1; }
-.focus-card-cat   { font-size: 12px; color: var(--color-text-secondary); flex-shrink: 0; }
-.focus-card-score { font-size: 12px; font-weight: 600; min-width: 28px; text-align: right; flex-shrink: 0; }
-.focus-card-substep { font-size: 11px; color: var(--color-text-secondary); margin: 2px 0 6px 26px; }
-.focus-card-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-}
-.focus-bar-track {
-  flex: 1;
-  height: 8px;
-  background: var(--color-background-secondary);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.focus-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
-.focus-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.focus-hrs-badge {
-  font-size: 11px;
-  font-weight: 500;
-  background: var(--color-background-info);
-  color: var(--color-text-info);
-  padding: 2px 8px;
-  border-radius: 10px;
-  white-space: nowrap;
-}
-
-/* ── Right column ──────────────────────────────────────────────────────── */
+/* ── Overview layout ──────────────────────────────────────────────────────── */
 .right-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 1rem;
   position: sticky;
   top: 1rem;
 }
 
-/* ── Today's plan panel ────────────────────────────────────────────────── */
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 600px) {
+  .overview-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.overview-metric {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  padding: 12px 14px;
+  text-align: center;
+}
+.metric-val   { font-size: 22px; font-weight: 600; }
+.metric-label { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+/* ── Urgent bar rows ──────────────────────────────────────────────────────── */
+.urgent-bar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+}
+.urgent-bar-row:last-child { border-bottom: none; }
+.urgent-bar-row:hover { background: var(--color-background-secondary); margin: 0 -6px; padding-left: 6px; padding-right: 6px; border-radius: 6px; }
+.urgent-bar-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.urgent-bar-sub  { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 3px; }
+.urgent-bar-track {
+  height: 4px;
+  background: var(--color-background-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.urgent-bar-fill {
+  height: 100%;
+  border-radius: 0;
+  transition: width 0.3s;
+}
+.urgent-bar-days { font-size: 11px; white-space: nowrap; padding-top: 2px; }
+
+/* ── Focus cards ──────────────────────────────────────────────────────────── */
+.focus-card {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  background: var(--color-background-primary);
+}
+.focus-card:hover { background: var(--color-background-secondary); }
+
+.focus-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 0;
+}
+.focus-card-name  { flex: 1; font-size: 13px; font-weight: 500; }
+.focus-card-cat   { font-size: 11px; color: var(--color-text-secondary); }
+.focus-card-score { font-size: 12px; font-weight: 600; min-width: 24px; text-align: right; }
+
+/* Next substep row — sits on its own line below the task name */
+.focus-card-substep-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  margin-left: 23px;   /* align with task name (past status dot + gap) */
+  margin-bottom: 2px;
+}
+
+/* Legacy single-line substep label (urgent bar still uses this) */
+.focus-card-substep {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 3px;
+  margin-bottom: 3px;
+  margin-left: 23px;
+}
+
+.focus-card-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.focus-bar-track {
+  flex: 1;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: none;
+  outline: none;
+  border: none;
+}
+.focus-bar-fill {
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  transition: width 0.3s;
+}
+.focus-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.focus-hrs-badge {
+  font-size: 11px;
+  background: var(--color-background-info);
+  color: var(--color-text-info);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+/* ── Today's plan panel ───────────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-lg);
@@ -115,40 +156,17 @@
 .today-plan-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 8px;
+  padding: 6px 0;
   border-bottom: 0.5px solid var(--color-border-tertiary);
   cursor: pointer;
 }
 .today-plan-item:last-child { border-bottom: none; }
 .today-plan-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.today-plan-name {
-  font-size: 13px;
-  font-weight: 500;
-}
-.today-plan-name.done { text-decoration: line-through; color: var(--color-text-secondary); }
-.today-plan-meta { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
-
-/* ── Urgency item (legacy, keep for compatibility) ──────────────────────── */
-.urgency-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-}
-.urgency-item:last-child { border-bottom: none; }
-.urgency-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  margin-top: 5px;
   flex-shrink: 0;
 }
-
-@media (max-width: 680px) {
-  .overview-grid { grid-template-columns: repeat(2, 1fr); }
-}
+.today-plan-name { font-size: 13px; }
+.today-plan-name.done { text-decoration: line-through; color: var(--color-text-secondary); }
+.today-plan-meta { font-size: 11px; color: var(--color-text-tertiary); }

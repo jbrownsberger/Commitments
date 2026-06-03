@@ -2,32 +2,25 @@ import React, { useState, useRef, useCallback } from 'react';
 import TaskPanel   from './TaskPanel.jsx';
 import '../styles/planner.css';
 
-// ── Constants ────────────────────────────────────────────────────────────────
 const SHOW_WEEKS = 4;
 const DAY_NAMES  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
-// ── Pure helpers ───────────────────────────────────────────────────────────────
-
 function toISO(d) { return d.toISOString().slice(0, 10); }
-
 function fmtShort(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
-
 function taskProgress(task) {
   const substeps = task.substeps || [];
-  if (substeps.length === 0) return task.manual_progress ?? task.manualProgress ?? 0;
+  if (!substeps.length) return task.manual_progress ?? task.manualProgress ?? 0;
   const totalWeight = substeps.reduce((s, sub) => s + (sub.weight ?? 1), 0);
-  if (totalWeight === 0) return 0;
+  if (!totalWeight) return 0;
   const doneWeight = substeps.filter(s => s.done).reduce((s, sub) => s + (sub.weight ?? 1), 0);
   return Math.round((doneWeight / totalWeight) * 100);
 }
-
 function remainingHours(task) {
-  const est  = parseFloat(task.estimated_hours) || 1;
+  const est = parseFloat(task.estimated_hours) || 1;
   return Math.max(0, est * (1 - taskProgress(task) / 100));
 }
-
 function buildISOs(weekOffset) {
   const today  = new Date(); today.setHours(0,0,0,0);
   const anchor = new Date(today);
@@ -37,7 +30,6 @@ function buildISOs(weekOffset) {
     const d = new Date(anchor); d.setDate(d.getDate() + i); return toISO(d);
   });
 }
-
 function hoursOnDay(task, iso, todayISO) {
   const rem        = remainingHours(task);
   const futureDays = (task.scheduled_days || []).filter(d => d >= todayISO);
@@ -49,13 +41,11 @@ function hoursOnDay(task, iso, todayISO) {
     ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
 }
-
-function autoFill(tasks, weeklyHours, sessionHours, allISOs) {
+function autoFill(tasks, weeklyHours, sessionHours) {
   const todayISO = toISO(new Date());
   const dayAvail = weeklyHours / 7;
   const DAYS     = 16 * 7;
-
-  const dayLoad = {};
+  const dayLoad  = {};
   for (const t of tasks) {
     if (!t.scheduled_days) continue;
     const rem        = remainingHours(t);
@@ -70,20 +60,17 @@ function autoFill(tasks, weeklyHours, sessionHours, allISOs) {
       dayLoad[d] = (dayLoad[d] || 0) + (dayHours[d] !== undefined ? dayHours[d] : perUw);
     }
   }
-
   const unscheduled = tasks
     .filter(t => t.status !== 'done' && !t.recurring &&
       (!t.scheduled_days || !t.scheduled_days.some(d => d >= todayISO)))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
-
   const updated = tasks.map(t => ({
     ...t,
     scheduled_days: t.scheduled_days ? [...t.scheduled_days] : [],
     scheduled_day_hours: { ...(t.scheduled_day_hours || {}) },
   }));
-  const byId = Object.fromEntries(updated.map(t => [t.id, t]));
+  const byId  = Object.fromEntries(updated.map(t => [t.id, t]));
   const today = new Date(); today.setHours(0,0,0,0);
-
   for (const t of unscheduled) {
     const task = byId[t.id];
     if (!task) continue;
@@ -100,11 +87,10 @@ function autoFill(tasks, weeklyHours, sessionHours, allISOs) {
       if (space > 0.05) candidates.push(iso);
       cur.setDate(cur.getDate() + 1);
     }
-    if (candidates.length === 0) continue;
+    if (!candidates.length) continue;
     const sessionsNeeded = Math.ceil(rem / sessionHours);
     const assignedDays   = sessionsNeeded <= candidates.length
-      ? candidates.slice(-sessionsNeeded)
-      : candidates;
+      ? candidates.slice(-sessionsNeeded) : candidates;
     const hrsPerDay = rem / assignedDays.length;
     for (const iso of assignedDays) {
       const space  = Math.max(dayAvail - (dayLoad[iso] || 0), 0);
@@ -116,8 +102,6 @@ function autoFill(tasks, weeklyHours, sessionHours, allISOs) {
   return updated;
 }
 
-// ── Component ───────────────────────────────────────────────────────────────────
-
 export default function Planner({ appData, userId, onEditTask }) {
   const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule } = appData;
   const weeklyHours  = preferences?.weekly_hours  ?? 20;
@@ -127,24 +111,22 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [weekOffset,  setWeekOffset]  = useState(0);
   const [openPopover, setOpenPopover] = useState(null);
   const [hrsInput,    setHrsInput]    = useState('');
-  const [panelTask,   setPanelTask]   = useState(null);  // task detail panel
+  const [panelTask,   setPanelTask]   = useState(null);
   const dragging = useRef(null);
 
   const today    = new Date(); today.setHours(0,0,0,0);
   const todayISO = toISO(today);
   const allISOs  = buildISOs(weekOffset);
-
-  const catMap    = Object.fromEntries(categories.map(c => [c.id, c]));
+  const catMap   = Object.fromEntries(categories.map(c => [c.id, c]));
   const allActive = tasks.filter(t => t.status !== 'done');
 
   const dayLoad        = {};
   const scheduledOnDay = {};
   const dueOnDay       = {};
   allISOs.forEach(iso => { dayLoad[iso] = 0; scheduledOnDay[iso] = []; dueOnDay[iso] = []; });
-
   for (const t of allActive) {
     if (t.due_date && dueOnDay[t.due_date] !== undefined) dueOnDay[t.due_date].push(t);
-    if (!t.scheduled_days || t.scheduled_days.length === 0) continue;
+    if (!t.scheduled_days?.length) continue;
     const rem        = remainingHours(t);
     if (rem <= 0) continue;
     const futureDays = t.scheduled_days.filter(d => d >= todayISO);
@@ -159,10 +141,8 @@ export default function Planner({ appData, userId, onEditTask }) {
     t => !t.recurring && (!t.scheduled_days || !t.scheduled_days.some(d => allISOs.includes(d)))
   ).sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Handlers
   const handleAutoFill = useCallback(async () => {
-    const savePreferences = appData.savePreferences;
-    const updated = autoFill(allActive, weeklyHours, sessionHours, allISOs);
+    const updated = autoFill(allActive, weeklyHours, sessionHours);
     for (const t of updated) {
       const orig = tasks.find(x => x.id === t.id);
       const schedChanged = JSON.stringify(orig?.scheduled_days?.slice().sort()) !==
@@ -174,12 +154,12 @@ export default function Planner({ appData, userId, onEditTask }) {
         }
       }
     }
-  }, [allActive, weeklyHours, sessionHours, allISOs, setTaskSchedule, saveTask, tasks, appData.savePreferences]);
+  }, [allActive, weeklyHours, sessionHours, setTaskSchedule, saveTask, tasks]);
 
   const handleClearAll = useCallback(async () => {
     if (!window.confirm('Remove all scheduled days from every task?')) return;
     for (const t of allActive) {
-      if (t.scheduled_days && t.scheduled_days.length > 0) await setTaskSchedule(t.id, []);
+      if (t.scheduled_days?.length) await setTaskSchedule(t.id, []);
     }
   }, [allActive, setTaskSchedule]);
 
@@ -214,20 +194,28 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [setTaskSchedule, saveTask]);
 
+  // FIX: always carry scheduled_days through so saveTask doesn't clobber the schedule
   const setDayHours = useCallback(async (task, iso, hrs) => {
     const dayHrs = { ...(task.scheduled_day_hours || {}), [iso]: Math.max(0, hrs) };
-    await saveTask({ ...task, scheduled_day_hours: dayHrs });
+    await saveTask({
+      ...task,
+      scheduled_days: task.scheduled_days || [],
+      scheduled_day_hours: dayHrs,
+    });
     setOpenPopover(null);
   }, [saveTask]);
 
   const clearDayHours = useCallback(async (task, iso) => {
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
     delete dayHrs[iso];
-    await saveTask({ ...task, scheduled_day_hours: dayHrs });
+    await saveTask({
+      ...task,
+      scheduled_days: task.scheduled_days || [],
+      scheduled_day_hours: dayHrs,
+    });
     setOpenPopover(null);
   }, [saveTask]);
 
-  // Open task panel (enrich with cat)
   const openPanel = (task) => {
     const cat = catMap[task.category_id];
     setPanelTask({ task, cat });
@@ -235,7 +223,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   return (
     <div className="planner">
-      {/* Controls */}
       <div className="planner-controls">
         <div className="planner-nav">
           <button className="btn btn-sm" onClick={() => setWeekOffset(w => w - 1)}>←</button>
@@ -249,7 +236,6 @@ export default function Planner({ appData, userId, onEditTask }) {
       </div>
 
       <div className="planner-layout">
-        {/* Sidebar */}
         <div className="planner-sidebar" onDragOver={e => e.preventDefault()} onDrop={onDropSidebar}>
           <div className="sidebar-title">
             Unscheduled
@@ -270,7 +256,6 @@ export default function Planner({ appData, userId, onEditTask }) {
           ))}
         </div>
 
-        {/* Week grid */}
         <div className="planner-weeks">
           {Array.from({ length: SHOW_WEEKS }, (_, w) => {
             const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
@@ -290,8 +275,8 @@ export default function Planner({ appData, userId, onEditTask }) {
                 </div>
                 <div className="planner-day-cols">
                   {weekISOs.map(iso => {
-                    const load  = dayLoad[iso] || 0;
-                    const over  = load > dayAvail + 0.05;
+                    const load   = dayLoad[iso] || 0;
+                    const over   = load > dayAvail + 0.05;
                     const isPast = iso < todayISO;
                     return (
                       <div
@@ -308,7 +293,7 @@ export default function Planner({ appData, userId, onEditTask }) {
                           <div key={t.id} className="due-chip"
                             style={{ background: catMap[t.category_id]?.color || '#888' }}
                             title={`Due: ${t.name}`}>
-                            📅 {t.name.slice(0, 12)}{t.name.length > 12 ? '…' : ''}
+                            📅 {t.name.slice(0,12)}{t.name.length>12?'…':''}
                           </div>
                         ))}
                         {scheduledOnDay[iso]?.map(t => {
@@ -350,13 +335,12 @@ export default function Planner({ appData, userId, onEditTask }) {
         </div>
       </div>
 
-      {/* Task detail panel */}
       {panelTask && (
         <TaskPanel
           task={panelTask.task}
           cat={panelTask.cat}
           onClose={() => setPanelTask(null)}
-          onSave={async (updated) => { await saveTask(updated); setPanelTask(null); }}
+          onSave={async (updated) => { await saveTask(updated); setPanelTask({ ...panelTask, task: updated }); }}
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
           onEdit={(task) => { setPanelTask(null); onEditTask(task); }}
         />
@@ -365,7 +349,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   );
 }
 
-// ── PlannerTaskCard ──────────────────────────────────────────────────────────────
 function PlannerTaskCard({
   task, cat, iso, hrs, isCustom,
   isPopoverOpen, hrsInput,
@@ -382,7 +365,7 @@ function PlannerTaskCard({
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
     >
-      <div className="card-body" onClick={onOpen} style={{ cursor:'pointer' }}>
+      <div className="card-body" onClick={onOpen} style={{ cursor: 'pointer' }}>
         <div className="card-name">{task.name.slice(0,22)}{task.name.length>22?'…':''}</div>
         <div className="card-meta">
           <button
@@ -412,7 +395,6 @@ function PlannerTaskCard({
   );
 }
 
-// ── SidebarCard ──────────────────────────────────────────────────────────────────
 function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onRemoveDay, onClick }) {
   const color   = cat?.color || '#888';
   const due     = task.due_date ? `due ${fmtShort(task.due_date)}` : 'no deadline';
