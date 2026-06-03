@@ -1,7 +1,7 @@
 /**
- * TaskModal — standalone add/edit task modal.
- * Can be opened from anywhere (Shell header, Overview, etc.).
- * onSave receives the raw form values; caller decides category_id.
+ * TaskModal — add / edit task.
+ * Always shows a category dropdown.
+ * Inline substep add/remove.
  */
 import React, { useState } from 'react';
 import Modal from './Modal.jsx';
@@ -18,18 +18,25 @@ const CADENCE_OPTS = [
   { val: 'weekly',  label: 'Weekly'   },
 ];
 
-/**
- * Props:
- *   task       — existing task object (edit mode) or null (add mode)
- *   catId      — category_id to assign (required when task is null)
- *   categories — array of category objects (for the dropdown when catId is not fixed)
- *   onSave     — async (taskPayload) => void
- *   onClose    — () => void
- */
 export default function TaskModal({ task, catId, categories = [], onSave, onClose }) {
   const isEdit = !!task;
   const [submitting, setSubmitting] = useState(false);
-  const [selCatId, setSelCatId] = useState(catId ?? task?.category_id ?? categories[0]?.id ?? null);
+  const [selCatId,   setSelCatId]   = useState(
+    catId ?? task?.category_id ?? categories[0]?.id ?? null
+  );
+  // Substep editor
+  const [substeps,    setSubsteps]   = useState(
+    (task?.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 }))
+  );
+  const [newStepText, setNewStepText] = useState('');
+
+  const addSubstep = () => {
+    const text = newStepText.trim();
+    if (!text) return;
+    setSubsteps(prev => [...prev, { text, done: false, weight: 1 }]);
+    setNewStepText('');
+  };
+  const removeSubstep = (i) => setSubsteps(prev => prev.filter((_, idx) => idx !== i));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,7 +54,7 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       manual_progress:   task?.manual_progress ?? 0,
       recurring:         isRecurring,
       recurring_cadence: isRecurring ? (fd.get('cadence') || 'daily') : null,
-      substeps:          task?.substeps ?? [],
+      substeps,
       position:          task?.position ?? 0,
     };
     setSubmitting(true);
@@ -60,10 +67,10 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   };
 
   return (
-    <Modal title={isEdit ? 'Edit task' : 'Add task'} onClose={onClose}>
+    <Modal title={isEdit ? 'Edit task' : 'Add task'} onClose={onClose} wide>
       <form onSubmit={handleSubmit}>
-        {/* Category selector — only shown when no fixed catId and categories available */}
-        {!catId && categories.length > 0 && (
+        {/* Category — always shown */}
+        {categories.length > 0 && (
           <div className="form-field">
             <label>Category</label>
             <select value={selCatId || ''} onChange={e => setSelCatId(e.target.value)}>
@@ -102,11 +109,8 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
 
         <div className="form-field">
           <label>Estimated hours</label>
-          <input
-            type="number" name="estimated_hours"
-            min={0.5} step={0.5}
-            defaultValue={task?.estimated_hours ?? 1}
-          />
+          <input type="number" name="estimated_hours" min={0.5} step={0.5}
+            defaultValue={task?.estimated_hours ?? 1} />
         </div>
 
         <div className="form-field">
@@ -114,12 +118,33 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
           <textarea name="notes" defaultValue={task?.notes || ''} />
         </div>
 
-        <div className="form-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox" name="recurring" id="tm-recurring-cb"
-            defaultChecked={!!task?.recurring}
-          />
-          <label htmlFor="tm-recurring-cb" style={{ color: 'var(--color-text-primary)', fontSize: 13 }}>
+        {/* Substeps */}
+        <div className="form-field">
+          <label>Substeps</label>
+          {substeps.map((s, i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+              <span style={{ flex:1, fontSize:13 }}>{s.text}</span>
+              <button type="button" className="btn btn-sm btn-danger"
+                style={{ padding:'1px 8px', fontSize:11 }}
+                onClick={() => removeSubstep(i)}>Remove</button>
+            </div>
+          ))}
+          <div style={{ display:'flex', gap:6, marginTop:4 }}>
+            <input
+              style={{ flex:1, fontSize:13, padding:'5px 8px', border:'0.5px solid var(--color-border-secondary)', borderRadius:4 }}
+              placeholder="Add substep, press Enter"
+              value={newStepText}
+              onChange={e => setNewStepText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubstep(); } }}
+            />
+            <button type="button" className="btn btn-sm" onClick={addSubstep}>Add</button>
+          </div>
+        </div>
+
+        <div className="form-field" style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
+          <input type="checkbox" name="recurring" id="tm-recurring-cb"
+            defaultChecked={!!task?.recurring} />
+          <label htmlFor="tm-recurring-cb" style={{ color:'var(--color-text-primary)', fontSize:13 }}>
             Recurring / daily task
           </label>
         </div>

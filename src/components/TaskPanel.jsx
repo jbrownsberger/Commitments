@@ -1,18 +1,27 @@
 /**
  * TaskPanel — full-detail modal for a single task.
- * Status cycle uses UI values (spaces): 'not started' | 'in progress' | 'done'
- * Conversion to DB hyphenated format happens in db.js saveTask.
+ * Matches the screenshot: header, meta row, weighted substeps with drag-to-reorder,
+ * auto-status logic, snooze, notes, footer actions.
+ *
+ * Auto-status rules:
+ *   progress > 0 and < 100  →  'in progress'
+ *   progress === 100         →  'done'
+ *   progress === 0           →  'not started'
  */
 import React, { useState, useRef } from 'react';
 import Modal from './Modal.jsx';
 
 const STATUS_CYCLE = ['not started', 'in progress', 'done'];
 
+// ── Helpers exported for use in Overview/Planner ───────────────────────────
+
 export function taskProgress(task) {
   const substeps = task.substeps || [];
   if (substeps.length === 0) return task.manual_progress ?? task.manualProgress ?? 0;
-  const doneCount = substeps.filter(s => s.done).length;
-  return Math.round((doneCount / substeps.length) * 100);
+  const totalWeight = substeps.reduce((s, sub) => s + (sub.weight ?? 1), 0);
+  if (totalWeight === 0) return 0;
+  const doneWeight  = substeps.filter(s => s.done).reduce((s, sub) => s + (sub.weight ?? 1), 0);
+  return Math.round((doneWeight / totalWeight) * 100);
 }
 
 export function remainingHours(task) {
@@ -52,192 +61,268 @@ export function formatDate(dateStr) {
   });
 }
 
+// Derive status from numeric progress
+function statusFromProgress(prog, currentStatus) {
+  if (prog >= 100) return 'done';
+  if (prog > 0)    return 'in progress';
+  return currentStatus === 'done' ? 'not started' : currentStatus;
+}
+
+// Priority badge colors
+const PRIORITY_STYLES = {
+  low:      { bg: 'var(--color-background-success)', color: 'var(--color-text-success)' },
+  med:      { bg: 'var(--color-background-warning)', color: 'var(--color-text-warning)' },
+  high:     { bg: '#FAEEDA', color: '#854F0B' },
+  critical: { bg: 'var(--color-background-danger)',  color: 'var(--color-text-danger)'  },
+};
+const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit }) {
-  const [localTask, setLocalTask] = useState({ ...task });
+  const [local, setLocal] = useState({
+    ...task,
+    substeps: (task.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 })),
+  });
   const dragIdx = useRef(null);
 
-  const prog = taskProgress(localTask);
-  const rem  = remainingHours(localTask);
-  const days = daysUntil(localTask.due_date ?? localTask.dueDate);
-  const isDone    = localTask.status === 'done';
-  const isOverdue = !isDone && (localTask.due_date ?? localTask.dueDate) && days < 0;
-  const daysStr   = !(localTask.due_date ?? localTask.dueDate) ? ''
+  const prog    = taskProgress(local);
+  const rem     = remainingHours(local);
+  const days    = daysUntil(local.due_date ?? local.dueDate);
+  const isDone  = local.status === 'done';
+  const isOverdue = !isDone && (local.due_date ?? local.dueDate) && days < 0;
+
+  const daysStr = !(local.due_date ?? local.dueDate) ? ''
     : days < 0  ? `${Math.abs(days)}d overdue`
-    : days === 0 ? 'Due today'
+    : days === 0 ? 'today'
     : `${days}d left`;
 
+  // Persist a partial update
   const save = (updates) => {
-    const next = { ...localTask, ...updates };
-    setLocalTask(next);
+    const next = { ...local, ...updates };
+    setLocal(next);
     onSave(next);
   };
 
+  // ── Status button
   const cycleStatus = () => {
-    const cur  = STATUS_CYCLE.indexOf(localTask.status);
+    const cur  = STATUS_CYCLE.indexOf(local.status);
     const next = STATUS_CYCLE[(cur + 1) % STATUS_CYCLE.length];
-    save({ status: next, manual_progress: next === 'done' ? 100 : localTask.manual_progress });
+    save({
+      status: next,
+      manual_progress: next === 'done' ? 100 : next === 'not started' ? 0 : local.manual_progress,
+    });
   };
+  const statusBtnLabel = isDone ? 'Reopen'
+    : local.status === 'in progress' ? 'Mark done'
+    : '\u25ba Start';
 
-  const statusBtn = isDone ? 'Reopen'
-    : localTask.status === 'in progress' ? 'Mark done'
-    : 'Start';
-
+  // ── Substep toggle
   const toggleSubstep = (idx) => {
-    const substeps = (localTask.substeps || []).map((s, i) =>
-      i === idx ? { ...s, done: !s.done } : s
-    );
-    const allDone = substeps.every(s => s.done);
-    const anyDone = substeps.some(s  => s.done);
-    const status  = allDone ? 'done' : anyDone ? 'in progress' : 'not started';
-    save({ substeps, status });
+    const substeps = local.substeps.map((s, i) => i === idx ? { ...s, done: !s.done } : s);
+    const newProg  = taskProgress({ ...local, substeps });
+    save({ substeps, status: statusFromProgress(newProg, local.status), manual_progress: newProg });
   };
 
+  // ── Substep weight change
+  const setWeight = (idx, val) => {
+    const substeps = local.substeps.map((s, i) =>
+      i === idx ? { ...s, weight: Math.max(1, parseInt(val) || 1) } : s
+    );
+    const newProg = taskProgress({ ...local, substeps });
+    save({ substeps, status: statusFromProgress(newProg, local.status), manual_progress: newProg });
+  };
+
+  // ── Substep drag-to-reorder
   const moveSubstep = (from, to) => {
     if (from === to) return;
-    const substeps = [...(localTask.substeps || [])];
-    const [moved]  = substeps.splice(from, 1);
-    substeps.splice(to, 0, moved);
-    save({ substeps });
+    const subs = [...local.substeps];
+    const [moved] = subs.splice(from, 1);
+    subs.splice(to, 0, moved);
+    save({ substeps: subs });
   };
 
+  // ── Manual progress slider (no-substep mode)
   const setProgress = (val) => {
-    const v = parseInt(val);
-    save({ manual_progress: v, status: v === 100 ? 'done' : localTask.status });
+    const v      = parseInt(val);
+    const status = statusFromProgress(v, local.status);
+    save({ manual_progress: v, status });
   };
 
-  const bump10 = () => setProgress(Math.min(100, (localTask.manual_progress || 0) + 10));
-
-  const snooze = (days) => {
-    const base = localTask.due_date ?? localTask.dueDate;
+  // ── Snooze
+  const snooze = (numDays) => {
+    const base = local.due_date ?? local.dueDate;
     if (!base) return;
     const d = new Date(base + 'T00:00:00');
-    d.setDate(d.getDate() + days);
+    d.setDate(d.getDate() + numDays);
     save({ due_date: d.toISOString().slice(0, 10) });
   };
 
-  const hasSubsteps = (localTask.substeps || []).length > 0;
+  const hasSubsteps = local.substeps.length > 0;
+  const priorityStyle = PRIORITY_STYLES[local.priority] || {};
 
   return (
     <Modal title="" onClose={onClose} wide>
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:12 }}>
-        <div>
-          <h2 style={{ fontSize:16, fontWeight:500, marginBottom:4 }}>{localTask.name}</h2>
+      {/* ── Header ── */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:16 }}>
+        <div style={{ flex:1, minWidth:0 }}>
+          <h2 style={{ fontSize:22, fontWeight:700, marginBottom:6, lineHeight:1.2 }}>{local.name}</h2>
           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-            {cat && <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{cat.name}</span>}
-            {(localTask.due_date ?? localTask.dueDate) && (
-              <span style={{ fontSize:12, color: isOverdue ? 'var(--color-text-danger)' : days !== null && days <= 3 ? '#BA7517' : 'var(--color-text-secondary)' }}>
-                {formatDate(localTask.due_date ?? localTask.dueDate)} &middot; {daysStr}
+            {cat?.name && (
+              <span style={{ fontSize:13, color:'var(--color-text-secondary)' }}>{cat.name}</span>
+            )}
+            {(local.due_date ?? local.dueDate) && (
+              <span style={{
+                fontSize:13,
+                color: isOverdue ? 'var(--color-text-danger)' : days !== null && days <= 3 ? '#BA7517' : 'var(--color-text-secondary)'
+              }}>
+                {formatDate(local.due_date ?? local.dueDate)}
+                {daysStr && <span style={{ marginLeft:4 }}>({daysStr})</span>}
               </span>
             )}
-            {isOverdue && <span className="badge" style={{ background:'var(--color-bg-danger)', color:'var(--color-text-danger)' }}>Overdue</span>}
+            {local.priority && local.priority !== 'med' && (
+              <span className="badge" style={{ background: priorityStyle.bg, color: priorityStyle.color }}>
+                {PRIORITY_LABELS[local.priority] || local.priority}
+              </span>
+            )}
           </div>
         </div>
-        <button className="btn btn-sm" style={{ whiteSpace:'nowrap' }} onClick={cycleStatus}>
-          {statusBtn}
+        <button className="btn" style={{ whiteSpace:'nowrap', flexShrink:0 }} onClick={cycleStatus}>
+          {statusBtnLabel}
         </button>
       </div>
 
-      {/* Meta */}
-      <div style={{ display:'flex', gap:16, marginBottom:14, flexWrap:'wrap' }}>
-        {(localTask.estimated_hours ?? localTask.estimatedHours) && (
+      {/* ── Meta row ── */}
+      <div style={{ display:'flex', gap:24, marginBottom:20, borderTop:'0.5px solid var(--color-border-tertiary)', borderBottom:'0.5px solid var(--color-border-tertiary)', padding:'12px 0' }}>
+        {(local.estimated_hours ?? local.estimatedHours) && (
           <div>
-            <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Estimated</div>
-            <div style={{ fontSize:13, fontWeight:500 }}>{localTask.estimated_hours ?? localTask.estimatedHours}h</div>
+            <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Estimated</div>
+            <div style={{ fontSize:15, fontWeight:600 }}>{local.estimated_hours ?? local.estimatedHours}h</div>
           </div>
         )}
         <div>
-          <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Remaining</div>
-          <div style={{ fontSize:13, fontWeight:500 }}>{rem.toFixed(1)}h</div>
+          <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Remaining</div>
+          <div style={{ fontSize:15, fontWeight:600 }}>{rem.toFixed(1)}h</div>
         </div>
-        {localTask.priority && (
-          <div>
-            <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Priority</div>
-            <div style={{ fontSize:13, fontWeight:500, textTransform:'capitalize' }}>{localTask.priority}</div>
-          </div>
-        )}
         <div>
-          <div style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Status</div>
-          <div style={{ fontSize:13, fontWeight:500, textTransform:'capitalize' }}>{localTask.status || 'not started'}</div>
+          <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Status</div>
+          <div style={{ fontSize:15, fontWeight:600, textTransform:'capitalize' }}>{local.status || 'not started'}</div>
         </div>
       </div>
 
-      {/* Progress */}
-      <div style={{ marginBottom:14 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--color-text-secondary)', marginBottom:4 }}>
-          <span>Progress</span><span>{prog}%</span>
+      {/* ── Progress ── */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'var(--color-text-secondary)', marginBottom:6 }}>
+          <span>Progress</span>
+          <span>{prog}%</span>
         </div>
-        <div className="progress-track">
+        <div className="progress-track" style={{ height:6, borderRadius:3 }}>
           <div className="progress-fill" style={{ width:`${prog}%` }} />
         </div>
         {!hasSubsteps && (
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:10 }}>
             <input
               type="range" min={0} max={100} step={5}
-              value={localTask.manual_progress || 0}
+              value={local.manual_progress || 0}
               style={{ flex:1, cursor:'pointer', accentColor:'var(--color-text-info)' }}
-              onChange={e => setLocalTask(p => ({ ...p, manual_progress: parseInt(e.target.value) }))}
+              onChange={e => setLocal(p => ({ ...p, manual_progress: parseInt(e.target.value) }))}
               onMouseUp={e  => setProgress(e.target.value)}
-              onTouchEnd={e => setProgress(e.target.value)}
+              onTouchEnd={e => setProgress(e.currentTarget.value)}
             />
-            <span style={{ fontSize:12, minWidth:34 }}>{localTask.manual_progress || 0}%</span>
-            <button className="btn btn-sm" onClick={bump10}>+10%</button>
+            <span style={{ fontSize:12, minWidth:34 }}>{local.manual_progress || 0}%</span>
+            <button className="btn btn-sm" onClick={() => setProgress(Math.min(100, (local.manual_progress || 0) + 10))}>+10%</button>
           </div>
         )}
       </div>
 
-      {/* Substeps */}
+      {/* ── Substeps ── */}
       {hasSubsteps && (
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:'var(--color-text-secondary)', marginBottom:6, fontWeight:500 }}>Substeps</div>
-          <div className="substep-list">
-            {(localTask.substeps || []).map((s, i) => (
-              <div
-                key={i} className="substep"
-                draggable
-                onDragStart={e => { dragIdx.current = i; e.currentTarget.style.opacity = '0.4'; }}
-                onDragEnd={e   => { e.currentTarget.style.opacity = '1'; }}
-                onDragOver={e  => e.preventDefault()}
-                onDrop={e      => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
-              >
-                <span
-                  className={`substep-check${s.done ? ' done' : ''}`}
-                  onClick={() => toggleSubstep(i)}
-                >{s.done ? '✓' : ''}</span>
-                <span className={`substep-text${s.done ? ' done' : ''}`} style={{ flex:1 }}>{s.text}</span>
-              </div>
-            ))}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+            Substeps
+            <span style={{ fontSize:12, fontWeight:400, color:'var(--color-text-tertiary)' }}>— drag to reorder</span>
           </div>
+          {local.substeps.map((s, i) => (
+            <div
+              key={i}
+              style={{
+                display:'flex', alignItems:'center', gap:8,
+                padding:'6px 0',
+                borderBottom:'0.5px solid var(--color-border-tertiary)',
+                cursor:'default',
+              }}
+              draggable
+              onDragStart={e => {
+                dragIdx.current = i;
+                e.currentTarget.style.opacity = '0.4';
+              }}
+              onDragEnd={e => { e.currentTarget.style.opacity = '1'; }}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
+            >
+              {/* drag handle */}
+              <span style={{ color:'var(--color-text-tertiary)', cursor:'grab', fontSize:14, userSelect:'none' }}>⠇</span>
+              {/* checkbox */}
+              <input
+                type="checkbox"
+                checked={!!s.done}
+                onChange={() => toggleSubstep(i)}
+                style={{ width:16, height:16, cursor:'pointer', flexShrink:0 }}
+              />
+              {/* text */}
+              <span style={{
+                flex:1, fontSize:14,
+                textDecoration: s.done ? 'line-through' : 'none',
+                color: s.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+              }}>{s.text}</span>
+              {/* weight */}
+              <span style={{ fontSize:12, color:'var(--color-text-tertiary)' }}>wt:</span>
+              <input
+                type="number" min={1} max={99}
+                value={s.weight ?? 1}
+                onChange={e => setWeight(i, e.target.value)}
+                style={{
+                  width:52, fontSize:13, padding:'2px 4px',
+                  border:'0.5px solid var(--color-border-secondary)',
+                  borderRadius:4, textAlign:'center',
+                }}
+                title="Weight (affects progress %)"
+              />
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Notes */}
-      {localTask.notes && (
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:'var(--color-text-secondary)', marginBottom:4, fontWeight:500 }}>Notes</div>
-          <div className="notes-text">{localTask.notes}</div>
+      {/* ── Notes ── */}
+      {local.notes && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Notes</div>
+          <div style={{ fontSize:13, color:'var(--color-text-secondary)', fontStyle:'italic' }}>{local.notes}</div>
         </div>
       )}
 
-      {/* Snooze */}
-      <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', marginBottom:10 }}>
-        <span style={{ fontSize:11, color:'var(--color-text-secondary)' }}>Snooze:</span>
-        {(localTask.due_date ?? localTask.dueDate) ? (
+      {/* ── Snooze ── */}
+      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:20 }}>
+        <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>Snooze:</span>
+        {(local.due_date ?? local.dueDate) ? (
           <>
-            <button className="btn btn-sm" onClick={() => snooze(1)}>1 day</button>
-            <button className="btn btn-sm" onClick={() => snooze(7)}>1 week</button>
+            <button className="btn btn-sm" onClick={() => snooze(1)}>+1 day</button>
+            <button className="btn btn-sm" onClick={() => snooze(7)}>+1 week</button>
           </>
         ) : (
-          <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>No due date set</span>
+          <span style={{ fontSize:12, color:'var(--color-text-tertiary)' }}>No due date set</span>
         )}
       </div>
 
-      {/* Actions */}
+      {/* ── Footer ── */}
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Close</button>
-        <button className="btn" onClick={() => { onClose(); onEdit(localTask); }}>Edit</button>
-        <button className="btn btn-danger"
-          onClick={() => { if (window.confirm(`Delete “${localTask.name}”?`)) { onDelete(localTask.id); onClose(); } }}
+        <button className="btn" onClick={() => { onClose(); onEdit(local); }}>Edit</button>
+        <button
+          className="btn btn-danger"
+          onClick={() => {
+            if (window.confirm(`Delete "${local.name}"?`)) { onDelete(local.id); onClose(); }
+          }}
         >Delete</button>
       </div>
     </Modal>
