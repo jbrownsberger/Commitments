@@ -15,6 +15,31 @@ import {
 
 const UNDO_LIMIT = 30;
 
+/**
+ * Normalise camelCase / legacy field names to snake_case DB columns
+ * before writing.  db.js strips fields it doesn't know, but we must
+ * ensure the right keys are present.
+ */
+function normaliseTaskFields(task) {
+  const out = { ...task };
+  // due_date — accept dueDate as alias
+  if (!out.due_date && out.dueDate) {
+    out.due_date = out.dueDate;
+  }
+  delete out.dueDate;
+  // estimated_hours — accept estimatedHours as alias
+  if (!out.estimated_hours && out.estimatedHours) {
+    out.estimated_hours = parseFloat(out.estimatedHours);
+  }
+  delete out.estimatedHours;
+  // manual_progress — accept manualProgress as alias
+  if (out.manual_progress === undefined && out.manualProgress !== undefined) {
+    out.manual_progress = out.manualProgress;
+  }
+  delete out.manualProgress;
+  return out;
+}
+
 export function useAppData(userId) {
   const [categories,  setCategories]  = useState([]);
   const [tasks,       setTasks]       = useState([]);
@@ -39,7 +64,6 @@ export function useAppData(userId) {
           fetchPreferences(userId),
           fetchQuickTasks(userId),
         ]);
-        // Attach substeps to tasks
         const tasksWithSubs = tsks.map(t => ({
           ...t,
           substeps: subs.filter(s => s.task_id === t.id),
@@ -112,7 +136,7 @@ export function useAppData(userId) {
   // ── Task CRUD ─────────────────────────────────────────────────────────────
   const saveTask = useCallback(async (task) => {
     pushUndo();
-    const { substeps: subs, ...taskData } = task;
+    const { substeps: subs, ...taskData } = normaliseTaskFields(task);
     const saved = await dbSaveTask({ ...taskData, user_id: userId });
 
     // Save substeps if provided alongside a new task
