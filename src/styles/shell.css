@@ -244,6 +244,12 @@ body {
   color: var(--color-text-primary);
   width: 100%;
 }
+/* Don't stretch checkboxes or radio buttons to full width */
+.form-field input[type="checkbox"],
+.form-field input[type="radio"] {
+  width: auto;
+  padding: 0;
+}
 .form-field textarea { resize: vertical; min-height: 70px; }
 
 /* ── Task status checks ───────────────────────────────────────────────── */
@@ -256,7 +262,8 @@ body {
   font-size: 10px;
 }
 .task-check.done        { background: var(--color-background-success); border-color: var(--color-border-success); color: var(--color-text-success); }
-.task-check.in-progress { background: var(--color-background-info);    border-color: var(--color-border-info);    color: var(--color-text-info); }
+/* in-progress: solid blue fill, no glyph */
+.task-check.in-progress { background: var(--color-background-info); border-color: var(--color-border-info); }
 
 /* ── Progress bar ──────────────────────────────────────────────────────────── */
 .progress-track {
