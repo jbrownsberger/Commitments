@@ -1,6 +1,5 @@
 /**
- * Shell — top-level layout: toolbar, header with global Add Task, tabs, page routing.
- * QuickTasks lives as a side panel inside Overview, not in the header.
+ * Shell — top-level layout. Manages the global add/edit task modal.
  */
 import React, { useState } from 'react';
 import { signOut } from '../lib/db.js';
@@ -11,29 +10,39 @@ import TaskModal  from './TaskModal.jsx';
 import '../styles/shell.css';
 
 const TABS = [
-  { id: 'overview',   label: 'Overview' },
-  { id: 'categories', label: 'Tasks'    },
-  { id: 'planner',    label: 'Planner'  },
+  { id: 'overview',   label: 'Overview & Queue' },
+  { id: 'categories', label: 'Categories'       },
+  { id: 'planner',    label: 'Planner'           },
 ];
 
 export default function Shell({ appData, userId, userEmail }) {
   const [tab,       setTab]       = useState('overview');
-  const [addModal,  setAddModal]  = useState(false);   // global add-task modal
+  // { task: taskObj|null, catId: id|null }  — null means closed
+  const [editModal, setEditModal] = useState(null);
 
   const { categories, saveTask } = appData;
 
-  const handleGlobalSave = async (payload) => {
-    // payload already has category_id from TaskModal
+  // Open modal for new task (no pre-fill)
+  const openAdd = () => {
+    if (categories.length === 0) return;
+    setEditModal({ task: null, catId: categories[0]?.id ?? null });
+  };
+
+  // Open modal pre-filled for edit
+  const openEdit = (task) => {
+    setEditModal({ task, catId: task.category_id });
+  };
+
+  const handleSave = async (payload) => {
     await saveTask(payload);
+    setEditModal(null);
   };
 
   return (
     <div id="root">
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        {userEmail && (
-          <span className="toolbar-label">{userEmail}</span>
-        )}
+        {userEmail && <span className="toolbar-label">{userEmail}</span>}
         <button className="btn btn-sm" onClick={() => signOut()}>Sign out</button>
       </div>
 
@@ -43,12 +52,10 @@ export default function Shell({ appData, userId, userEmail }) {
           <h1>Commitments</h1>
           <button
             className="btn btn-primary"
-            onClick={() => setAddModal(true)}
+            onClick={openAdd}
             disabled={categories.length === 0}
             title={categories.length === 0 ? 'Add a category first' : 'Add a new task'}
-          >
-            Add task
-          </button>
+          >+ Add task</button>
         </div>
 
         {/* ── Tabs ── */}
@@ -64,19 +71,20 @@ export default function Shell({ appData, userId, userEmail }) {
 
         {/* ── Tab content ── */}
         <div className="tab-content">
-          {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={() => setAddModal(true)} />}
-          {tab === 'categories' && <Categories appData={appData} userId={userId} />}
+          {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
+          {tab === 'categories' && <Categories appData={appData} userId={userId} onEditTask={openEdit} />}
           {tab === 'planner'    && <Planner    appData={appData} userId={userId} />}
         </div>
       </div>
 
-      {/* ── Global add-task modal ── */}
-      {addModal && categories.length > 0 && (
+      {/* ── Global add / edit task modal ── */}
+      {editModal && categories.length > 0 && (
         <TaskModal
-          task={null}
+          task={editModal.task}
+          catId={editModal.catId}
           categories={categories}
-          onSave={handleGlobalSave}
-          onClose={() => setAddModal(false)}
+          onSave={handleSave}
+          onClose={() => setEditModal(null)}
         />
       )}
     </div>
