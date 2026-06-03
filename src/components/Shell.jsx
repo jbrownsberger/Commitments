@@ -1,25 +1,30 @@
-/**
- * Top-level shell: toolbar, tabs, and tab routing.
- * This is the direct equivalent of the old <div class="app"> in index.html.
- * Individual tab contents will be ported into their own components.
- */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signOut, downloadICS } from '../lib/db.js';
+import Categories from './Categories.jsx';
 import '../styles/shell.css';
 
 const TABS = [
-  { id: 'overview', label: 'Overview & Queue' },
   { id: 'categories', label: 'Categories' },
-  { id: 'planner', label: 'Planner' },
-  { id: 'calendar', label: 'Calendar' },
+  { id: 'overview',   label: 'Overview & Queue' },
+  { id: 'planner',    label: 'Planner' },
+  { id: 'calendar',   label: 'Calendar' },
 ];
 
 export default function Shell({ userId, userEmail, appData }) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('categories');
   const { categories, tasks, preferences, undo, redo, canUndo, canRedo } = appData;
 
-  const handleExportICS = () => downloadICS(tasks, categories);
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
 
+  const handleExportICS  = () => downloadICS(tasks, categories);
   const handleExportJSON = () => {
     const blob = new Blob([JSON.stringify({ categories, tasks, preferences }, null, 2)],
       { type: 'application/json' });
@@ -32,7 +37,6 @@ export default function Shell({ userId, userEmail, appData }) {
 
   return (
     <div id="root">
-      {/* Toolbar */}
       <div className="toolbar">
         <span className="toolbar-label">Export:</span>
         <button className="btn btn-sm" onClick={handleExportJSON}>JSON</button>
@@ -44,34 +48,22 @@ export default function Shell({ userId, userEmail, appData }) {
       </div>
 
       <div className="app">
-        {/* Header */}
         <div className="header">
           <h1>Commitments</h1>
-          <button
-            className="btn btn-primary"
-            onClick={() => {/* open add-task modal — to be wired up */}}
-          >
-            + Add task
-          </button>
         </div>
 
-        {/* Tabs */}
         <div className="tabs">
           {TABS.map(t => (
-            <div
-              key={t.id}
-              className={`tab${activeTab === t.id ? ' active' : ''}`}
-              onClick={() => setActiveTab(t.id)}
-            >
+            <div key={t.id} className={`tab${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => setActiveTab(t.id)}>
               {t.label}
             </div>
           ))}
         </div>
 
-        {/* Tab content — components to be ported in here */}
         <div className="tab-content">
-          {activeTab === 'overview'   && <div className="placeholder">Overview &amp; Queue — coming soon</div>}
-          {activeTab === 'categories' && <div className="placeholder">Categories — coming soon</div>}
+          {activeTab === 'categories' && <Categories appData={appData} userId={userId} />}
+          {activeTab === 'overview'   && <div className="placeholder">Overview & Queue — coming soon</div>}
           {activeTab === 'planner'    && <div className="placeholder">Planner — coming soon</div>}
           {activeTab === 'calendar'   && <div className="placeholder">Calendar — coming soon</div>}
         </div>
