@@ -1,155 +1,197 @@
-/**
- * Central data hook — owns loading, optimistic updates, and undo stack.
- * Mirrors the shape of the old `state` object so UI logic ports cleanly.
- */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as db from '../lib/db.js';
+import {
+  fetchCategories, fetchTasks, fetchSubsteps, fetchPreferences, fetchQuickTasks,
+  saveCategory   as dbSaveCategory,
+  removeCategory as dbRemoveCategory,
+  saveTask       as dbSaveTask,
+  removeTask     as dbRemoveTask,
+  saveSubstep    as dbSaveSubstep,
+  removeSubstep  as dbRemoveSubstep,
+  savePreferences as dbSavePreferences,
+  saveQuickTask  as dbSaveQuickTask,
+  removeQuickTask as dbRemoveQuickTask,
+} from '../lib/db.js';
+
+const UNDO_LIMIT = 30;
 
 export function useAppData(userId) {
-  const [categories,   setCategories]   = useState([]);
-  const [tasks,        setTasks]        = useState([]);
-  const [preferences,  setPreferences]  = useState({ weekly_hours: 20, session_hours: 1 });
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState(null);
+  const [categories,  setCategories]  = useState([]);
+  const [tasks,       setTasks]       = useState([]);
+  const [substeps,    setSubsteps]    = useState([]);
+  const [preferences, setPreferences] = useState(null);
+  const [quickTasks,  setQuickTasks]  = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
 
-  // Undo stack: each entry is a snapshot of { categories, tasks }
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
-  // ── Load ───────────────────────────────────────────────────────────────────
-  const load = useCallback(async () => {
+  // ── Initial load ─────────────────────────────────────────────────────────
+  useEffect(() => {
     if (!userId) return;
-    setLoading(true);
-    try {
-      const [cats, ts, prefs] = await Promise.all([
-        db.getCategories(userId),
-        db.getTasks(userId),
-        db.getPreferences(userId),
-      ]);
-      setCategories(cats);
-      setTasks(ts);
-      setPreferences(prefs);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    (async () => {
+      try {
+        const [cats, tsks, subs, prefs, qts] = await Promise.all([
+          fetchCategories(userId),
+          fetchTasks(userId),
+          fetchSubsteps(userId),
+          fetchPreferences(userId),
+          fetchQuickTasks(userId),
+        ]);
+        // Attach substeps to tasks
+        const tasksWithSubs = tsks.map(t => ({
+          ...t,
+          substeps: subs.filter(s => s.task_id === t.id),
+        }));
+        setCategories(cats || []);
+        setTasks(tasksWithSubs || []);
+        setSubsteps(subs || []);
+        setPreferences(prefs || {});
+        setQuickTasks(qts || []);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [userId]);
 
-  useEffect(() => { load(); }, [load]);
+  // ── Snapshot for undo ────────────────────────────────────────────────────
+  const snapshot = useCallback(() => ({
+    categories: JSON.parse(JSON.stringify(categories)),
+    tasks:      JSON.parse(JSON.stringify(tasks)),
+    quickTasks: JSON.parse(JSON.stringify(quickTasks)),
+  }), [categories, tasks, quickTasks]);
 
-  // ── Undo / Redo ────────────────────────────────────────────────────────────
   const pushUndo = useCallback(() => {
-    undoStack.current.push({ categories, tasks });
-    if (undoStack.current.length > 50) undoStack.current.shift();
+    undoStack.current = [...undoStack.current.slice(-UNDO_LIMIT), snapshot()];
     redoStack.current = [];
-  }, [categories, tasks]);
+  }, [snapshot]);
 
   const undo = useCallback(() => {
+    if (!undoStack.current.length) return;
+    redoStack.current = [...redoStack.current, snapshot()];
     const prev = undoStack.current.pop();
-    if (!prev) return;
-    redoStack.current.push({ categories, tasks });
     setCategories(prev.categories);
     setTasks(prev.tasks);
-  }, [categories, tasks]);
+    setQuickTasks(prev.quickTasks);
+  }, [snapshot]);
 
   const redo = useCallback(() => {
+    if (!redoStack.current.length) return;
+    undoStack.current = [...undoStack.current, snapshot()];
     const next = redoStack.current.pop();
-    if (!next) return;
-    undoStack.current.push({ categories, tasks });
     setCategories(next.categories);
     setTasks(next.tasks);
-  }, [categories, tasks]);
+    setQuickTasks(next.quickTasks);
+  }, [snapshot]);
 
-  // ── Category mutations ─────────────────────────────────────────────────────
+  // ── Category CRUD ────────────────────────────────────────────────────────
   const saveCategory = useCallback(async (cat) => {
     pushUndo();
-    const saved = await db.upsertCategory({ ...cat, user_id: userId });
-    setCategories(prev => {
-      const idx = prev.findIndex(c => c.id === saved.id);
-      return idx >= 0
+    const saved = await dbSaveCategory({ ...cat, user_id: userId });
+    setCategories(prev =>
+      cat.id
         ? prev.map(c => c.id === saved.id ? saved : c)
-        : [...prev, saved];
-    });
+        : [...prev, saved]
+    );
     return saved;
   }, [userId, pushUndo]);
 
   const removeCategory = useCallback(async (id) => {
     pushUndo();
-    await db.deleteCategory(id);
+    await dbRemoveCategory(id);
     setCategories(prev => prev.filter(c => c.id !== id));
     setTasks(prev => prev.filter(t => t.category_id !== id));
   }, [pushUndo]);
 
-  // ── Task mutations ─────────────────────────────────────────────────────────
+  // ── Task CRUD ────────────────────────────────────────────────────────────
   const saveTask = useCallback(async (task) => {
     pushUndo();
-    const saved = await db.upsertTask({ ...task, user_id: userId });
-    // Persist scheduled days separately
-    if (task.scheduled_days !== undefined) {
-      await db.setScheduledDays(saved.id, userId, task.scheduled_days);
-      saved.scheduled_days = task.scheduled_days;
+    // Extract substeps before saving (DB stores them separately)
+    const { substeps: subs, ...taskData } = task;
+    const saved = await dbSaveTask({ ...taskData, user_id: userId });
+
+    // Save substeps if provided
+    let savedSubs = subs;
+    if (subs && subs.length > 0) {
+      savedSubs = await Promise.all(
+        subs.map((s, i) => dbSaveSubstep({ ...s, task_id: saved.id, user_id: userId, position: i }))
+      );
     }
+
     setTasks(prev => {
-      const idx = prev.findIndex(t => t.id === saved.id);
-      return idx >= 0
-        ? prev.map(t => t.id === saved.id ? { ...prev[idx], ...saved } : t)
-        : [...prev, { ...saved, substeps: [], scheduled_days: [] }];
+      const withSubs = { ...saved, substeps: savedSubs || [] };
+      return task.id
+        ? prev.map(t => t.id === saved.id ? withSubs : t)
+        : [...prev, withSubs];
     });
     return saved;
   }, [userId, pushUndo]);
 
   const removeTask = useCallback(async (id) => {
     pushUndo();
-    await db.deleteTask(id);
+    await dbRemoveTask(id);
     setTasks(prev => prev.filter(t => t.id !== id));
   }, [pushUndo]);
 
-  // ── Substep mutations ──────────────────────────────────────────────────────
+  // ── Substep CRUD ─────────────────────────────────────────────────────────
   const saveSubstep = useCallback(async (substep) => {
-    const saved = await db.upsertSubstep({ ...substep, user_id: userId });
-    setTasks(prev => prev.map(t => {
-      if (t.id !== substep.task_id) return t;
-      const idx = t.substeps.findIndex(s => s.id === saved.id);
-      const substeps = idx >= 0
-        ? t.substeps.map(s => s.id === saved.id ? saved : s)
-        : [...t.substeps, saved];
-      return { ...t, substeps };
-    }));
+    const saved = await dbSaveSubstep({ ...substep, user_id: userId });
+    setTasks(prev => prev.map(t =>
+      t.id === saved.task_id
+        ? { ...t, substeps: t.substeps
+            ? t.substeps.map(s => s.id === saved.id ? saved : s)
+            : [saved] }
+        : t
+    ));
     return saved;
   }, [userId]);
 
   const removeSubstep = useCallback(async (taskId, substepId) => {
-    await db.deleteSubstep(substepId);
+    await dbRemoveSubstep(substepId);
     setTasks(prev => prev.map(t =>
-      t.id !== taskId ? t : { ...t, substeps: t.substeps.filter(s => s.id !== substepId) }
+      t.id === taskId
+        ? { ...t, substeps: (t.substeps || []).filter(s => s.id !== substepId) }
+        : t
     ));
   }, []);
 
-  // ── Scheduled days ─────────────────────────────────────────────────────────
-  const setTaskSchedule = useCallback(async (taskId, dates) => {
-    await db.setScheduledDays(taskId, userId, dates);
-    setTasks(prev => prev.map(t =>
-      t.id !== taskId ? t : { ...t, scheduled_days: dates }
-    ));
+  // ── Preferences ──────────────────────────────────────────────────────────
+  const savePreferences = useCallback(async (prefs) => {
+    const saved = await dbSavePreferences({ ...prefs, user_id: userId });
+    setPreferences(saved);
+    return saved;
   }, [userId]);
 
-  // ── Preferences ────────────────────────────────────────────────────────────
-  const savePreferences = useCallback(async (prefs) => {
-    const saved = await db.upsertPreferences(userId, prefs);
-    setPreferences(saved);
-  }, [userId]);
+  // ── Quick Tasks ──────────────────────────────────────────────────────────
+  const saveQuickTask = useCallback(async (qt) => {
+    pushUndo();
+    const saved = await dbSaveQuickTask({ ...qt, user_id: userId });
+    setQuickTasks(prev =>
+      qt.id && prev.find(q => q.id === qt.id)
+        ? prev.map(q => q.id === saved.id ? saved : q)
+        : [...prev, saved]
+    );
+    return saved;
+  }, [userId, pushUndo]);
+
+  const removeQuickTask = useCallback(async (id) => {
+    pushUndo();
+    await dbRemoveQuickTask(id);
+    setQuickTasks(prev => prev.filter(q => q.id !== id));
+  }, [pushUndo]);
 
   return {
-    categories, tasks, preferences, loading, error,
-    reload: load,
-    undo, redo,
-    canUndo: undoStack.current.length > 0,
-    canRedo: redoStack.current.length > 0,
+    categories, tasks, substeps, preferences, quickTasks,
+    loading, error,
     saveCategory, removeCategory,
     saveTask, removeTask,
     saveSubstep, removeSubstep,
-    setTaskSchedule,
     savePreferences,
+    saveQuickTask, removeQuickTask,
+    undo, redo,
+    canUndo: undoStack.current.length > 0,
+    canRedo: redoStack.current.length > 0,
   };
 }
