@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchCategories, fetchTasks, fetchSubsteps, fetchPreferences, fetchQuickTasks,
-  saveCategory   as dbSaveCategory,
-  removeCategory as dbRemoveCategory,
-  saveTask       as dbSaveTask,
-  removeTask     as dbRemoveTask,
-  saveSubstep    as dbSaveSubstep,
-  removeSubstep  as dbRemoveSubstep,
+  saveCategory    as dbSaveCategory,
+  removeCategory  as dbRemoveCategory,
+  saveTask        as dbSaveTask,
+  removeTask      as dbRemoveTask,
+  saveSubstep     as dbSaveSubstep,
+  removeSubstep   as dbRemoveSubstep,
   savePreferences as dbSavePreferences,
-  saveQuickTask  as dbSaveQuickTask,
+  saveQuickTask   as dbSaveQuickTask,
   removeQuickTask as dbRemoveQuickTask,
-  setScheduledDays as dbSetScheduledDays,
+  setScheduledDays,
 } from '../lib/db.js';
 
 const UNDO_LIMIT = 30;
@@ -27,7 +27,7 @@ export function useAppData(userId) {
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
-  // ── Initial load ─────────────────────────────────────────────────────────
+  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -57,7 +57,7 @@ export function useAppData(userId) {
     })();
   }, [userId]);
 
-  // ── Snapshot for undo ────────────────────────────────────────────────────
+  // ── Snapshot for undo ─────────────────────────────────────────────────────
   const snapshot = useCallback(() => ({
     categories:  JSON.parse(JSON.stringify(categories)),
     tasks:       JSON.parse(JSON.stringify(tasks)),
@@ -90,7 +90,7 @@ export function useAppData(userId) {
     if (next.preferences !== undefined) setPreferences(next.preferences);
   }, [snapshot]);
 
-  // ── Category CRUD ────────────────────────────────────────────────────────
+  // ── Category CRUD ─────────────────────────────────────────────────────────
   const saveCategory = useCallback(async (cat) => {
     pushUndo();
     const saved = await dbSaveCategory({ ...cat, user_id: userId });
@@ -109,20 +109,18 @@ export function useAppData(userId) {
     setTasks(prev => prev.filter(t => t.category_id !== id));
   }, [pushUndo]);
 
-  // ── Task CRUD ────────────────────────────────────────────────────────────
+  // ── Task CRUD ─────────────────────────────────────────────────────────────
   const saveTask = useCallback(async (task) => {
     pushUndo();
-    // Extract substeps before saving (DB stores them separately)
     const { substeps: subs, ...taskData } = task;
     const saved = await dbSaveTask({ ...taskData, user_id: userId });
 
-    // Save substeps if provided
-    let savedSubs = subs;
-    if (subs && subs.length > 0) {
-      savedSubs = await Promise.all(
-        subs.map((s, i) => dbSaveSubstep({ ...s, task_id: saved.id, user_id: userId, position: i }))
-      );
-    }
+    // Save substeps if provided alongside a new task
+    let savedSubs = (subs && subs.length > 0)
+      ? await Promise.all(
+          subs.map((s, i) => dbSaveSubstep({ ...s, task_id: saved.id, user_id: userId, position: i }))
+        )
+      : subs;
 
     setTasks(prev => {
       const withSubs = { ...saved, substeps: savedSubs || [] };
@@ -139,7 +137,7 @@ export function useAppData(userId) {
     setTasks(prev => prev.filter(t => t.id !== id));
   }, [pushUndo]);
 
-  // ── Substep CRUD ─────────────────────────────────────────────────────────
+  // ── Substep CRUD ──────────────────────────────────────────────────────────
   const saveSubstep = useCallback(async (substep) => {
     const saved = await dbSaveSubstep({ ...substep, user_id: userId });
     setTasks(prev => prev.map(t =>
@@ -161,14 +159,14 @@ export function useAppData(userId) {
     ));
   }, []);
 
-  // ── Preferences ──────────────────────────────────────────────────────────
+  // ── Preferences ───────────────────────────────────────────────────────────
   const savePreferences = useCallback(async (prefs) => {
     const saved = await dbSavePreferences({ ...prefs, user_id: userId });
     setPreferences(saved);
     return saved;
   }, [userId]);
 
-  // ── Quick Tasks ──────────────────────────────────────────────────────────
+  // ── Quick Tasks ───────────────────────────────────────────────────────────
   const saveQuickTask = useCallback(async (qt) => {
     pushUndo();
     const saved = await dbSaveQuickTask({ ...qt, user_id: userId });
@@ -188,7 +186,7 @@ export function useAppData(userId) {
 
   // ── Scheduled Days ────────────────────────────────────────────────────────
   const setTaskSchedule = useCallback(async (taskId, dates) => {
-    await dbSetScheduledDays(taskId, userId, dates);
+    await setScheduledDays(taskId, userId, dates);
     setTasks(prev => prev.map(t =>
       t.id === taskId
         ? { ...t, scheduled_days: [...dates].sort() }

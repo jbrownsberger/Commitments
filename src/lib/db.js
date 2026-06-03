@@ -61,11 +61,23 @@ export async function fetchCategories(userId) {
 }
 
 export async function saveCategory(cat) {
-  const { data, error } = await supabase
-    .from('categories')
-    .upsert(cat)
-    .select()
-    .single();
+  const isNew = !cat.id;
+  let data, error;
+  if (isNew) {
+    ({ data, error } = await supabase
+      .from('categories')
+      .insert(cat)
+      .select()
+      .single());
+  } else {
+    const { id, ...fields } = cat;
+    ({ data, error } = await supabase
+      .from('categories')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single());
+  }
   if (error) throw error;
   return data;
 }
@@ -102,12 +114,11 @@ export async function fetchTasks(userId) {
 }
 
 export async function saveTask(task) {
-  // Strip derived/relation fields and rename manual_progress → progress
+  // Strip derived/relation fields; rename manual_progress → progress
   const {
     substeps, scheduled_days,
     catName, catColor, catId,
-    manual_progress,
-    manualProgress,
+    manual_progress, manualProgress,
     dueDate, estimatedHours,   // legacy camelCase aliases
     ...rest
   } = task;
@@ -117,11 +128,25 @@ export async function saveTask(task) {
     progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
   };
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .upsert(row)
-    .select()
-    .single();
+  const isNew = !row.id;
+  let data, error;
+
+  if (isNew) {
+    ({ data, error } = await supabase
+      .from('tasks')
+      .insert(row)
+      .select()
+      .single());
+  } else {
+    const { id, ...fields } = row;
+    ({ data, error } = await supabase
+      .from('tasks')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single());
+  }
+
   if (error) throw error;
   return dbTaskToApp({ ...data, scheduled_days: [] });
 }
@@ -144,11 +169,23 @@ export async function fetchSubsteps(userId) {
 }
 
 export async function saveSubstep(substep) {
-  const { data, error } = await supabase
-    .from('substeps')
-    .upsert(substep)
-    .select()
-    .single();
+  const isNew = !substep.id;
+  let data, error;
+  if (isNew) {
+    ({ data, error } = await supabase
+      .from('substeps')
+      .insert(substep)
+      .select()
+      .single());
+  } else {
+    const { id, ...fields } = substep;
+    ({ data, error } = await supabase
+      .from('substeps')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single());
+  }
   if (error) throw error;
   return data;
 }
@@ -160,7 +197,6 @@ export async function removeSubstep(id) {
 
 // ── Quick Tasks ───────────────────────────────────────────────────────────────
 
-// Convert DB row → app object (timeframe_minutes → timeframeMinutes)
 function dbQtToApp(qt) {
   const { timeframe_minutes, ...rest } = qt;
   return { ...rest, timeframeMinutes: timeframe_minutes ?? 15 };
@@ -177,14 +213,25 @@ export async function fetchQuickTasks(userId) {
 }
 
 export async function saveQuickTask(qt) {
-  // Rename timeframeMinutes → timeframe_minutes for DB
   const { timeframeMinutes, ...rest } = qt;
   const row = { ...rest, timeframe_minutes: timeframeMinutes ?? 15 };
-  const { data, error } = await supabase
-    .from('quick_tasks')
-    .upsert(row)
-    .select()
-    .single();
+  const isNew = !row.id;
+  let data, error;
+  if (isNew) {
+    ({ data, error } = await supabase
+      .from('quick_tasks')
+      .insert(row)
+      .select()
+      .single());
+  } else {
+    const { id, ...fields } = row;
+    ({ data, error } = await supabase
+      .from('quick_tasks')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single());
+  }
   if (error) throw error;
   return dbQtToApp(data);
 }
