@@ -9,7 +9,6 @@ const TABS = [
   { id: 'overview',   label: 'Overview & Queue' },
   { id: 'categories', label: 'Categories' },
   { id: 'planner',    label: 'Planner' },
-  { id: 'calendar',   label: 'Calendar' },
 ];
 
 export default function Shell({ userId, userEmail, appData }) {
@@ -68,7 +67,6 @@ export default function Shell({ userId, userEmail, appData }) {
           {activeTab === 'overview'   && <Overview   appData={appData} userId={userId} />}
           {activeTab === 'categories' && <Categories appData={appData} userId={userId} />}
           {activeTab === 'planner'    && <Planner    appData={appData} userId={userId} />}
-          {activeTab === 'calendar'   && <div className="placeholder">Calendar — coming soon</div>}
         </div>
       </div>
     </div>
