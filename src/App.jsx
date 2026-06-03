@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from './lib/supabase.js';
-import { onAuthChange } from './lib/db.js';
+import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
 
 export default function App() {
-  const [session, setSession] = useState(undefined); // undefined = loading
+  const [session, setSession] = useState(undefined);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -17,43 +15,132 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Still checking session
-  if (session === undefined) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh',
-      fontSize: 13, color: 'var(--color-text-secondary)' }}>
-      Loading…
-    </div>
-  );
-
-  // Not signed in — show auth UI
-  if (!session) return (
-    <div style={{ maxWidth: 400, margin: '80px auto', padding: '0 1.5rem' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 500, marginBottom: '1.5rem' }}>Commitments</h1>
-      <Auth
-        supabaseClient={supabase}
-        appearance={{ theme: ThemeSupa }}
-        providers={['google']}
-        magicLink={true}
-        view="sign_in"
-      />
-    </div>
-  );
-
+  if (session === undefined) return <Splash text="Loading…" />;
+  if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-function AuthedApp({ userId, userEmail }) {
-  const appData = useAppData(userId);
-  if (appData.loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh',
-      fontSize: 13, color: 'var(--color-text-secondary)' }}>
-      Loading your data…
+// ── Login page ───────────────────────────────────────────────────────────────
+
+function LoginPage() {
+  // mode: 'magic' | 'password' | 'signup'
+  const [mode,    setMode]    = useState('magic');
+  const [email,   setEmail]   = useState('');
+  const [pw,      setPw]      = useState('');
+  const [msg,     setMsg]     = useState(null);  // { type: 'success'|'error', text }
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg(null);
+    setLoading(true);
+    try {
+      if (mode === 'magic') {
+        const { error } = await signInWithMagicLink(email);
+        if (error) throw error;
+        setMsg({ type: 'success', text: 'Check your email for a sign-in link!' });
+      } else if (mode === 'password') {
+        const { error } = await signInWithPassword(email, pw);
+        if (error) throw error;
+        // session change will auto-redirect
+      } else {
+        const { error } = await signUpWithPassword(email, pw);
+        if (error) throw error;
+        setMsg({ type: 'success', text: 'Account created! Check your email to confirm, then sign in.' });
+        setMode('password');
+      }
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 380, margin: '80px auto', padding: '0 1.5rem' }}>
+      <h1 style={{ fontSize: 22, fontWeight: 500, marginBottom: '0.25rem' }}>Commitments</h1>
+      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: '1.75rem' }}>
+        Your personal task &amp; planning system.
+      </p>
+
+      {/* Mode switcher */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
+        {[['magic','Magic link'],['password','Password'],['signup','Sign up']].map(([m, label]) => (
+          <button key={m}
+            className={`btn btn-sm${mode === m ? ' btn-primary' : ''}`}
+            onClick={() => { setMode(m); setMsg(null); }}
+          >{label}</button>
+        ))}
+      </div>
+
+      <form onSubmit={submit}>
+        <div className="form-field" style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display:'block', marginBottom:4 }}>Email</label>
+          <input
+            type="email" required
+            value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            style={{ width: '100%', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {(mode === 'password' || mode === 'signup') && (
+          <div className="form-field" style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display:'block', marginBottom:4 }}>Password</label>
+            <input
+              type="password" required minLength={6}
+              value={pw} onChange={e => setPw(e.target.value)}
+              placeholder="Min. 6 characters"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
+
+        {msg && (
+          <div style={{
+            fontSize: 13, marginBottom: 12, padding: '8px 12px',
+            borderRadius: 6,
+            background: msg.type === 'error' ? 'var(--color-bg-danger)' : 'var(--color-bg-success)',
+            color:      msg.type === 'error' ? 'var(--color-text-danger)' : 'var(--color-text-success)',
+          }}>
+            {msg.text}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={loading}
+          style={{ width: '100%' }}
+        >
+          {loading ? 'Please wait…' :
+            mode === 'magic'    ? 'Send magic link' :
+            mode === 'password' ? 'Sign in' : 'Create account'}
+        </button>
+      </form>
     </div>
   );
-  if (appData.error) return (
-    <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem', color: 'var(--color-text-danger)' }}>
+}
+
+// ── Authed shell ──────────────────────────────────────────────────────────────
+
+function AuthedApp({ userId, userEmail }) {
+  const appData = useAppData(userId);
+  if (appData.loading) return <Splash text="Loading your data…" />;
+  if (appData.error)   return (
+    <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
+      color: 'var(--color-text-danger)', fontSize: 13 }}>
       <strong>Error loading data:</strong> {appData.error}
     </div>
   );
   return <Shell userId={userId} userEmail={userEmail} appData={appData} />;
+}
+
+function Splash({ text }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
+      height:'100vh', fontSize: 13, color: 'var(--color-text-secondary)' }}>
+      {text}
+    </div>
+  );
 }
