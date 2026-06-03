@@ -1,10 +1,10 @@
 /**
  * Data access layer — all Supabase queries live here.
- * Components never import supabase directly; they call these functions.
+ * Export names match exactly what useAppData.js imports.
  */
 import { supabase } from './supabase.js';
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const signInWithMagicLink = (email) =>
   supabase.auth.signInWithOtp({ email });
@@ -17,98 +17,106 @@ export const signUpWithPassword = (email, password) =>
 
 export const signOut = () => supabase.auth.signOut();
 
-export const getSession = () => supabase.auth.getSession();
-
+export const getSession   = () => supabase.auth.getSession();
 export const onAuthChange = (cb) =>
   supabase.auth.onAuthStateChange((_event, session) => cb(session));
 
-// ── User Preferences ─────────────────────────────────────────────────────────
+// ── Preferences ───────────────────────────────────────────────────────────────
 
-export async function getPreferences(userId) {
+export async function fetchPreferences(userId) {
   const { data, error } = await supabase
     .from('user_preferences')
     .select('*')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
   if (error) throw error;
-  return data;
+  return data || {};
 }
 
-export async function upsertPreferences(userId, prefs) {
+export async function savePreferences(prefs) {
   const { data, error } = await supabase
     .from('user_preferences')
-    .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() })
+    .upsert({ ...prefs, updated_at: new Date().toISOString() })
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-// ── Categories ───────────────────────────────────────────────────────────────
+// ── Categories ────────────────────────────────────────────────────────────────
 
-export async function getCategories(userId) {
+export async function fetchCategories(userId) {
   const { data, error } = await supabase
     .from('categories')
     .select('*')
     .eq('user_id', userId)
     .order('position');
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
-export async function upsertCategory(category) {
+export async function saveCategory(cat) {
   const { data, error } = await supabase
     .from('categories')
-    .upsert(category)
+    .upsert(cat)
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function deleteCategory(id) {
+export async function removeCategory(id) {
   const { error } = await supabase.from('categories').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
-export async function getTasks(userId) {
+export async function fetchTasks(userId) {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*, substeps(*), scheduled_days(day_date), scheduled_day_hours')
+    .select('*, scheduled_days(day_date)')
     .eq('user_id', userId)
     .order('position');
   if (error) throw error;
-  // Normalize scheduled_days to a plain array of ISO strings
-  return data.map(t => ({
+  return (data || []).map(t => ({
     ...t,
-    scheduled_days:     (t.scheduled_days || []).map(r => r.day_date).sort(),
+    scheduled_days:      (t.scheduled_days || []).map(r => r.day_date).sort(),
     scheduled_day_hours: t.scheduled_day_hours || {},
-    substeps:           (t.substeps || []).sort((a, b) => a.position - b.position),
+    substeps:            [],   // populated by fetchSubsteps in useAppData
   }));
 }
 
-export async function upsertTask(task) {
-  // Strip relation fields that aren't columns on the tasks table
-  const { scheduled_days, substeps, ...taskRow } = task;
+export async function saveTask(task) {
+  // Strip relation / derived fields not on the tasks table
+  const { substeps, scheduled_days, catName, catColor, catId, ...row } = task;
   const { data, error } = await supabase
     .from('tasks')
-    .upsert(taskRow)          // scheduled_day_hours IS a column — passes through
+    .upsert(row)
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function deleteTask(id) {
+export async function removeTask(id) {
   const { error } = await supabase.from('tasks').delete().eq('id', id);
   if (error) throw error;
 }
 
-// ── Substeps ─────────────────────────────────────────────────────────────────
+// ── Substeps ──────────────────────────────────────────────────────────────────
 
-export async function upsertSubstep(substep) {
+export async function fetchSubsteps(userId) {
+  const { data, error } = await supabase
+    .from('substeps')
+    .select('*')
+    .eq('user_id', userId)
+    .order('position');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveSubstep(substep) {
   const { data, error } = await supabase
     .from('substeps')
     .upsert(substep)
@@ -118,26 +126,47 @@ export async function upsertSubstep(substep) {
   return data;
 }
 
-export async function deleteSubstep(id) {
+export async function removeSubstep(id) {
   const { error } = await supabase.from('substeps').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Quick Tasks ───────────────────────────────────────────────────────────────
+
+export async function fetchQuickTasks(userId) {
+  const { data, error } = await supabase
+    .from('quick_tasks')
+    .select('*')
+    .eq('user_id', userId)
+    .order('position');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveQuickTask(qt) {
+  const { data, error } = await supabase
+    .from('quick_tasks')
+    .upsert(qt)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function removeQuickTask(id) {
+  const { error } = await supabase.from('quick_tasks').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ── Scheduled Days ────────────────────────────────────────────────────────────
 
-/**
- * Replace all scheduled days for a task atomically.
- * Deletes existing rows then inserts the new set.
- */
 export async function setScheduledDays(taskId, userId, dates) {
   const { error: delErr } = await supabase
     .from('scheduled_days')
     .delete()
     .eq('task_id', taskId);
   if (delErr) throw delErr;
-
   if (!dates || dates.length === 0) return;
-
   const rows = dates.map(day_date => ({ task_id: taskId, user_id: userId, day_date }));
   const { error: insErr } = await supabase.from('scheduled_days').insert(rows);
   if (insErr) throw insErr;
@@ -154,37 +183,32 @@ export async function getScheduledDaysForRange(userId, from, to) {
   return data;
 }
 
-// ── ICS Export ───────────────────────────────────────────────────────────────
+// ── ICS Export ────────────────────────────────────────────────────────────────
 
 export function generateICS(tasks, categories) {
-  const catMap = Object.fromEntries(categories.map(c => [c.id, c]));
+  const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Commitments//EN',
     'CALSCALE:GREGORIAN',
   ];
-
   for (const task of tasks) {
     if (!task.due_date) continue;
-    const cat  = catMap[task.category_id];
-    const due  = task.due_date.replace(/-/g, '');
-    const now  = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
-
-    // Due-date event
+    const cat = catMap[task.category_id];
+    const due = task.due_date.replace(/-/g, '');
+    const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
     lines.push(
       'BEGIN:VEVENT',
       `UID:due-${task.id}@commitments`,
       `DTSTAMP:${now}`,
       `DTSTART;VALUE=DATE:${due}`,
       `DTEND;VALUE=DATE:${due}`,
-      `SUMMARY:⏰ ${task.name}`,
+      `SUMMARY:\u23f0 ${task.name}`,
       `CATEGORIES:${cat ? cat.name : 'Uncategorized'}`,
       `DESCRIPTION:${(task.notes || '').replace(/\n/g, '\\n')}`,
       'END:VEVENT'
     );
-
-    // One work-session event per scheduled day
     for (const day of (task.scheduled_days || [])) {
       const d = day.replace(/-/g, '');
       lines.push(
@@ -193,13 +217,12 @@ export function generateICS(tasks, categories) {
         `DTSTAMP:${now}`,
         `DTSTART;VALUE=DATE:${d}`,
         `DTEND;VALUE=DATE:${d}`,
-        `SUMMARY:🗂 ${task.name}`,
+        `SUMMARY:\u1f5c2 ${task.name}`,
         `CATEGORIES:${cat ? cat.name : 'Uncategorized'}`,
         'END:VEVENT'
       );
     }
   }
-
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
