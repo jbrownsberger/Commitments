@@ -102,7 +102,7 @@ function autoFill(tasks, weeklyHours, sessionHours) {
   return updated;
 }
 
-// ── Day-picker modal (mobile fallback for scheduling) ──────────────────────
+// ── Day-picker modal (mobile tap-to-schedule) ─────────────────────────────
 function DayPickerModal({ task, allISOs, onPick, onClose }) {
   const weeks = [];
   for (let w = 0; w < SHOW_WEEKS; w++) weeks.push(allISOs.slice(w * 7, w * 7 + 7));
@@ -134,6 +134,10 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
   );
 }
 
+// Drag threshold constants
+const DRAG_PX      = 10;  // minimum movement before drag is confirmed
+const DRAG_RATIO   = 1.2; // horizontal must be this much stronger than vertical
+
 export default function Planner({ appData, userId, onEditTask }) {
   const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule } = appData;
   const weeklyHours  = preferences?.weekly_hours  ?? 20;
@@ -146,18 +150,20 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [panelTask,     setPanelTask]     = useState(null);
   const [sidebarOpen,   setSidebarOpen]   = useState(true);
   const [dayPickerTask, setDayPickerTask] = useState(null);
-  const [touchGhost,    setTouchGhost]    = useState(null); // { x, y, label, color }
+  // { x, y, label, color } — position is top-left of ghost element
+  const [touchGhost,    setTouchGhost]    = useState(null);
 
-  // Mouse drag ref
+  // Mouse drag
   const dragging = useRef(null);
-  // Touch drag ref
-  const touchDragging  = useRef(null);
-  const touchStartXY   = useRef(null);
-  const touchMoved     = useRef(false);
-  // Swipe tracking on the weeks panel
-  const swipeStart     = useRef(null);
+  // Touch drag state
+  const touchDragging  = useRef(null);  // task being dragged
+  const touchStartXY   = useRef(null);  // { x, y } of first touchstart
+  const touchMoved     = useRef(false); // true once drag threshold confirmed
+  const touchAborted   = useRef(false); // true when we decided it's a scroll
   // Highlighted drop column during touch drag
   const touchOverCol   = useRef(null);
+  // Swipe tracking on the weeks panel
+  const swipeStart     = useRef(null);
 
   const today    = new Date(); today.setHours(0,0,0,0);
   const todayISO = toISO(today);
@@ -194,15 +200,15 @@ export default function Planner({ appData, userId, onEditTask }) {
     if (inWindow) continue;
     const hasBefore = days.some(d => d < windowStart);
     const hasAfter  = days.some(d => d > windowEnd);
-    if (!days.length)                    trueUnscheduled.push(t);
-    else if (hasBefore && !hasAfter)     scheduledEarlier.push(t);
-    else if (hasAfter)                   scheduledLater.push(t);
-    else                                 trueUnscheduled.push(t);
+    if (!days.length)                trueUnscheduled.push(t);
+    else if (hasBefore && !hasAfter) scheduledEarlier.push(t);
+    else if (hasAfter)               scheduledLater.push(t);
+    else                             trueUnscheduled.push(t);
   }
   const sortByDue = arr => arr.slice().sort((a, b) =>
     (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Auto-fill / clear ───────────────────────────────────────────────────
+  // ── Auto-fill / clear ────────────────────────────────────────────────────
   const handleAutoFill = useCallback(async () => {
     const updated = autoFill(allActive, weeklyHours, sessionHours);
     for (const t of updated) {
@@ -223,7 +229,7 @@ export default function Planner({ appData, userId, onEditTask }) {
       if (t.scheduled_days?.length) await setTaskSchedule(t.id, []);
   }, [allActive, setTaskSchedule]);
 
-  // ── Mouse drag ──────────────────────────────────────────────────────────
+  // ── Mouse drag ───────────────────────────────────────────────────────────
   const onDragStart = (e, task) => { dragging.current = task; e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd   = () => { dragging.current = null; };
 
@@ -245,8 +251,9 @@ export default function Planner({ appData, userId, onEditTask }) {
     dragging.current = null;
   }, [setTaskSchedule]);
 
-  // ── Touch drag ──────────────────────────────────────────────────────────
-  // Returns the ISO date of the .planner-col element under a touch point, or null.
+  // ── Touch drag ───────────────────────────────────────────────────────────
+  // Returns ISO of the .planner-col[data-iso] under (x,y), ignoring the ghost
+  // (ghost has pointer-events:none in CSS so elementFromPoint already skips it)
   const colAtPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -254,61 +261,88 @@ export default function Planner({ appData, userId, onEditTask }) {
     return col ? col.dataset.iso : null;
   };
 
+  const clearTouchOverCol = () => {
+    if (touchOverCol.current) {
+      const prev = document.querySelector(`[data-iso="${touchOverCol.current}"]`);
+      prev?.classList.remove('drag-over');
+      touchOverCol.current = null;
+    }
+  };
+
   const onTouchStartCard = useCallback((e, task) => {
     const touch = e.touches[0];
     touchStartXY.current  = { x: touch.clientX, y: touch.clientY };
     touchMoved.current    = false;
+    touchAborted.current  = false;
     touchDragging.current = task;
+    // Do NOT call e.preventDefault() here — we don't yet know if this is a
+    // drag or a scroll. touch-action is handled by CSS (.is-touch-dragging).
   }, []);
 
   const onTouchMoveCard = useCallback((e) => {
-    if (!touchDragging.current) return;
+    if (!touchDragging.current || touchAborted.current) return;
+
     const touch = e.touches[0];
-    const dx = touch.clientX - (touchStartXY.current?.x || 0);
-    const dy = touch.clientY - (touchStartXY.current?.y || 0);
-    if (!touchMoved.current && Math.hypot(dx, dy) < 6) return;
-    touchMoved.current = true;
-    e.preventDefault(); // prevent page scroll while dragging a card
+    const dx    = touch.clientX - (touchStartXY.current?.x || 0);
+    const dy    = touch.clientY - (touchStartXY.current?.y || 0);
+    const dist  = Math.hypot(dx, dy);
+
+    if (!touchMoved.current) {
+      // Haven't confirmed drag intent yet
+      if (dist < DRAG_PX) return; // finger hasn't moved enough to decide
+
+      const isHorizontal = Math.abs(dx) >= Math.abs(dy) * DRAG_RATIO;
+      if (!isHorizontal) {
+        // Finger is moving more vertically — this is a scroll, abandon drag
+        touchDragging.current = null;
+        touchAborted.current  = true;
+        return;
+      }
+
+      // Confirmed as a drag: prevent scroll from here on
+      touchMoved.current = true;
+      document.body.classList.add('is-touch-dragging');
+    }
+
+    // Drag is confirmed — safe to prevent scroll
+    e.preventDefault();
 
     const task  = touchDragging.current;
+    if (!task) return;
     const color = catMap[task.category_id]?.color || '#888';
-    setTouchGhost({ x: touch.clientX, y: touch.clientY, label: task.name, color });
+    // Position ghost above and slightly left of finger so it stays visible
+    setTouchGhost({
+      x: touch.clientX - 40,
+      y: touch.clientY - 36,
+      label: task.name,
+      color,
+    });
 
     // Highlight the column under the finger
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (touchOverCol.current !== iso) {
-      if (touchOverCol.current) {
-        const prev = document.querySelector(`[data-iso="${touchOverCol.current}"]`);
-        prev?.classList.remove('drag-over');
-      }
+      clearTouchOverCol();
       if (iso) {
         const next = document.querySelector(`[data-iso="${iso}"]`);
         next?.classList.add('drag-over');
+        touchOverCol.current = iso;
       }
-      touchOverCol.current = iso;
     }
   }, [catMap]);
 
   const onTouchEndCard = useCallback(async (e) => {
     const task = touchDragging.current;
     touchDragging.current = null;
+    touchAborted.current  = false;
+    document.body.classList.remove('is-touch-dragging');
     setTouchGhost(null);
+    clearTouchOverCol();
 
-    // Clean up any highlighted column
-    if (touchOverCol.current) {
-      const el = document.querySelector(`[data-iso="${touchOverCol.current}"]`);
-      el?.classList.remove('drag-over');
-      touchOverCol.current = null;
-    }
-
-    if (!task) return;
-
-    // If finger barely moved, treat as a tap (open panel)
-    if (!touchMoved.current) return;
+    if (!task || !touchMoved.current) return;
 
     const touch = e.changedTouches[0];
 
-    // Check if dropped on sidebar (unschedule)
+    // Dropped on sidebar → unschedule
     const sidebarEl = document.querySelector('.planner-sidebar');
     if (sidebarEl) {
       const r = sidebarEl.getBoundingClientRect();
@@ -319,7 +353,7 @@ export default function Planner({ appData, userId, onEditTask }) {
       }
     }
 
-    // Check if dropped on a day column
+    // Dropped on a day column
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (iso) {
       const days = task.scheduled_days || [];
@@ -327,9 +361,9 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [setTaskSchedule]);
 
-  // ── Swipe on weeks panel to navigate ────────────────────────────────────
+  // ── Swipe on weeks panel to navigate ─────────────────────────────────────
   const onWeeksSwipeStart = useCallback((e) => {
-    if (touchDragging.current) return; // don't swipe while dragging a card
+    if (touchDragging.current) return;
     swipeStart.current = { x: e.touches[0].clientX, t: Date.now() };
   }, []);
 
@@ -338,13 +372,12 @@ export default function Planner({ appData, userId, onEditTask }) {
     const dx = e.changedTouches[0].clientX - swipeStart.current.x;
     const dt = Date.now() - swipeStart.current.t;
     swipeStart.current = null;
-    // Fast or long swipe: at least 50px or 40px within 300ms
     if (Math.abs(dx) < 40) return;
     if (Math.abs(dx) < 50 && dt > 300) return;
     setWeekOffset(o => o + (dx < 0 ? 1 : -1));
   }, []);
 
-  // ── Day-picker toggle (mobile tap-to-schedule fallback) ─────────────────
+  // ── Day-picker toggle ─────────────────────────────────────────────────────
   const onDayPickerPick = useCallback(async (iso) => {
     const task = dayPickerTask;
     if (!task) return;
@@ -353,11 +386,10 @@ export default function Planner({ appData, userId, onEditTask }) {
       ? days.filter(d => d !== iso)
       : [...days, iso].sort();
     await setTaskSchedule(task.id, newDays);
-    // Update local ref so toggling works without closing modal
     task.scheduled_days = newDays;
   }, [dayPickerTask, setTaskSchedule]);
 
-  // ── Edit helpers ────────────────────────────────────────────────────────
+  // ── Edit helpers ──────────────────────────────────────────────────────────
   const removeDay = useCallback(async (task, iso) => {
     const days   = (task.scheduled_days || []).filter(d => d !== iso);
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
@@ -382,19 +414,18 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const openPanel = (task) => setPanelTask({ task, cat: catMap[task.category_id] });
 
-  // Total unscheduled count for sidebar badge
   const totalSidebarCount = trueUnscheduled.length + scheduledEarlier.length + scheduledLater.length;
 
   return (
     <div className="planner">
-      {/* Touch ghost element that follows the finger */}
+      {/* Touch ghost — pointer-events:none so elementFromPoint sees through it */}
       {touchGhost && (
         <div className="touch-ghost" style={{
-          left: touchGhost.x + 12,
-          top:  touchGhost.y - 16,
+          left:       touchGhost.x,
+          top:        touchGhost.y,
           background: touchGhost.color,
         }}>
-          {touchGhost.label.slice(0, 18)}{touchGhost.label.length > 18 ? '\u2026' : ''}
+          {touchGhost.label.slice(0, 20)}{touchGhost.label.length > 20 ? '\u2026' : ''}
         </div>
       )}
 
@@ -572,7 +603,6 @@ export default function Planner({ appData, userId, onEditTask }) {
         </div>
       </div>
 
-      {/* Day-picker modal */}
       {dayPickerTask && (
         <DayPickerModal
           task={dayPickerTask}
@@ -610,7 +640,7 @@ function PlannerTaskCard({
   return (
     <div
       className="planner-task-card"
-      style={{ background: color, touchAction: 'none' }}
+      style={{ background: color }}
       draggable
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
@@ -657,7 +687,7 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart,
   return (
     <div
       className="sidebar-card"
-      style={{ borderLeftColor: color, touchAction: 'none' }}
+      style={{ borderLeftColor: color }}
       draggable
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
@@ -679,7 +709,6 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart,
           ))}
         </div>
       )}
-      {/* Mobile: calendar icon button opens the day-picker */}
       <button
         className="sidebar-schedule-btn"
         onClick={e => { e.stopPropagation(); onSchedule(); }}
