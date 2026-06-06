@@ -247,15 +247,15 @@ export default function Planner({ appData, userId, onEditTask }) {
     <div className="planner">
       <div className="planner-controls">
         <div className="planner-nav">
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>◀◀</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>◀</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
           <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
             disabled={weekOffset === 0} style={{ minWidth: 52 }}>Today</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>▶</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>▶▶</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
         </div>
         <div className="planner-actions">
-          <button className="btn btn-sm" onClick={handleAutoFill}>⚡ Auto-fill</button>
+          <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Auto-fill</button>
           <button className="btn btn-sm" onClick={handleClearAll}>Clear all</button>
         </div>
       </div>
@@ -268,7 +268,7 @@ export default function Planner({ appData, userId, onEditTask }) {
             <span className="sidebar-count">{trueUnscheduled.length}</span>
           </div>
           {trueUnscheduled.length === 0
-            ? <div className="sidebar-empty">None ✔</div>
+            ? <div className="sidebar-empty">None &#x2714;</div>
             : sortByDue(trueUnscheduled).map(task => (
                 <SidebarCard
                   key={task.id}
@@ -326,44 +326,52 @@ export default function Planner({ appData, userId, onEditTask }) {
           )}
         </div>
 
+        {/* planner-weeks scrolls horizontally on narrow windows */}
         <div className="planner-weeks">
           {Array.from({ length: SHOW_WEEKS }, (_, w) => {
             const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
             return (
               <div key={w} className="planner-week">
-                <div className="planner-day-headers">
+                {/*
+                  Single unified grid: header cells (row 1) and column cells
+                  (row 2) share the same 7 column tracks, so the label above
+                  each column is always structurally aligned with it, even
+                  when the column contains no tasks and would otherwise shrink.
+                */}
+                <div className="planner-week-grid">
+                  {/* Row 1 — day-name headers */}
                   {weekISOs.map((iso, i) => {
                     const isToday = iso === todayISO;
                     const isPast  = iso < todayISO;
                     return (
-                      <div key={iso} className={`planner-day-header${isToday?' today':''}${isPast?' past':''}`}>
+                      <div key={`hdr-${iso}`}
+                        className={`planner-day-header${isToday ? ' today' : ''}${isPast ? ' past' : ''}`}>
                         {DAY_NAMES[i]}<br />
                         <span className="planner-day-date">{fmtShort(iso)}</span>
                       </div>
                     );
                   })}
-                </div>
-                <div className="planner-day-cols">
+                  {/* Row 2 — droppable day columns */}
                   {weekISOs.map(iso => {
                     const load   = dayLoad[iso] || 0;
                     const over   = load > dayAvail + 0.05;
                     const isPast = iso < todayISO;
                     return (
                       <div
-                        key={iso}
-                        className={`planner-col${over?' over':''}${isPast?' past':''}`}
+                        key={`col-${iso}`}
+                        className={`planner-col${over ? ' over' : ''}${isPast ? ' past' : ''}`}
                         onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
                         onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
                         onDrop={e => onDropDay(e, iso)}
                       >
                         {load > 0.05 && (
-                          <div className={`day-load-badge${over?' over':''}`}>{load.toFixed(1)}h</div>
+                          <div className={`day-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</div>
                         )}
                         {dueOnDay[iso]?.map(t => (
                           <div key={t.id} className="due-chip"
                             style={{ background: catMap[t.category_id]?.color || '#888' }}
                             title={`Due: ${t.name}`}>
-                            📅 {t.name.slice(0,12)}{t.name.length>12?'…':''}
+                            &#128197; {t.name.slice(0, 12)}{t.name.length > 12 ? '\u2026' : ''}
                           </div>
                         ))}
                         {scheduledOnDay[iso]?.map(t => {
@@ -426,7 +434,7 @@ function PlannerTaskCard({
   onTogglePopover, onSetHours, onClearHours, onHrsInputChange,
 }) {
   const color = cat?.color || '#888';
-  const due   = task.due_date ? ` · due ${fmtShort(task.due_date)}` : '';
+  const due   = task.due_date ? ` \u00b7 due ${fmtShort(task.due_date)}` : '';
   return (
     <div
       className="planner-task-card"
@@ -436,10 +444,10 @@ function PlannerTaskCard({
       onDragEnd={onDragEnd}
     >
       <div className="card-body" onClick={onOpen} style={{ cursor: 'pointer' }}>
-        <div className="card-name">{task.name.slice(0,22)}{task.name.length>22?'…':''}</div>
+        <div className="card-name">{task.name.slice(0, 22)}{task.name.length > 22 ? '\u2026' : ''}</div>
         <div className="card-meta">
           <button
-            className={`hrs-badge${isCustom?' hrs-custom':''}`}
+            className={`hrs-badge${isCustom ? ' hrs-custom' : ''}`}
             onClick={e => { e.stopPropagation(); onTogglePopover(); }}
             title="Click to adjust hours"
           >{hrs.toFixed(1)}h</button>
@@ -455,12 +463,12 @@ function PlannerTaskCard({
                 onKeyDown={e => { if (e.key === 'Enter') onSetHours(); }}
                 autoFocus />
               <button onClick={onSetHours}>Set</button>
-              {isCustom && <button onClick={onClearHours} title="Reset to auto">↺</button>}
+              {isCustom && <button onClick={onClearHours} title="Reset to auto">&#8635;</button>}
             </div>
           </div>
         )}
       </div>
-      <button className="card-remove" onClick={e => { e.stopPropagation(); onRemove(); }} title="Remove from this day">×</button>
+      <button className="card-remove" onClick={e => { e.stopPropagation(); onRemove(); }} title="Remove from this day">&times;</button>
     </div>
   );
 }
@@ -478,16 +486,16 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onRemoveDay, 
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      title="Click to view · Drag to schedule"
+      title="Click to view \u00b7 Drag to schedule"
     >
       <div className="sidebar-card-name">{task.name}</div>
-      <div className="sidebar-card-meta">{rem.toFixed(1)}h remaining · {due}</div>
+      <div className="sidebar-card-meta">{rem.toFixed(1)}h remaining \u00b7 {due}</div>
       {visible.length > 0 && (
         <div className="sidebar-days">
           {visible.map(d => (
             <span key={d} className="sidebar-day-chip">
               {fmtShort(d)}
-              <button onClick={e => { e.stopPropagation(); onRemoveDay(task, d); }}>×</button>
+              <button onClick={e => { e.stopPropagation(); onRemoveDay(task, d); }}>&times;</button>
             </span>
           ))}
         </div>
