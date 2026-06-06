@@ -1,0 +1,317 @@
+/* ── GCalSync styles ──────────────────────────────────────────────────────── */
+
+.gcal-pane {
+  max-width: 760px;
+  padding-bottom: 3rem;
+}
+
+/* Hero (disconnected state) */
+.gcal-hero {
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+}
+.gcal-hero-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+.gcal-hero h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.gcal-hero p {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  max-width: 440px;
+  margin: 0 auto 1.5rem;
+  line-height: 1.5;
+}
+.gcal-connect-btn {
+  font-size: 14px;
+  padding: 10px 20px;
+}
+
+/* Setup instructions */
+.gcal-setup {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+  padding: 18px 20px;
+  margin-top: 2rem;
+}
+.gcal-setup h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.gcal-setup ol {
+  padding-left: 1.25rem;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
+}
+.gcal-setup ol li { margin-bottom: 2px; }
+.gcal-setup a { color: var(--color-text-info); }
+.gcal-setup code {
+  background: var(--color-bg-primary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: monospace;
+}
+.gcal-warning {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--color-text-warning);
+  background: var(--color-bg-warning);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+
+/* Connected header */
+.gcal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.gcal-connected-badge {
+  font-size: 13px;
+  color: var(--color-text-success);
+  font-weight: 500;
+}
+
+/* Error banner */
+.gcal-error {
+  font-size: 13px;
+  color: var(--color-text-danger);
+  background: var(--color-bg-danger);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+/* Panel tabs */
+.gcal-panel-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  padding-bottom: 0;
+}
+.gcal-panel-tab {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 0;
+}
+.gcal-panel-tab:hover { color: var(--color-text-primary); }
+.gcal-panel-tab.active {
+  color: var(--color-text-info);
+  border-bottom-color: var(--color-text-info);
+}
+
+/* Calendar selector */
+.gcal-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.gcal-cal-selector { margin-bottom: 16px; }
+.gcal-cal-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gcal-cal-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+}
+.gcal-cal-item:hover { background: var(--color-bg-tertiary); }
+.gcal-cal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Working hours */
+.gcal-working-hours { margin-bottom: 16px; }
+.gcal-hours-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.gcal-hours-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.gcal-hours-row select {
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+/* Empty state */
+.gcal-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.gcal-empty p { margin-top: 10px; font-size: 12px; color: var(--color-text-tertiary); }
+
+/* Free/busy grid */
+.gcal-fb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gcal-fb-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 160px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .gcal-fb-row {
+    grid-template-columns: 90px 1fr 120px;
+    gap: 6px;
+  }
+}
+.gcal-fb-row.gcal-today { background: var(--color-bg-info); }
+.gcal-fb-row.gcal-past  { opacity: 0.5; }
+.gcal-fb-row.gcal-over  { background: var(--color-bg-danger); }
+
+.gcal-fb-date {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+.gcal-today .gcal-fb-date { color: var(--color-text-info); }
+
+.gcal-fb-bar-wrap {
+  position: relative;
+  height: 8px;
+  background: var(--color-bg-primary);
+  border-radius: 4px;
+  overflow: visible;
+}
+.gcal-fb-bar {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-success, #437a22);
+  opacity: 0.5;
+  transition: width 0.3s ease;
+}
+.gcal-fb-plan-bar {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-text-info);
+  opacity: 0.7;
+  transition: width 0.3s ease;
+}
+.gcal-fb-plan-bar.over {
+  background: var(--color-text-danger);
+}
+
+.gcal-fb-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: right;
+}
+.gcal-fb-free    { color: var(--color-text-secondary); }
+.gcal-fb-planned { color: var(--color-text-info); font-weight: 500; }
+.gcal-fb-planned.over { color: var(--color-text-danger); }
+
+/* Work blocks panel */
+.gcal-blocks-intro {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.gcal-task-block {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.gcal-task-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.gcal-task-due {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+.gcal-task-days {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gcal-day-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.gcal-day-label {
+  min-width: 100px;
+  color: var(--color-text-secondary);
+}
+.gcal-day-hrs {
+  min-width: 36px;
+  font-weight: 500;
+}
+.gcal-push-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  min-height: 28px;
+}
+.gcal-push-btn:hover:not(:disabled) { background: var(--color-bg-info); border-color: var(--color-border-info); }
+.gcal-push-btn:disabled { opacity: 0.5; cursor: default; }
+.gcal-push-btn.done  { background: var(--color-bg-success); color: var(--color-text-success); border-color: transparent; }
+.gcal-push-btn.error { background: var(--color-bg-danger);  color: var(--color-text-danger);  border-color: transparent; }

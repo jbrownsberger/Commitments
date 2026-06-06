@@ -6,6 +6,7 @@ import { signOut } from '../lib/db.js';
 import Overview     from './Overview.jsx';
 import Categories   from './Categories.jsx';
 import Planner      from './Planner.jsx';
+import GCalSync     from './GCalSync.jsx';
 import TaskModal    from './TaskModal.jsx';
 import ImportExport from './ImportExport.jsx';
 import '../styles/shell.css';
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'overview',   label: 'Overview & Queue' },
   { id: 'categories', label: 'Categories'       },
   { id: 'planner',    label: 'Planner'           },
+  { id: 'gcal',       label: '📅 Google Calendar' },
 ];
 
 export default function Shell({ appData, userId, userEmail }) {
@@ -73,6 +75,7 @@ export default function Shell({ appData, userId, userEmail }) {
           {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
           {tab === 'categories' && <Categories appData={appData} userId={userId} onEditTask={openEdit} />}
           {tab === 'planner'    && <Planner    appData={appData} userId={userId} />}
+          {tab === 'gcal'       && <GCalSync   appData={appData} userId={userId} />}
         </div>
       </div>
 
