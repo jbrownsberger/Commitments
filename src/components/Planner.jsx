@@ -9,6 +9,10 @@ function toISO(d) { return d.toISOString().slice(0, 10); }
 function fmtShort(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+function fmtAgendaDay(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
 function taskProgress(task) {
   const substeps = task.substeps || [];
   if (!substeps.length) return task.manual_progress ?? task.manualProgress ?? 0;
@@ -102,7 +106,7 @@ function autoFill(tasks, weeklyHours, sessionHours) {
   return updated;
 }
 
-// ── Day-picker modal (mobile tap-to-schedule) ─────────────────────────────
+// ── Day-picker modal (tap-to-schedule) ────────────────────────────────────
 function DayPickerModal({ task, allISOs, onPick, onClose }) {
   const weeks = [];
   for (let w = 0; w < SHOW_WEEKS; w++) weeks.push(allISOs.slice(w * 7, w * 7 + 7));
@@ -134,9 +138,138 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
   );
 }
 
+// ── Mobile Agenda View ────────────────────────────────────────────────────
+function AgendaView({
+  allISOs, todayISO, weekOffset, setWeekOffset,
+  scheduledOnDay, dueOnDay, dayLoad, dayAvail,
+  catMap, hoursOnDayFn,
+  trueUnscheduled, scheduledEarlier, scheduledLater,
+  sortByDue,
+  onOpenPanel, onSchedule, onRemoveDay,
+  handleAutoFill, handleClearAll,
+}) {
+  const [unschOpen, setUnschOpen] = useState(true);
+  const allUnscheduled = sortByDue([...trueUnscheduled, ...scheduledEarlier, ...scheduledLater]);
+
+  // Only show days that have something OR are today
+  const activeDays = allISOs.filter(iso =>
+    iso === todayISO ||
+    (scheduledOnDay[iso] && scheduledOnDay[iso].length > 0) ||
+    (dueOnDay[iso] && dueOnDay[iso].length > 0)
+  );
+
+  const weekLabel = (() => {
+    const start = new Date(allISOs[0] + 'T00:00:00');
+    const end   = new Date(allISOs[allISOs.length - 1] + 'T00:00:00');
+    return start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' – ' + end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  })();
+
+  return (
+    <div className="agenda-view">
+      {/* Nav row */}
+      <div className="agenda-nav">
+        <div className="agenda-nav-btns">
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
+            disabled={weekOffset === 0}>Today</button>
+          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
+        </div>
+        <span className="agenda-week-label">{weekLabel}</span>
+        <div className="agenda-actions">
+          <button className="btn btn-sm" onClick={handleAutoFill}>&#9889;</button>
+          <button className="btn btn-sm" onClick={handleClearAll}>Clear</button>
+        </div>
+      </div>
+
+      {/* Unscheduled tasks */}
+      {allUnscheduled.length > 0 && (
+        <div className="agenda-unscheduled">
+          <button
+            className="agenda-section-toggle"
+            onClick={() => setUnschOpen(o => !o)}
+          >
+            {unschOpen ? '▲' : '▼'} Unscheduled
+            <span className="sidebar-count">{allUnscheduled.length}</span>
+          </button>
+          {unschOpen && allUnscheduled.map(task => {
+            const cat = catMap[task.category_id];
+            const color = cat?.color || '#888';
+            const rem = remainingHours(task);
+            return (
+              <div key={task.id} className="agenda-unsch-row" style={{ borderLeftColor: color }}
+                onClick={() => onOpenPanel(task)}>
+                <div className="agenda-unsch-name">{task.name}</div>
+                <div className="agenda-unsch-meta">
+                  {rem.toFixed(1)}h remaining
+                  {task.due_date ? ` · due ${fmtShort(task.due_date)}` : ''}
+                </div>
+                <button className="agenda-schedule-btn"
+                  onClick={e => { e.stopPropagation(); onSchedule(task); }}
+                  aria-label="Pick days">&#128197;</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Day rows */}
+      {activeDays.length === 0 ? (
+        <div className="agenda-empty">Nothing scheduled this window.</div>
+      ) : activeDays.map(iso => {
+        const isToday = iso === todayISO;
+        const isPast  = iso < todayISO;
+        const load    = dayLoad[iso] || 0;
+        const over    = load > dayAvail + 0.05;
+        const tasks   = scheduledOnDay[iso] || [];
+        const dues    = dueOnDay[iso] || [];
+        return (
+          <div key={iso} className={`agenda-day${isToday ? ' agenda-today' : ''}${isPast ? ' agenda-past' : ''}`}>
+            <div className="agenda-day-header">
+              <span className="agenda-day-label">{fmtAgendaDay(iso)}</span>
+              {load > 0.05 && (
+                <span className={`agenda-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</span>
+              )}
+            </div>
+            {dues.map(t => (
+              <div key={t.id} className="agenda-due-row"
+                style={{ borderLeftColor: catMap[t.category_id]?.color || '#888' }}
+                onClick={() => onOpenPanel(t)}>
+                <span className="agenda-due-icon">&#128197;</span>
+                <span className="agenda-due-name">Due: {t.name}</span>
+              </div>
+            ))}
+            {tasks.map(t => {
+              const cat   = catMap[t.category_id];
+              const color = cat?.color || '#888';
+              const hrs   = hoursOnDayFn(t, iso, todayISO);
+              return (
+                <div key={t.id} className="agenda-task-row" style={{ borderLeftColor: color }}
+                  onClick={() => onOpenPanel(t)}>
+                  <div className="agenda-task-name">{t.name}</div>
+                  <div className="agenda-task-meta">
+                    <span className="agenda-task-hrs" style={{ background: color }}>{hrs.toFixed(1)}h</span>
+                    {t.due_date && <span className="agenda-task-due">due {fmtShort(t.due_date)}</span>}
+                  </div>
+                  <button className="agenda-remove-btn"
+                    onClick={e => { e.stopPropagation(); onRemoveDay(t, iso); }}
+                    aria-label="Remove from this day">&times;</button>
+                  <button className="agenda-schedule-btn-sm"
+                    onClick={e => { e.stopPropagation(); onSchedule(t); }}
+                    aria-label="Reschedule">&#128197;</button>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Drag threshold constants
-const DRAG_PX      = 10;  // minimum movement before drag is confirmed
-const DRAG_RATIO   = 1.2; // horizontal must be this much stronger than vertical
+const DRAG_PX      = 10;
+const DRAG_RATIO   = 1.2;
 
 export default function Planner({ appData, userId, onEditTask }) {
   const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule } = appData;
@@ -150,20 +283,23 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [panelTask,     setPanelTask]     = useState(null);
   const [sidebarOpen,   setSidebarOpen]   = useState(true);
   const [dayPickerTask, setDayPickerTask] = useState(null);
-  // { x, y, label, color } — position is top-left of ghost element
   const [touchGhost,    setTouchGhost]    = useState(null);
+  const [isMobile,      setIsMobile]      = useState(() => window.innerWidth <= 700);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 700);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   // Mouse drag
   const dragging = useRef(null);
   // Touch drag state
-  const touchDragging  = useRef(null);  // task being dragged
-  const touchStartXY   = useRef(null);  // { x, y } of first touchstart
-  const touchMoved     = useRef(false); // true once drag threshold confirmed
-  const touchAborted   = useRef(false); // true when we decided it's a scroll
-  // Highlighted drop column during touch drag
+  const touchDragging  = useRef(null);
+  const touchStartXY   = useRef(null);
+  const touchMoved     = useRef(false);
+  const touchAborted   = useRef(false);
   const touchOverCol   = useRef(null);
-  // Swipe tracking on the weeks panel
-  const swipeStart     = useRef(null);
 
   const today    = new Date(); today.setHours(0,0,0,0);
   const todayISO = toISO(today);
@@ -252,8 +388,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   }, [setTaskSchedule]);
 
   // ── Touch drag ───────────────────────────────────────────────────────────
-  // Returns ISO of the .planner-col[data-iso] under (x,y), ignoring the ghost
-  // (ghost has pointer-events:none in CSS so elementFromPoint already skips it)
   const colAtPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -275,8 +409,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     touchMoved.current    = false;
     touchAborted.current  = false;
     touchDragging.current = task;
-    // Do NOT call e.preventDefault() here — we don't yet know if this is a
-    // drag or a scroll. touch-action is handled by CSS (.is-touch-dragging).
   }, []);
 
   const onTouchMoveCard = useCallback((e) => {
@@ -288,29 +420,22 @@ export default function Planner({ appData, userId, onEditTask }) {
     const dist  = Math.hypot(dx, dy);
 
     if (!touchMoved.current) {
-      // Haven't confirmed drag intent yet
-      if (dist < DRAG_PX) return; // finger hasn't moved enough to decide
-
+      if (dist < DRAG_PX) return;
       const isHorizontal = Math.abs(dx) >= Math.abs(dy) * DRAG_RATIO;
       if (!isHorizontal) {
-        // Finger is moving more vertically — this is a scroll, abandon drag
         touchDragging.current = null;
         touchAborted.current  = true;
         return;
       }
-
-      // Confirmed as a drag: prevent scroll from here on
       touchMoved.current = true;
       document.body.classList.add('is-touch-dragging');
     }
 
-    // Drag is confirmed — safe to prevent scroll
     e.preventDefault();
 
     const task  = touchDragging.current;
     if (!task) return;
     const color = catMap[task.category_id]?.color || '#888';
-    // Position ghost above and slightly left of finger so it stays visible
     setTouchGhost({
       x: touch.clientX - 40,
       y: touch.clientY - 36,
@@ -318,7 +443,6 @@ export default function Planner({ appData, userId, onEditTask }) {
       color,
     });
 
-    // Highlight the column under the finger
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (touchOverCol.current !== iso) {
       clearTouchOverCol();
@@ -342,7 +466,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
     const touch = e.changedTouches[0];
 
-    // Dropped on sidebar → unschedule
     const sidebarEl = document.querySelector('.planner-sidebar');
     if (sidebarEl) {
       const r = sidebarEl.getBoundingClientRect();
@@ -353,29 +476,12 @@ export default function Planner({ appData, userId, onEditTask }) {
       }
     }
 
-    // Dropped on a day column
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (iso) {
       const days = task.scheduled_days || [];
       if (!days.includes(iso)) await setTaskSchedule(task.id, [...days, iso].sort());
     }
   }, [setTaskSchedule]);
-
-  // ── Swipe on weeks panel to navigate ─────────────────────────────────────
-  const onWeeksSwipeStart = useCallback((e) => {
-    if (touchDragging.current) return;
-    swipeStart.current = { x: e.touches[0].clientX, t: Date.now() };
-  }, []);
-
-  const onWeeksSwipeEnd = useCallback((e) => {
-    if (!swipeStart.current || touchDragging.current) return;
-    const dx = e.changedTouches[0].clientX - swipeStart.current.x;
-    const dt = Date.now() - swipeStart.current.t;
-    swipeStart.current = null;
-    if (Math.abs(dx) < 40) return;
-    if (Math.abs(dx) < 50 && dt > 300) return;
-    setWeekOffset(o => o + (dx < 0 ? 1 : -1));
-  }, []);
 
   // ── Day-picker toggle ─────────────────────────────────────────────────────
   const onDayPickerPick = useCallback(async (iso) => {
@@ -416,9 +522,9 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const totalSidebarCount = trueUnscheduled.length + scheduledEarlier.length + scheduledLater.length;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="planner">
-      {/* Touch ghost — pointer-events:none so elementFromPoint sees through it */}
       {touchGhost && (
         <div className="touch-ghost" style={{
           left:       touchGhost.x,
@@ -429,179 +535,201 @@ export default function Planner({ appData, userId, onEditTask }) {
         </div>
       )}
 
-      <div className="planner-controls">
-        <div className="planner-nav">
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
-            disabled={weekOffset === 0} style={{ minWidth: 52 }}>Today</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
-          <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
-        </div>
-        <div className="planner-actions">
-          <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Auto-fill</button>
-          <button className="btn btn-sm" onClick={handleClearAll}>Clear all</button>
-        </div>
-      </div>
+      {isMobile ? (
+        // ── Mobile: agenda view ────────────────────────────────────────────
+        <AgendaView
+          allISOs={allISOs}
+          todayISO={todayISO}
+          weekOffset={weekOffset}
+          setWeekOffset={setWeekOffset}
+          scheduledOnDay={scheduledOnDay}
+          dueOnDay={dueOnDay}
+          dayLoad={dayLoad}
+          dayAvail={dayAvail}
+          catMap={catMap}
+          hoursOnDayFn={hoursOnDay}
+          trueUnscheduled={trueUnscheduled}
+          scheduledEarlier={scheduledEarlier}
+          scheduledLater={scheduledLater}
+          sortByDue={sortByDue}
+          onOpenPanel={openPanel}
+          onSchedule={setDayPickerTask}
+          onRemoveDay={removeDay}
+          handleAutoFill={handleAutoFill}
+          handleClearAll={handleClearAll}
+        />
+      ) : (
+        // ── Desktop: existing grid view ────────────────────────────────────
+        <>
+          <div className="planner-controls">
+            <div className="planner-nav">
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
+                disabled={weekOffset === 0} style={{ minWidth: 52 }}>Today</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
+            </div>
+            <div className="planner-actions">
+              <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Auto-fill</button>
+              <button className="btn btn-sm" onClick={handleClearAll}>Clear all</button>
+            </div>
+          </div>
 
-      <div className="planner-layout">
-        {/* ── Collapsible sidebar ── */}
-        <div className="planner-sidebar-wrap">
-          <button
-            className="sidebar-toggle"
-            onClick={() => setSidebarOpen(o => !o)}
-            aria-expanded={sidebarOpen}
-          >
-            {sidebarOpen ? '\u25B2' : '\u25BC'} Tasks
-            {!sidebarOpen && totalSidebarCount > 0 &&
-              <span className="sidebar-count" style={{ marginLeft: 6 }}>{totalSidebarCount}</span>}
-          </button>
+          <div className="planner-layout">
+            <div className="planner-sidebar-wrap">
+              <button
+                className="sidebar-toggle"
+                onClick={() => setSidebarOpen(o => !o)}
+                aria-expanded={sidebarOpen}
+              >
+                {sidebarOpen ? '\u25B2' : '\u25BC'} Tasks
+                {!sidebarOpen && totalSidebarCount > 0 &&
+                  <span className="sidebar-count" style={{ marginLeft: 6 }}>{totalSidebarCount}</span>}
+              </button>
 
-          {sidebarOpen && (
-            <div className="planner-sidebar"
-              onDragOver={e => e.preventDefault()}
-              onDrop={onDropSidebar}
-            >
-              <div className="sidebar-title">
-                Unscheduled
-                <span className="sidebar-count">{trueUnscheduled.length}</span>
-              </div>
-              {trueUnscheduled.length === 0
-                ? <div className="sidebar-empty">None &#x2714;</div>
-                : sortByDue(trueUnscheduled).map(task => (
-                    <SidebarCard
-                      key={task.id}
-                      task={task}
-                      cat={catMap[task.category_id]}
-                      allISOs={allISOs}
-                      onDragStart={onDragStart}
-                      onDragEnd={onDragEnd}
-                      onTouchStart={onTouchStartCard}
-                      onTouchMove={onTouchMoveCard}
-                      onTouchEnd={onTouchEndCard}
-                      onRemoveDay={removeDay}
-                      onClick={() => openPanel(task)}
-                      onSchedule={() => setDayPickerTask(task)}
-                    />
-                  ))
-              }
-
-              {scheduledEarlier.length > 0 && (
-                <>
-                  <div className="sidebar-title" style={{ marginTop: '1rem' }}>
-                    Scheduled earlier
-                    <span className="sidebar-count">{scheduledEarlier.length}</span>
+              {sidebarOpen && (
+                <div className="planner-sidebar"
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={onDropSidebar}
+                >
+                  <div className="sidebar-title">
+                    Unscheduled
+                    <span className="sidebar-count">{trueUnscheduled.length}</span>
                   </div>
-                  {sortByDue(scheduledEarlier).map(task => (
-                    <SidebarCard key={task.id} task={task} cat={catMap[task.category_id]}
-                      allISOs={allISOs} onDragStart={onDragStart} onDragEnd={onDragEnd}
-                      onTouchStart={onTouchStartCard} onTouchMove={onTouchMoveCard} onTouchEnd={onTouchEndCard}
-                      onRemoveDay={removeDay} onClick={() => openPanel(task)}
-                      onSchedule={() => setDayPickerTask(task)} />
-                  ))}
-                </>
-              )}
+                  {trueUnscheduled.length === 0
+                    ? <div className="sidebar-empty">None &#x2714;</div>
+                    : sortByDue(trueUnscheduled).map(task => (
+                        <SidebarCard
+                          key={task.id}
+                          task={task}
+                          cat={catMap[task.category_id]}
+                          allISOs={allISOs}
+                          onDragStart={onDragStart}
+                          onDragEnd={onDragEnd}
+                          onTouchStart={onTouchStartCard}
+                          onTouchMove={onTouchMoveCard}
+                          onTouchEnd={onTouchEndCard}
+                          onRemoveDay={removeDay}
+                          onClick={() => openPanel(task)}
+                          onSchedule={() => setDayPickerTask(task)}
+                        />
+                      ))
+                  }
 
-              {scheduledLater.length > 0 && (
-                <>
-                  <div className="sidebar-title" style={{ marginTop: '1rem' }}>
-                    Scheduled later
-                    <span className="sidebar-count">{scheduledLater.length}</span>
-                  </div>
-                  {sortByDue(scheduledLater).map(task => (
-                    <SidebarCard key={task.id} task={task} cat={catMap[task.category_id]}
-                      allISOs={allISOs} onDragStart={onDragStart} onDragEnd={onDragEnd}
-                      onTouchStart={onTouchStartCard} onTouchMove={onTouchMoveCard} onTouchEnd={onTouchEndCard}
-                      onRemoveDay={removeDay} onClick={() => openPanel(task)}
-                      onSchedule={() => setDayPickerTask(task)} />
-                  ))}
-                </>
+                  {scheduledEarlier.length > 0 && (
+                    <>
+                      <div className="sidebar-title" style={{ marginTop: '1rem' }}>
+                        Scheduled earlier
+                        <span className="sidebar-count">{scheduledEarlier.length}</span>
+                      </div>
+                      {sortByDue(scheduledEarlier).map(task => (
+                        <SidebarCard key={task.id} task={task} cat={catMap[task.category_id]}
+                          allISOs={allISOs} onDragStart={onDragStart} onDragEnd={onDragEnd}
+                          onTouchStart={onTouchStartCard} onTouchMove={onTouchMoveCard} onTouchEnd={onTouchEndCard}
+                          onRemoveDay={removeDay} onClick={() => openPanel(task)}
+                          onSchedule={() => setDayPickerTask(task)} />
+                      ))}
+                    </>
+                  )}
+
+                  {scheduledLater.length > 0 && (
+                    <>
+                      <div className="sidebar-title" style={{ marginTop: '1rem' }}>
+                        Scheduled later
+                        <span className="sidebar-count">{scheduledLater.length}</span>
+                      </div>
+                      {sortByDue(scheduledLater).map(task => (
+                        <SidebarCard key={task.id} task={task} cat={catMap[task.category_id]}
+                          allISOs={allISOs} onDragStart={onDragStart} onDragEnd={onDragEnd}
+                          onTouchStart={onTouchStartCard} onTouchMove={onTouchMoveCard} onTouchEnd={onTouchEndCard}
+                          onRemoveDay={removeDay} onClick={() => openPanel(task)}
+                          onSchedule={() => setDayPickerTask(task)} />
+                      ))}
+                    </>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* ── Week grid (swipeable on mobile) ── */}
-        <div
-          className="planner-weeks"
-          onTouchStart={onWeeksSwipeStart}
-          onTouchEnd={onWeeksSwipeEnd}
-        >
-          {Array.from({ length: SHOW_WEEKS }, (_, w) => {
-            const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
-            return (
-              <div key={w} className="planner-week">
-                <div className="planner-week-grid">
-                  {weekISOs.map((iso, i) => {
-                    const isToday = iso === todayISO;
-                    const isPast  = iso < todayISO;
-                    return (
-                      <div key={`hdr-${iso}`}
-                        className={`planner-day-header${isToday ? ' today' : ''}${isPast ? ' past' : ''}`}>
-                        {DAY_NAMES[i]}<br />
-                        <span className="planner-day-date">{fmtShort(iso)}</span>
-                      </div>
-                    );
-                  })}
-                  {weekISOs.map(iso => {
-                    const load   = dayLoad[iso] || 0;
-                    const over   = load > dayAvail + 0.05;
-                    const isPast = iso < todayISO;
-                    return (
-                      <div
-                        key={`col-${iso}`}
-                        data-iso={iso}
-                        className={`planner-col${over ? ' over' : ''}${isPast ? ' past' : ''}`}
-                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
-                        onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
-                        onDrop={e => onDropDay(e, iso)}
-                      >
-                        {load > 0.05 && (
-                          <div className={`day-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</div>
-                        )}
-                        {dueOnDay[iso]?.map(t => (
-                          <div key={t.id} className="due-chip"
-                            style={{ background: catMap[t.category_id]?.color || '#888' }}
-                            title={`Due: ${t.name}`}>
-                            &#128197; {t.name.slice(0, 12)}{t.name.length > 12 ? '\u2026' : ''}
+            <div className="planner-weeks">
+              {Array.from({ length: SHOW_WEEKS }, (_, w) => {
+                const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
+                return (
+                  <div key={w} className="planner-week">
+                    <div className="planner-week-grid">
+                      {weekISOs.map((iso, i) => {
+                        const isToday = iso === todayISO;
+                        const isPast  = iso < todayISO;
+                        return (
+                          <div key={`hdr-${iso}`}
+                            className={`planner-day-header${isToday ? ' today' : ''}${isPast ? ' past' : ''}`}>
+                            {DAY_NAMES[i]}<br />
+                            <span className="planner-day-date">{fmtShort(iso)}</span>
                           </div>
-                        ))}
-                        {scheduledOnDay[iso]?.map(t => {
-                          const cat      = catMap[t.category_id];
-                          const hrs      = hoursOnDay(t, iso, todayISO);
-                          const isCustom = (t.scheduled_day_hours || {})[iso] !== undefined;
-                          const popKey   = `${t.id}-${iso}`;
-                          return (
-                            <PlannerTaskCard
-                              key={t.id}
-                              task={t} cat={cat} iso={iso} hrs={hrs} isCustom={isCustom}
-                              isPopoverOpen={openPopover === popKey}
-                              hrsInput={hrsInput}
-                              onDragStart={onDragStart} onDragEnd={onDragEnd}
-                              onTouchStart={onTouchStartCard}
-                              onTouchMove={onTouchMoveCard}
-                              onTouchEnd={onTouchEndCard}
-                              onRemove={() => removeDay(t, iso)}
-                              onOpen={() => openPanel(t)}
-                              onTogglePopover={() => {
-                                if (openPopover === popKey) setOpenPopover(null);
-                                else { setHrsInput(hrs.toFixed(1)); setOpenPopover(popKey); }
-                              }}
-                              onSetHours={() => setDayHours(t, iso, parseFloat(hrsInput))}
-                              onClearHours={() => clearDayHours(t, iso)}
-                              onHrsInputChange={setHrsInput}
-                            />
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                        );
+                      })}
+                      {weekISOs.map(iso => {
+                        const load   = dayLoad[iso] || 0;
+                        const over   = load > dayAvail + 0.05;
+                        const isPast = iso < todayISO;
+                        return (
+                          <div
+                            key={`col-${iso}`}
+                            data-iso={iso}
+                            className={`planner-col${over ? ' over' : ''}${isPast ? ' past' : ''}`}
+                            onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                            onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
+                            onDrop={e => onDropDay(e, iso)}
+                          >
+                            {load > 0.05 && (
+                              <div className={`day-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</div>
+                            )}
+                            {dueOnDay[iso]?.map(t => (
+                              <div key={t.id} className="due-chip"
+                                style={{ background: catMap[t.category_id]?.color || '#888' }}
+                                title={`Due: ${t.name}`}>
+                                &#128197; {t.name.slice(0, 12)}{t.name.length > 12 ? '\u2026' : ''}
+                              </div>
+                            ))}
+                            {scheduledOnDay[iso]?.map(t => {
+                              const cat      = catMap[t.category_id];
+                              const hrs      = hoursOnDay(t, iso, todayISO);
+                              const isCustom = (t.scheduled_day_hours || {})[iso] !== undefined;
+                              const popKey   = `${t.id}-${iso}`;
+                              return (
+                                <PlannerTaskCard
+                                  key={t.id}
+                                  task={t} cat={cat} iso={iso} hrs={hrs} isCustom={isCustom}
+                                  isPopoverOpen={openPopover === popKey}
+                                  hrsInput={hrsInput}
+                                  onDragStart={onDragStart} onDragEnd={onDragEnd}
+                                  onTouchStart={onTouchStartCard}
+                                  onTouchMove={onTouchMoveCard}
+                                  onTouchEnd={onTouchEndCard}
+                                  onRemove={() => removeDay(t, iso)}
+                                  onOpen={() => openPanel(t)}
+                                  onTogglePopover={() => {
+                                    if (openPopover === popKey) setOpenPopover(null);
+                                    else { setHrsInput(hrs.toFixed(1)); setOpenPopover(popKey); }
+                                  }}
+                                  onSetHours={() => setDayHours(t, iso, parseFloat(hrsInput))}
+                                  onClearHours={() => clearDayHours(t, iso)}
+                                  onHrsInputChange={setHrsInput}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {dayPickerTask && (
         <DayPickerModal

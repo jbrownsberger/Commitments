@@ -19,11 +19,6 @@
   align-items: start;
   min-width: 0;
 }
-@media (max-width: 700px) {
-  .planner-layout {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ── Sidebar wrapper */
 .planner-sidebar-wrap {
@@ -32,7 +27,7 @@
   gap: 0;
 }
 
-/* Sidebar toggle (mobile only) */
+/* Sidebar toggle (desktop only now — mobile uses agenda) */
 .sidebar-toggle {
   display: none;
   align-items: center;
@@ -49,9 +44,6 @@
   text-align: left;
   margin-bottom: 4px;
 }
-@media (max-width: 700px) {
-  .sidebar-toggle { display: flex; }
-}
 
 /* ── Sidebar */
 .planner-sidebar {
@@ -63,13 +55,6 @@
   top: 1rem;
   max-height: 80vh;
   overflow-y: auto;
-}
-@media (max-width: 700px) {
-  .planner-sidebar {
-    position: static;
-    max-height: 45vh;
-    overflow-y: auto;
-  }
 }
 .sidebar-title {
   font-size: 13px;
@@ -100,7 +85,6 @@
   cursor: grab;
   font-size: 12px;
   position: relative;
-  /* Allow vertical scrolling through cards unless a drag is in progress */
   touch-action: pan-y;
 }
 .sidebar-card:active { cursor: grabbing; }
@@ -120,7 +104,6 @@
   line-height: 1; min-width: 20px; min-height: 20px;
 }
 
-/* Calendar icon button */
 .sidebar-schedule-btn {
   position: absolute;
   top: 6px;
@@ -141,9 +124,6 @@
 }
 .sidebar-schedule-btn:hover,
 .sidebar-schedule-btn:focus { opacity: 1; background: var(--color-bg-tertiary); }
-@media (max-width: 700px) {
-  .sidebar-schedule-btn { opacity: 0.75; font-size: 16px; }
-}
 
 /* ── Week container */
 .planner-weeks {
@@ -231,17 +211,10 @@
   gap: 4px;
   position: relative;
   font-size: 11px;
-  /* Allow vertical scrolling through cards by default.
-     Once a horizontal drag is confirmed, JS adds .is-touch-dragging to body
-     which overrides this with touch-action: none. */
   touch-action: pan-y;
 }
 .planner-task-card:active { cursor: grabbing; }
 
-/*
-  When a drag is in progress (class applied by JS to document.body),
-  lock all touch-action so the browser doesn't interfere with the drag.
-*/
 body.is-touch-dragging .planner-task-card,
 body.is-touch-dragging .sidebar-card {
   touch-action: none;
@@ -308,9 +281,7 @@ body.is-touch-dragging .sidebar-card {
 }
 .hrs-popover-row button:hover { background: rgba(255,255,255,0.4); }
 
-/* ── Touch drag ghost
-   pointer-events: none is CRITICAL — without it, elementFromPoint() would
-   return the ghost element instead of the column underneath it. */
+/* ── Touch drag ghost */
 .touch-ghost {
   position: fixed;
   pointer-events: none;
@@ -324,7 +295,6 @@ body.is-touch-dragging .sidebar-card {
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0,0,0,0.35);
   transform: rotate(-2deg);
-  /* Smoothly follows the finger */
   will-change: transform;
 }
 
@@ -404,4 +374,231 @@ body.is-touch-dragging .sidebar-card {
   color: var(--color-text-tertiary);
   margin-top: 8px;
   text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE AGENDA VIEW  (≤700px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.agenda-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Nav bar */
+.agenda-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.agenda-nav-btns { display: flex; gap: 4px; }
+.agenda-actions  { display: flex; gap: 4px; }
+.agenda-week-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Unscheduled section */
+.agenda-unscheduled {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-primary);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.agenda-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-align: left;
+}
+.agenda-unsch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  border-left: 3px solid #888;
+  cursor: pointer;
+  position: relative;
+}
+.agenda-unsch-row:active { background: var(--color-bg-secondary); }
+.agenda-unsch-name {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agenda-unsch-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.agenda-schedule-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.agenda-schedule-btn:active { opacity: 1; }
+
+/* Day sections */
+.agenda-day {
+  margin-bottom: 4px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-bg-primary);
+}
+.agenda-day.agenda-past { opacity: 0.6; }
+
+.agenda-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--color-bg-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.agenda-today .agenda-day-header {
+  background: var(--color-bg-info);
+  border-bottom-color: var(--color-border-info);
+}
+.agenda-day-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.agenda-today .agenda-day-label {
+  color: var(--color-text-info);
+}
+.agenda-load-badge {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+.agenda-load-badge.over {
+  color: var(--color-text-danger);
+  font-weight: 600;
+}
+
+/* Due row */
+.agenda-due-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-left: 3px solid #888;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.agenda-due-row:active { background: var(--color-bg-secondary); }
+.agenda-due-icon { flex-shrink: 0; font-size: 14px; }
+.agenda-due-name { flex: 1; color: var(--color-text-secondary); font-style: italic; }
+
+/* Scheduled task row */
+.agenda-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-left: 3px solid #888;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+  position: relative;
+}
+.agenda-task-row:active { background: var(--color-bg-secondary); }
+.agenda-task-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+.agenda-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.agenda-task-hrs {
+  font-size: 11px;
+  color: #fff;
+  border-radius: 3px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.agenda-task-due {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.agenda-remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  padding: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.agenda-remove-btn:active { color: var(--color-text-danger); }
+.agenda-schedule-btn-sm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.agenda-schedule-btn-sm:active { opacity: 1; }
+
+.agenda-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
 }
