@@ -25,6 +25,34 @@
   }
 }
 
+/* ── Sidebar wrapper (holds toggle + sidebar) */
+.planner-sidebar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Toggle button — always visible, collapses/expands the sidebar */
+.sidebar-toggle {
+  display: none; /* hidden on desktop */
+  align-items: center;
+  gap: 4px;
+  background: var(--color-bg-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  width: 100%;
+  text-align: left;
+  margin-bottom: 4px;
+}
+@media (max-width: 700px) {
+  .sidebar-toggle { display: flex; }
+}
+
 /* ── Sidebar */
 .planner-sidebar {
   border: 0.5px solid var(--color-border-tertiary);
@@ -39,7 +67,8 @@
 @media (max-width: 700px) {
   .planner-sidebar {
     position: static;
-    max-height: 35vh;
+    max-height: 45vh;
+    overflow-y: auto;
   }
 }
 .sidebar-title {
@@ -70,6 +99,7 @@
   margin-bottom: 7px;
   cursor: grab;
   font-size: 12px;
+  position: relative;
 }
 .sidebar-card:active { cursor: grabbing; }
 .sidebar-card-name { font-weight: 500; margin-bottom: 2px; }
@@ -84,8 +114,33 @@
 }
 .sidebar-day-chip button {
   background: none; border: none; cursor: pointer;
-  font-size: 11px; color: var(--color-text-tertiary); padding: 0;
+  font-size: 12px; color: var(--color-text-tertiary); padding: 2px;
+  line-height: 1; min-width: 20px; min-height: 20px;
+}
+
+/* Calendar icon button — shows always, more prominent on mobile */
+.sidebar-schedule-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.5;
+  padding: 4px;
   line-height: 1;
+  border-radius: var(--radius-sm);
+  min-width: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-schedule-btn:hover,
+.sidebar-schedule-btn:focus { opacity: 1; background: var(--color-bg-tertiary); }
+@media (max-width: 700px) {
+  .sidebar-schedule-btn { opacity: 0.75; font-size: 16px; }
 }
 
 /* ── Week container: allow horizontal scroll on small windows */
@@ -102,11 +157,8 @@
 
 /*
   Unified 7-column grid. Header cells (row 1) and column cells (row 2)
-  share the same column tracks, keeping labels perfectly aligned.
-
-  Columns use `auto` sizing so empty days naturally shrink to fit their
-  header label, while days with tasks grow to accommodate their content.
-  A min-width on the grid keeps every column legible at a minimum.
+  share the same column tracks — labels are always aligned.
+  Columns use `auto` so empty days shrink and busy days grow.
 */
 .planner-week-grid {
   display: grid;
@@ -115,7 +167,6 @@
   min-width: 420px;
 }
 
-/* Header cells — width is set by the widest content in the column */
 .planner-day-header {
   text-align: center;
   font-size: 11px;
@@ -132,7 +183,6 @@
 .planner-day-header.past { opacity: 0.45; }
 .planner-day-date { font-weight: 400; font-size: 10px; }
 
-/* Column cells — fill their column track; empty ones stay slim */
 .planner-col {
   min-height: 80px;
   border-radius: var(--radius-md);
@@ -140,7 +190,6 @@
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border-tertiary);
   transition: background 0.15s;
-  /* let columns with tasks grow, but don't force empty ones wide */
   width: 100%;
   box-sizing: border-box;
 }
@@ -194,7 +243,10 @@
 .card-remove {
   background: none; border: none; cursor: pointer;
   color: rgba(255,255,255,0.7); font-size: 14px;
-  padding: 0; line-height: 1; flex-shrink: 0;
+  padding: 4px; line-height: 1; flex-shrink: 0;
+  /* larger tap target on mobile */
+  min-width: 28px; min-height: 28px;
+  display: flex; align-items: center; justify-content: center;
 }
 .card-remove:hover { color: #fff; }
 
@@ -205,8 +257,12 @@
   color: inherit;
   cursor: pointer;
   font-size: 10px;
-  padding: 1px 5px;
+  padding: 3px 7px;
   font-family: var(--font-sans);
+  /* larger tap target */
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
 }
 .hrs-badge:hover { background: rgba(255,255,255,0.4); }
 .hrs-badge.hrs-custom { background: rgba(255,255,255,0.45); font-weight: 700; }
@@ -235,9 +291,104 @@
   text-align: center; font-family: var(--font-sans);
 }
 .hrs-popover-row button {
-  font-size: 11px; padding: 3px 8px;
+  font-size: 11px; padding: 5px 10px;
   border-radius: 4px; border: none;
   background: rgba(255,255,255,0.25); color: #fff;
   cursor: pointer; font-family: var(--font-sans);
+  min-height: 28px;
 }
 .hrs-popover-row button:hover { background: rgba(255,255,255,0.4); }
+
+/* ── Touch drag ghost */
+.touch-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  transform: rotate(-2deg);
+}
+
+/* ── Day-picker modal */
+.day-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+@media (min-width: 500px) {
+  .day-picker-overlay { align-items: center; }
+}
+.day-picker-modal {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 16px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.25);
+}
+@media (min-width: 500px) {
+  .day-picker-modal {
+    border-radius: var(--radius-lg);
+    max-height: 70vh;
+  }
+}
+.day-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.day-picker-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 20px; color: var(--color-text-secondary);
+  padding: 4px 8px; line-height: 1;
+  min-width: 36px; min-height: 36px;
+}
+.day-picker-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.day-picker-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 2px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-tertiary);
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--color-text-primary);
+  gap: 2px;
+  min-height: 44px;
+}
+.day-picker-btn.picked {
+  background: var(--color-bg-info);
+  border-color: var(--color-border-info);
+  font-weight: 600;
+}
+.dpb-name { font-weight: 600; font-size: 11px; }
+.dpb-date { font-size: 9px; color: var(--color-text-secondary); }
+.day-picker-btn.picked .dpb-date { color: var(--color-text-info); }
+.day-picker-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+  text-align: center;
+}
