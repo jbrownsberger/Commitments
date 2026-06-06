@@ -17,7 +17,6 @@
   grid-template-columns: 200px 1fr;
   gap: 1rem;
   align-items: start;
-  /* prevent the layout itself from overflowing the window */
   min-width: 0;
 }
 @media (max-width: 700px) {
@@ -94,34 +93,37 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  /* scroll horizontally rather than blowing out the page */
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  /* keep weeks from collapsing to nothing on narrow views */
   min-width: 0;
 }
 
 .planner-week {}
 
-/* ── The unified 7-column grid: header row + column row share the same
-   column tracks so they are always perfectly aligned, even when a column
-   is empty (min-height keeps the column row from collapsing). */
+/*
+  Unified 7-column grid. Header cells (row 1) and column cells (row 2)
+  share the same column tracks, keeping labels perfectly aligned.
+
+  Columns use `auto` sizing so empty days naturally shrink to fit their
+  header label, while days with tasks grow to accommodate their content.
+  A min-width on the grid keeps every column legible at a minimum.
+*/
 .planner-week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, auto);
   gap: 4px;
-  /* enforce a minimum so each column is legible; the scroll wrapper handles overflow */
   min-width: 420px;
 }
 
-/* Header cells live in row 1 of .planner-week-grid */
+/* Header cells — width is set by the widest content in the column */
 .planner-day-header {
   text-align: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  padding: 3px 0 4px;
+  padding: 3px 6px 4px;
   border-bottom: 1.5px solid transparent;
+  white-space: nowrap;
 }
 .planner-day-header.today {
   color: var(--color-text-info);
@@ -130,7 +132,7 @@
 .planner-day-header.past { opacity: 0.45; }
 .planner-day-date { font-weight: 400; font-size: 10px; }
 
-/* Column cells live in row 2 of .planner-week-grid */
+/* Column cells — fill their column track; empty ones stay slim */
 .planner-col {
   min-height: 80px;
   border-radius: var(--radius-md);
@@ -138,6 +140,9 @@
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border-tertiary);
   transition: background 0.15s;
+  /* let columns with tasks grow, but don't force empty ones wide */
+  width: 100%;
+  box-sizing: border-box;
 }
 .planner-col.drag-over {
   background: var(--color-bg-info);

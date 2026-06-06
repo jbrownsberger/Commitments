@@ -139,7 +139,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }
 
-  // Three-way sidebar classification relative to the current window
   const trueUnscheduled  = [];
   const scheduledEarlier = [];
   const scheduledLater   = [];
@@ -262,7 +261,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
       <div className="planner-layout">
         <div className="planner-sidebar" onDragOver={e => e.preventDefault()} onDrop={onDropSidebar}>
-
           <div className="sidebar-title">
             Unscheduled
             <span className="sidebar-count">{trueUnscheduled.length}</span>
@@ -326,18 +324,11 @@ export default function Planner({ appData, userId, onEditTask }) {
           )}
         </div>
 
-        {/* planner-weeks scrolls horizontally on narrow windows */}
         <div className="planner-weeks">
           {Array.from({ length: SHOW_WEEKS }, (_, w) => {
             const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
             return (
               <div key={w} className="planner-week">
-                {/*
-                  Single unified grid: header cells (row 1) and column cells
-                  (row 2) share the same 7 column tracks, so the label above
-                  each column is always structurally aligned with it, even
-                  when the column contains no tasks and would otherwise shrink.
-                */}
                 <div className="planner-week-grid">
                   {/* Row 1 — day-name headers */}
                   {weekISOs.map((iso, i) => {
@@ -434,7 +425,7 @@ function PlannerTaskCard({
   onTogglePopover, onSetHours, onClearHours, onHrsInputChange,
 }) {
   const color = cat?.color || '#888';
-  const due   = task.due_date ? ` \u00b7 due ${fmtShort(task.due_date)}` : '';
+  const due   = task.due_date ? <> &middot; due {fmtShort(task.due_date)}</> : null;
   return (
     <div
       className="planner-task-card"
@@ -486,10 +477,10 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onRemoveDay, 
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      title="Click to view \u00b7 Drag to schedule"
+      title="Click to view · Drag to schedule"
     >
       <div className="sidebar-card-name">{task.name}</div>
-      <div className="sidebar-card-meta">{rem.toFixed(1)}h remaining \u00b7 {due}</div>
+      <div className="sidebar-card-meta">{rem.toFixed(1)}h remaining &middot; {due}</div>
       {visible.length > 0 && (
         <div className="sidebar-days">
           {visible.map(d => (
