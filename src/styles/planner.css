@@ -8,17 +8,22 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.planner-nav    { display: flex; gap: 6px; }
-.planner-actions { display: flex; gap: 6px; }
+.planner-nav    { display: flex; gap: 6px; flex-wrap: wrap; }
+.planner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ── Outer layout: sidebar + scrollable weeks */
 .planner-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 1.5rem;
+  grid-template-columns: 200px 1fr;
+  gap: 1rem;
   align-items: start;
+  /* prevent the layout itself from overflowing the window */
+  min-width: 0;
 }
 @media (max-width: 700px) {
-  .planner-layout { grid-template-columns: 1fr; }
+  .planner-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Sidebar */
@@ -31,6 +36,12 @@
   top: 1rem;
   max-height: 80vh;
   overflow-y: auto;
+}
+@media (max-width: 700px) {
+  .planner-sidebar {
+    position: static;
+    max-height: 35vh;
+  }
 }
 .sidebar-title {
   font-size: 13px;
@@ -78,22 +89,38 @@
   line-height: 1;
 }
 
-/* ── Week grid */
-.planner-weeks { display: flex; flex-direction: column; gap: 20px; }
+/* ── Week container: allow horizontal scroll on small windows */
+.planner-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  /* scroll horizontally rather than blowing out the page */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* keep weeks from collapsing to nothing on narrow views */
+  min-width: 0;
+}
 
 .planner-week {}
-.planner-day-headers {
+
+/* ── The unified 7-column grid: header row + column row share the same
+   column tracks so they are always perfectly aligned, even when a column
+   is empty (min-height keeps the column row from collapsing). */
+.planner-week-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
-  margin-bottom: 4px;
+  /* enforce a minimum so each column is legible; the scroll wrapper handles overflow */
+  min-width: 420px;
 }
+
+/* Header cells live in row 1 of .planner-week-grid */
 .planner-day-header {
   text-align: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  padding: 3px 0;
+  padding: 3px 0 4px;
   border-bottom: 1.5px solid transparent;
 }
 .planner-day-header.today {
@@ -103,11 +130,7 @@
 .planner-day-header.past { opacity: 0.45; }
 .planner-day-date { font-weight: 400; font-size: 10px; }
 
-.planner-day-cols {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
+/* Column cells live in row 2 of .planner-week-grid */
 .planner-col {
   min-height: 80px;
   border-radius: var(--radius-md);
