@@ -5,6 +5,7 @@
  *  - Token + connection state persisted to localStorage; survives tab switches
  *  - Silent re-auth on mount if a valid token is cached
  *  - Calc settings: working window, flat daily deduction, per-event buffer, efficiency %
+ *  - Non-work days: mark specific weekdays (e.g. Sunday) as 0 availability
  *  - All settings persisted to localStorage
  */
 import React, { useState, useEffect, useCallback } from 'react';
@@ -22,6 +23,9 @@ const LS_TOKEN_KEY    = 'gcal_access_token';
 const LS_EXPIRY_KEY   = 'gcal_token_expiry';
 const LS_SETTINGS_KEY = 'gcal_calc_settings';
 const LS_CALS_KEY     = 'gcal_selected_cals';
+
+// Day names indexed by JS getDay() — 0 = Sunday
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function toISO(d) { return d.toISOString().slice(0, 10); }
@@ -55,6 +59,7 @@ const DEFAULT_SETTINGS = {
   deductMins:   60,   // flat daily deduction (lunch + overhead), minutes
   bufferMins:   10,   // padding added before+after each calendar event, minutes
   efficiency:   85,   // % of remaining free time actually available for deep work
+  nonWorkDays:  [],   // JS getDay() indices (0=Sun … 6=Sat) treated as 0 availability
 };
 
 function loadSettings() {
@@ -69,7 +74,6 @@ function saveSettings(s) {
 }
 
 // ── Token persistence ────────────────────────────────────────────────────────
-// Module-level token mirrors localStorage so we don't re-parse on every call.
 let _tokenClient = null;
 let _accessToken = localStorage.getItem(LS_TOKEN_KEY) || null;
 let _tokenExpiry  = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
@@ -102,8 +106,6 @@ function loadGsiScript() {
   });
 }
 
-// If prompt='' and a valid session exists on Google's side, this resolves
-// silently (no popup). If not, it falls back to the popup.
 async function getAccessToken(forceConsent = false) {
   if (!forceConsent && hasValidCachedToken()) return _accessToken;
   return new Promise(async (resolve, reject) => {
@@ -119,7 +121,6 @@ async function getAccessToken(forceConsent = false) {
         },
       });
     }
-    // prompt: '' = silent if Google still has a session; 'consent' = force UI
     _tokenClient.requestAccessToken({ prompt: forceConsent ? 'consent' : '' });
   });
 }
@@ -168,6 +169,7 @@ async function fetchCalendarList() {
  * Compute effective free minutes on a day after applying all calc settings.
  *
  * Pipeline:
+ *  0. If the day's weekday is in nonWorkDays, return 0 immediately.
  *  1. Clip busy intervals to working window
  *  2. Expand each busy interval by bufferMins on each side (then merge overlaps)
  *  3. Sum buffered-busy minutes
@@ -175,7 +177,12 @@ async function fetchCalendarList() {
  *  5. Multiply by efficiency %
  */
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
-  const { workStart, workEnd, deductMins, bufferMins, efficiency } = settings;
+  const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
+
+  // 0. Non-work day → zero availability
+  const dowIndex = new Date(isoDate + 'T00:00:00').getDay(); // 0=Sun … 6=Sat
+  if ((nonWorkDays || []).includes(dowIndex)) return 0;
+
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2,'0')}:00:00`).getTime();
   const winEnd   = new Date(`${isoDate}T${String(workEnd  ).padStart(2,'0')}:00:00`).getTime();
   const winMins  = (winEnd - winStart) / 60_000;
@@ -280,7 +287,6 @@ export default function GCalSync({ appData }) {
       .then(list => {
         const cals = (list.items || []).filter(c => !c.hidden);
         setCalendars(cals);
-        // If we have no saved selection yet, select all
         setSelCals(prev => {
           if (prev.size > 0) return prev;
           const all = new Set(cals.map(c => c.id));
@@ -288,7 +294,7 @@ export default function GCalSync({ appData }) {
           return all;
         });
       })
-      .catch(() => {}); // silently ignore if token expired mid-session
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
@@ -297,7 +303,7 @@ export default function GCalSync({ appData }) {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
     try {
-      await getAccessToken(true); // force consent so user explicitly approves
+      await getAccessToken(true);
       setConnected(true);
       const list = await fetchCalendarList();
       const cals = (list.items || []).filter(c => !c.hidden);
@@ -333,7 +339,6 @@ export default function GCalSync({ appData }) {
 
       const resp = await fetchFreeBusy(calIds, timeMin, timeMax);
 
-      // Merge busy intervals across all calendars, keyed by day
       const busyByDay = {};
       for (const calId of calIds) {
         for (const interval of (resp.calendars?.[calId]?.busy || [])) {
@@ -405,8 +410,17 @@ export default function GCalSync({ appData }) {
   }
 
   // ── Connected screen ──────────────────────────────────────────────────────
-  const { workStart, workEnd, deductMins, bufferMins, efficiency } = settings;
+  const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = workEnd - workStart;
+
+  // Toggle a weekday index in/out of the nonWorkDays array
+  const toggleNonWorkDay = (dowIndex) => {
+    const current = nonWorkDays || [];
+    const next = current.includes(dowIndex)
+      ? current.filter(d => d !== dowIndex)
+      : [...current, dowIndex];
+    updateSetting('nonWorkDays', next);
+  };
 
   return (
     <div className="gcal-pane">
@@ -443,6 +457,34 @@ export default function GCalSync({ appData }) {
                   </select>
                 </label>
               </div>
+            </div>
+
+            {/* Non-work days */}
+            <div className="gcal-setting-group">
+              <div className="gcal-section-label">
+                Non-work days <span className="gcal-setting-hint">(automatically 0 availability)</span>
+              </div>
+              <div className="gcal-dow-row">
+                {DAY_NAMES.map((name, idx) => {
+                  const isOff = (nonWorkDays || []).includes(idx);
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`gcal-dow-btn${isOff ? ' gcal-dow-off' : ''}`}
+                      onClick={() => toggleNonWorkDay(idx)}
+                      title={isOff ? `${name}: non-work day (click to re-enable)` : `${name}: work day (click to mark as off)`}
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+              {(nonWorkDays || []).length > 0 && (
+                <div className="gcal-setting-preview">
+                  {DAY_NAMES.filter((_, i) => (nonWorkDays || []).includes(i)).join(', ')} will show 0h available
+                </div>
+              )}
             </div>
 
             {/* Flat daily deduction */}
@@ -548,6 +590,7 @@ export default function GCalSync({ appData }) {
           {/* Settings summary pill */}
           <div className="gcal-settings-summary">
             {hrLabel(workStart)}–{hrLabel(workEnd)} window
+            {(nonWorkDays || []).length > 0 && ` · ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
             {deductMins > 0 && ` · −${deductMins}m deduction`}
             {bufferMins > 0 && ` · ${bufferMins}m event buffer`}
             {efficiency < 100 && ` · ${efficiency}% efficiency`}
@@ -574,6 +617,7 @@ export default function GCalSync({ appData }) {
                   const pct     = Math.round((freeH / windowH) * 100);
                   const isToday = iso === todayISO;
                   const isPast  = iso < todayISO;
+                  const isOff   = (nonWorkDays || []).includes(new Date(iso + 'T00:00:00').getDay());
 
                   const planH = tasks.reduce((sum, t) => {
                     const dayHrs = (t.scheduled_day_hours || {})[iso];
@@ -589,9 +633,12 @@ export default function GCalSync({ appData }) {
 
                   return (
                     <div key={iso} className={
-                      `gcal-fb-row${isToday ? ' gcal-today' : ''}${isPast ? ' gcal-past' : ''}${overcommitted ? ' gcal-over' : ''}`
+                      `gcal-fb-row${isToday ? ' gcal-today' : ''}${isPast ? ' gcal-past' : ''}${overcommitted ? ' gcal-over' : ''}${isOff ? ' gcal-day-off' : ''}`
                     }>
-                      <div className="gcal-fb-date">{fmtShort(iso)}</div>
+                      <div className="gcal-fb-date">
+                        {fmtShort(iso)}
+                        {isOff && <span className="gcal-off-badge">off</span>}
+                      </div>
                       <div className="gcal-fb-bar-wrap">
                         <div className="gcal-fb-bar" style={{ width: `${Math.min(pct, 100)}%` }} />
                         {planH > 0.05 && (
