@@ -81,7 +81,6 @@ function statusFromProgress(prog, current) {
 function gcalWeeklyHours(gcalFreeBusy) {
   if (!gcalFreeBusy) return null;
   const todayISO = new Date().toISOString().slice(0, 10);
-  // Sunday-anchored week end
   const weekEndDate = new Date();
   weekEndDate.setDate(weekEndDate.getDate() + (7 - weekEndDate.getDay()) % 7 || 7);
   const weekEndISO = weekEndDate.toISOString().slice(0, 10);
@@ -89,7 +88,7 @@ function gcalWeeklyHours(gcalFreeBusy) {
   for (const [iso, freeMin] of Object.entries(gcalFreeBusy)) {
     if (iso >= todayISO && iso <= weekEndISO) total += freeMin / 60;
   }
-  return Math.round(total * 10) / 10;   // one decimal
+  return Math.round(total * 10) / 10;
 }
 
 const CAP_MODE_KEY = 'capacity_mode';
@@ -107,7 +106,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const [panelTask, setPanelTask] = useState(null);
   const [editingCapacity, setEditingCapacity] = useState(false);
 
-  // ── Capacity mode toggle (persisted) ──────────────────────────────────────
   const [capacityMode, setCapacityMode] = useState(
     () => localStorage.getItem(CAP_MODE_KEY) || 'manual'
   );
@@ -119,7 +117,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const manualWeeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
   const gcalHours         = gcalWeeklyHours(gcalFreeBusy);
-  // Resolved value used everywhere downstream
   const weeklyHours = capacityMode === 'gcal' && gcalHours !== null
     ? gcalHours
     : manualWeeklyHours;
@@ -151,20 +148,34 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     return d.toISOString().slice(0, 10);
   })();
 
+  // ── plannedThisWeek ──────────────────────────────────────────────────────────
+  // For each scheduled task, compute the correct per-day share using ALL
+  // future scheduled days (not just in-window days), then sum only the
+  // in-window days at that rate.  This mirrors the Planner's hoursOnDay().
   const plannedThisWeek = allInc.reduce((s, t) => {
-    if (!t.scheduled_days) return s;
-    const days = t.scheduled_days.filter(d => d >= todayISO && d <= weekEnd);
-    if (!days.length) return s;
-    const dh = t.scheduled_day_hours || {};
-    const explicit   = days.reduce((a, d) => a + (dh[d] || 0), 0);
-    const unweighted = days.filter(d => !dh[d]);
-    const perUw = unweighted.length > 0
-      ? Math.max(remainingHours(t) - explicit, 0) / unweighted.length : 0;
-    return s + explicit + perUw * unweighted.length;
+    if (!t.scheduled_days?.length) return s;
+
+    const dh         = t.scheduled_day_hours || {};
+    const allFuture  = t.scheduled_days.filter(d => d >= todayISO);  // all future days
+    if (!allFuture.length) return s;
+
+    const inWindow   = allFuture.filter(d => d <= weekEnd);           // subset in this week
+    if (!inWindow.length) return s;
+
+    // Per-day rate for unweighted days, computed over ALL future days
+    const explicitTotal = allFuture.reduce((a, d) => a + (dh[d] || 0), 0);
+    const allUnweighted = allFuture.filter(d => !dh[d]);
+    const perUw = allUnweighted.length > 0
+      ? Math.max(remainingHours(t) - explicitTotal, 0) / allUnweighted.length
+      : 0;
+
+    // Sum in-window days only
+    const windowSum = inWindow.reduce((a, d) => a + (dh[d] !== undefined ? dh[d] : perUw), 0);
+    return s + windowSum;
   }, 0);
 
-  const remainingCapacity   = Math.max(weeklyHours - plannedThisWeek, 0);
-  const unscheduledTotal    = allInc.reduce((s, t) => {
+  const remainingCapacity = Math.max(weeklyHours - plannedThisWeek, 0);
+  const unscheduledTotal  = allInc.reduce((s, t) => {
     const hasAnySchedule = t.scheduled_days?.some(d => d >= todayISO);
     if (hasAnySchedule) return s;
     return s + remainingHours(t);
@@ -228,16 +239,13 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
 
-  // ── GCal nudge: mode is GCal but no data yet
   const gcalNoData = capacityMode === 'gcal' && gcalHours === null;
 
   return (
     <div className="plan-layout">
       <div>
-        {/* Date */}
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>{today}</div>
 
-        {/* Metrics row */}
         <div className="overview-grid" style={{ marginBottom: '1.5rem' }}>
           <Metric label="Total tasks"   val={total} />
           <Metric label="Completed"     val={doneCount} />
@@ -245,15 +253,11 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <Metric label="Overdue"       val={overdueCount} danger={overdueCount > 0} />
         </div>
 
-        {/* Weekly capacity */}
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <div className="section-label" style={{ marginBottom: 0 }}>This week’s focus</div>
 
-            {/* ── Right side: mode toggle + gear/editor ── */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-
-              {/* Manual | GCal toggle pill */}
               <div className="capacity-mode-toggle">
                 <button
                   className={capacityMode === 'manual' ? 'active' : ''}
@@ -265,7 +269,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 >GCal</button>
               </div>
 
-              {/* Gear / inline editor (only in manual mode) */}
               {capacityMode === 'manual' && (
                 editingCapacity ? (
                   <CapacityEditor
@@ -286,7 +289,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 )
               )}
 
-              {/* GCal mode: show resolved hours or a stale/disconnected badge */}
               {capacityMode === 'gcal' && !gcalNoData && (
                 <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                   &#128197; {gcalHours}h/wk
@@ -295,12 +297,9 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             </div>
           </div>
 
-          {/* Hint line */}
           {gcalNoData ? (
             <div style={{
-              fontSize: 11,
-              color: 'var(--color-text-secondary)',
-              marginBottom: 8,
+              fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8,
               display: 'flex', alignItems: 'center', gap: 4,
             }}>
               <span>&#9888;&#65039;</span>
@@ -335,7 +334,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           )}
         </div>
 
-        {/* Suggested focus queue */}
         {focusQueue.length > 0 && (
           <div>
             <div className="section-label">Suggested focus</div>
@@ -361,7 +359,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         )}
       </div>
 
-      {/* Right column */}
       <div className="right-col">
         <QuickTasks quickTasks={quickTasks} onSave={saveQuickTask} onDelete={removeQuickTask} />
         {todayPlan.length > 0 && (
