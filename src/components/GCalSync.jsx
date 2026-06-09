@@ -1,9 +1,9 @@
 /**
  * GCalSync — Google Calendar integration tab
  *
- * Fix: When fetching free/busy, also fetch events tagged with
- * commitments_task_id and subtract them from busy intervals so that
- * work blocks pushed from this app don't reduce computed availability.
+ * Fix: privateExtendedProperty must be "key=value", not just "key".
+ * Also switch to timestamp-based overlap subtraction instead of exact
+ * string match, so timezone format differences don’t cause misses.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import '../styles/gcal.css';
@@ -238,29 +238,36 @@ async function fetchCalendarList() {
 }
 
 /**
- * Fetch all events on the primary calendar that were created by this app
- * (identified by the private extended property commitments_task_id).
- * Returns a map of { [isoDate]: [{start, end}] } for use in deduction.
+ * Fetch events created by this app (tagged with commitments_task_id).
+ * The privateExtendedProperty filter requires "key=value" format per the
+ * Google Calendar API spec — passing just "key" causes a 400.
+ * Returns { [isoDate]: [{startMs, endMs}] } using epoch ms for comparison.
  */
 async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   const blocksByDay = {};
   let pageToken = null;
   do {
-    const qs = new URLSearchParams({
+    // Note: URLSearchParams will encode the "=" inside the value correctly.
+    // The param itself must appear as: privateExtendedProperty=commitments_task_id%3D
+    const params = new URLSearchParams({
       timeMin,
       timeMax,
-      privateExtendedProperty: 'commitments_task_id',
       singleEvents: 'true',
       maxResults: '250',
       ...(pageToken ? { pageToken } : {}),
     });
+    // Append the filter separately so the key=value pair stays intact
+    params.append('privateExtendedProperty', 'commitments_task_id=true');
     const resp = await gcalFetch(
-      `/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${qs}`
+      `/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${params}`
     );
     for (const ev of (resp.items || [])) {
-      if (!ev.start?.dateTime) continue; // skip all-day events
-      const iso = ev.start.dateTime.slice(0, 10);
-      (blocksByDay[iso] ??= []).push({ start: ev.start.dateTime, end: ev.end.dateTime });
+      if (!ev.start?.dateTime) continue;
+      const iso = new Date(ev.start.dateTime).toISOString().slice(0, 10);
+      (blocksByDay[iso] ??= []).push({
+        startMs: new Date(ev.start.dateTime).getTime(),
+        endMs:   new Date(ev.end.dateTime).getTime(),
+      });
     }
     pageToken = resp.nextPageToken || null;
   } while (pageToken);
@@ -268,20 +275,18 @@ async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
 }
 
 /**
- * Given a list of busy intervals and a list of Commitments block intervals
- * for the same day, remove the block intervals from the busy list so they
- * don't reduce computed availability.
+ * Remove Commitments-owned busy intervals from the free/busy list.
+ * Uses millisecond timestamps to avoid timezone string format mismatches.
+ * A busy interval is removed if it is fully covered by any block interval.
  */
 function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
   if (!blockIntervals || !blockIntervals.length) return busyIntervals;
-  const blockSet = new Set(
-    blockIntervals.map(b => `${b.start}|${b.end}`)
-  );
-  // Remove exact matches first (the common case — we created the event so
-  // the times are exact). For any remaining overlap, trim the busy interval.
-  return busyIntervals.filter(
-    b => !blockSet.has(`${b.start}|${b.end}`)
-  );
+  return busyIntervals.filter(b => {
+    const bs = new Date(b.start).getTime();
+    const be = new Date(b.end).getTime();
+    // Drop if any of our own blocks fully covers this busy span
+    return !blockIntervals.some(bl => bl.startMs <= bs && bl.endMs >= be);
+  });
 }
 
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
@@ -322,7 +327,8 @@ async function createWorkBlock(task, isoDate, durationHours) {
       start: { dateTime: start.toISOString(), timeZone: tz },
       end:   { dateTime: end.toISOString(),   timeZone: tz },
       colorId: '2',
-      extendedProperties: { private: { commitments_task_id: String(task.id) } },
+      // Value must match the filter above: commitments_task_id=true
+      extendedProperties: { private: { commitments_task_id: 'true' } },
     }),
   });
 }
@@ -426,8 +432,6 @@ export default function GCalSync({ appData }) {
         fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})),
       ]);
 
-      // Build busy-by-day map, then subtract any Commitments blocks so they
-      // don't reduce the availability figure (they're already in the planner).
       const busyByDay = {};
       for (const calId of calIds)
         for (const interval of (resp.calendars?.[calId]?.busy || []))
@@ -435,9 +439,9 @@ export default function GCalSync({ appData }) {
 
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
-        const iso = addDays(todayISO, i);
-        const rawBusy     = busyByDay[iso] || [];
-        const ownBlocks   = commitmentsBlocks[iso] || [];
+        const iso          = addDays(todayISO, i);
+        const rawBusy      = busyByDay[iso] || [];
+        const ownBlocks    = commitmentsBlocks[iso] || [];
         const adjustedBusy = subtractCommitmentsBlocks(rawBusy, ownBlocks);
         result[iso] = effectiveFreeMinutes(iso, adjustedBusy, settings);
       }
