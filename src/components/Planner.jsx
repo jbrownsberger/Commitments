@@ -45,11 +45,37 @@ function hoursOnDay(task, iso, todayISO) {
     ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
 }
-function autoFill(tasks, weeklyHours, sessionHours) {
+
+/* ── Build a per-day availability map ─────────────────────────────────────────────── */
+// Returns { [iso]: availableHours }.
+// When gcalFreeBusy is present, uses per-day free minutes from GCal.
+// Falls back to weeklyHours/7 for any day not covered (or when gcalFreeBusy
+// is null/empty).
+function buildPerDayAvail(weeklyHours, gcalFreeBusy, horizonDays = 16 * 7) {
+  const todayISO  = toISO(new Date());
+  const fallback  = weeklyHours / 7;
+  const map       = {};
+  const cur = new Date(); cur.setHours(0, 0, 0, 0);
+  for (let i = 0; i < horizonDays; i++) {
+    const iso = toISO(cur);
+    if (gcalFreeBusy && gcalFreeBusy[iso] !== undefined) {
+      map[iso] = gcalFreeBusy[iso] / 60;   // free minutes → hours
+    } else {
+      map[iso] = fallback;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return map;
+}
+
+/* ── autoFill ─────────────────────────────────────────────────────────────────────── */
+// perDayAvail: { [iso]: hours } — replaces the old flat dayAvail scalar.
+function autoFill(tasks, weeklyHours, sessionHours, perDayAvail) {
   const todayISO = toISO(new Date());
-  const dayAvail = weeklyHours / 7;
   const DAYS     = 16 * 7;
   const dayLoad  = {};
+
+  // Seed load from already-scheduled tasks
   for (const t of tasks) {
     if (!t.scheduled_days) continue;
     const rem        = remainingHours(t);
@@ -64,40 +90,51 @@ function autoFill(tasks, weeklyHours, sessionHours) {
       dayLoad[d] = (dayLoad[d] || 0) + (dayHours[d] !== undefined ? dayHours[d] : perUw);
     }
   }
+
   const unscheduled = tasks
     .filter(t => t.status !== 'done' && !t.recurring &&
       (!t.scheduled_days || !t.scheduled_days.some(d => d >= todayISO)))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
+
   const updated = tasks.map(t => ({
     ...t,
-    scheduled_days: t.scheduled_days ? [...t.scheduled_days] : [],
-    scheduled_day_hours: { ...(t.scheduled_day_hours || {}) },
+    scheduled_days:      t.scheduled_days      ? [...t.scheduled_days]      : [],
+    scheduled_day_hours: t.scheduled_day_hours ? { ...t.scheduled_day_hours } : {},
   }));
   const byId  = Object.fromEntries(updated.map(t => [t.id, t]));
   const today = new Date(); today.setHours(0,0,0,0);
+
   for (const t of unscheduled) {
     const task = byId[t.id];
     if (!task) continue;
     const rem = remainingHours(task);
     if (rem <= 0) continue;
+
     const lastISO = task.due_date || (() => {
       const d = new Date(today); d.setDate(d.getDate() + DAYS); return toISO(d);
     })();
+
+    // Collect candidate days that still have free capacity
     const candidates = [];
     const cur = new Date(today);
     while (toISO(cur) <= lastISO) {
-      const iso   = toISO(cur);
-      const space = Math.max(dayAvail - (dayLoad[iso] || 0), 0);
+      const iso     = toISO(cur);
+      const avail   = perDayAvail[iso] ?? (weeklyHours / 7);  // fallback if map is short
+      const space   = Math.max(avail - (dayLoad[iso] || 0), 0);
       if (space > 0.05) candidates.push(iso);
       cur.setDate(cur.getDate() + 1);
     }
     if (!candidates.length) continue;
+
+    // Procrastinating greedy: push toward the deadline
     const sessionsNeeded = Math.ceil(rem / sessionHours);
     const assignedDays   = sessionsNeeded <= candidates.length
       ? candidates.slice(-sessionsNeeded) : candidates;
     const hrsPerDay = rem / assignedDays.length;
+
     for (const iso of assignedDays) {
-      const space  = Math.max(dayAvail - (dayLoad[iso] || 0), 0);
+      const avail  = perDayAvail[iso] ?? (weeklyHours / 7);
+      const space  = Math.max(avail - (dayLoad[iso] || 0), 0);
       const actual = Math.min(hrsPerDay, space);
       dayLoad[iso] = (dayLoad[iso] || 0) + actual;
     }
@@ -106,7 +143,7 @@ function autoFill(tasks, weeklyHours, sessionHours) {
   return updated;
 }
 
-// ── Day-picker modal (tap-to-schedule) ────────────────────────────────────
+// ── Day-picker modal (tap-to-schedule) ─────────────────────────────────────────────
 function DayPickerModal({ task, allISOs, onPick, onClose }) {
   const weeks = [];
   for (let w = 0; w < SHOW_WEEKS; w++) weeks.push(allISOs.slice(w * 7, w * 7 + 7));
@@ -138,7 +175,7 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
   );
 }
 
-// ── Mobile Agenda View ────────────────────────────────────────────────────
+// ── Mobile Agenda View ──────────────────────────────────────────────────────────────
 function AgendaView({
   allISOs, todayISO, weekOffset, setWeekOffset,
   scheduledOnDay, dueOnDay, dayLoad, dayAvail,
@@ -151,7 +188,6 @@ function AgendaView({
   const [unschOpen, setUnschOpen] = useState(true);
   const allUnscheduled = sortByDue([...trueUnscheduled, ...scheduledEarlier, ...scheduledLater]);
 
-  // Only show days that have something OR are today
   const activeDays = allISOs.filter(iso =>
     iso === todayISO ||
     (scheduledOnDay[iso] && scheduledOnDay[iso].length > 0) ||
@@ -167,7 +203,6 @@ function AgendaView({
 
   return (
     <div className="agenda-view">
-      {/* Nav row */}
       <div className="agenda-nav">
         <div className="agenda-nav-btns">
           <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
@@ -182,14 +217,13 @@ function AgendaView({
         </div>
       </div>
 
-      {/* Unscheduled tasks */}
       {allUnscheduled.length > 0 && (
         <div className="agenda-unscheduled">
           <button
             className="agenda-section-toggle"
             onClick={() => setUnschOpen(o => !o)}
           >
-            {unschOpen ? '▲' : '▼'} Unscheduled
+            {unschOpen ? '\u25b2' : '\u25bc'} Unscheduled
             <span className="sidebar-count">{allUnscheduled.length}</span>
           </button>
           {unschOpen && allUnscheduled.map(task => {
@@ -213,7 +247,6 @@ function AgendaView({
         </div>
       )}
 
-      {/* Day rows */}
       {activeDays.length === 0 ? (
         <div className="agenda-empty">Nothing scheduled this window.</div>
       ) : activeDays.map(iso => {
@@ -267,12 +300,11 @@ function AgendaView({
   );
 }
 
-// Drag threshold constants
 const DRAG_PX      = 10;
 const DRAG_RATIO   = 1.2;
 
 export default function Planner({ appData, userId, onEditTask }) {
-  const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule } = appData;
+  const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule, gcalFreeBusy } = appData;
   const weeklyHours  = preferences?.weekly_hours  ?? 20;
   const sessionHours = preferences?.session_hours ?? 1;
   const dayAvail     = weeklyHours / 7;
@@ -292,9 +324,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // Mouse drag
-  const dragging = useRef(null);
-  // Touch drag state
+  const dragging       = useRef(null);
   const touchDragging  = useRef(null);
   const touchStartXY   = useRef(null);
   const touchMoved     = useRef(false);
@@ -344,9 +374,11 @@ export default function Planner({ appData, userId, onEditTask }) {
   const sortByDue = arr => arr.slice().sort((a, b) =>
     (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Auto-fill / clear ────────────────────────────────────────────────────
+  // ── Auto-fill / clear ─────────────────────────────────────────────────────────────────
   const handleAutoFill = useCallback(async () => {
-    const updated = autoFill(allActive, weeklyHours, sessionHours);
+    // Build per-day availability: GCal free hours when available, else weeklyHours/7
+    const perDayAvail = buildPerDayAvail(weeklyHours, gcalFreeBusy || null);
+    const updated     = autoFill(allActive, weeklyHours, sessionHours, perDayAvail);
     for (const t of updated) {
       const orig = tasks.find(x => x.id === t.id);
       const schedChanged = JSON.stringify(orig?.scheduled_days?.slice().sort()) !==
@@ -357,7 +389,7 @@ export default function Planner({ appData, userId, onEditTask }) {
           await saveTask({ ...orig, scheduled_day_hours: t.scheduled_day_hours });
       }
     }
-  }, [allActive, weeklyHours, sessionHours, setTaskSchedule, saveTask, tasks]);
+  }, [allActive, weeklyHours, sessionHours, gcalFreeBusy, setTaskSchedule, saveTask, tasks]);
 
   const handleClearAll = useCallback(async () => {
     if (!window.confirm('Remove all scheduled days from every task?')) return;
@@ -365,7 +397,7 @@ export default function Planner({ appData, userId, onEditTask }) {
       if (t.scheduled_days?.length) await setTaskSchedule(t.id, []);
   }, [allActive, setTaskSchedule]);
 
-  // ── Mouse drag ───────────────────────────────────────────────────────────
+  // ── Mouse drag ──────────────────────────────────────────────────────────────────────
   const onDragStart = (e, task) => { dragging.current = task; e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd   = () => { dragging.current = null; };
 
@@ -387,7 +419,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     dragging.current = null;
   }, [setTaskSchedule]);
 
-  // ── Touch drag ───────────────────────────────────────────────────────────
+  // ── Touch drag ────────────────────────────────────────────────────────────────────
   const colAtPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -413,12 +445,10 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const onTouchMoveCard = useCallback((e) => {
     if (!touchDragging.current || touchAborted.current) return;
-
     const touch = e.touches[0];
     const dx    = touch.clientX - (touchStartXY.current?.x || 0);
     const dy    = touch.clientY - (touchStartXY.current?.y || 0);
     const dist  = Math.hypot(dx, dy);
-
     if (!touchMoved.current) {
       if (dist < DRAG_PX) return;
       const isHorizontal = Math.abs(dx) >= Math.abs(dy) * DRAG_RATIO;
@@ -430,9 +460,7 @@ export default function Planner({ appData, userId, onEditTask }) {
       touchMoved.current = true;
       document.body.classList.add('is-touch-dragging');
     }
-
     e.preventDefault();
-
     const task  = touchDragging.current;
     if (!task) return;
     const color = catMap[task.category_id]?.color || '#888';
@@ -442,7 +470,6 @@ export default function Planner({ appData, userId, onEditTask }) {
       label: task.name,
       color,
     });
-
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (touchOverCol.current !== iso) {
       clearTouchOverCol();
@@ -461,11 +488,8 @@ export default function Planner({ appData, userId, onEditTask }) {
     document.body.classList.remove('is-touch-dragging');
     setTouchGhost(null);
     clearTouchOverCol();
-
     if (!task || !touchMoved.current) return;
-
     const touch = e.changedTouches[0];
-
     const sidebarEl = document.querySelector('.planner-sidebar');
     if (sidebarEl) {
       const r = sidebarEl.getBoundingClientRect();
@@ -475,7 +499,6 @@ export default function Planner({ appData, userId, onEditTask }) {
         return;
       }
     }
-
     const iso = colAtPoint(touch.clientX, touch.clientY);
     if (iso) {
       const days = task.scheduled_days || [];
@@ -483,7 +506,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [setTaskSchedule]);
 
-  // ── Day-picker toggle ─────────────────────────────────────────────────────
+  // ── Day-picker toggle ───────────────────────────────────────────────────────────────────
   const onDayPickerPick = useCallback(async (iso) => {
     const task = dayPickerTask;
     if (!task) return;
@@ -495,7 +518,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     task.scheduled_days = newDays;
   }, [dayPickerTask, setTaskSchedule]);
 
-  // ── Edit helpers ──────────────────────────────────────────────────────────
+  // ── Edit helpers ────────────────────────────────────────────────────────────────────────
   const removeDay = useCallback(async (task, iso) => {
     const days   = (task.scheduled_days || []).filter(d => d !== iso);
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
@@ -522,7 +545,7 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const totalSidebarCount = trueUnscheduled.length + scheduledEarlier.length + scheduledLater.length;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────────────
   return (
     <div className="planner">
       {touchGhost && (
@@ -536,7 +559,6 @@ export default function Planner({ appData, userId, onEditTask }) {
       )}
 
       {isMobile ? (
-        // ── Mobile: agenda view ────────────────────────────────────────────
         <AgendaView
           allISOs={allISOs}
           todayISO={todayISO}
@@ -559,7 +581,6 @@ export default function Planner({ appData, userId, onEditTask }) {
           handleClearAll={handleClearAll}
         />
       ) : (
-        // ── Desktop: existing grid view ────────────────────────────────────
         <>
           <div className="planner-controls">
             <div className="planner-nav">
@@ -754,7 +775,7 @@ export default function Planner({ appData, userId, onEditTask }) {
   );
 }
 
-// ── PlannerTaskCard ────────────────────────────────────────────────────────
+// ── PlannerTaskCard ──────────────────────────────────────────────────────────────────────────
 function PlannerTaskCard({
   task, cat, iso, hrs, isCustom,
   isPopoverOpen, hrsInput,
@@ -806,7 +827,7 @@ function PlannerTaskCard({
   );
 }
 
-// ── SidebarCard ────────────────────────────────────────────────────────────
+// ── SidebarCard ───────────────────────────────────────────────────────────────────────────
 function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onRemoveDay, onClick, onSchedule }) {
   const color   = cat?.color || '#888';
   const due     = task.due_date ? `due ${fmtShort(task.due_date)}` : 'no deadline';
