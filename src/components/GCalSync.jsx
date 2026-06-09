@@ -1,16 +1,14 @@
 /**
  * GCalSync — Google Calendar integration tab
  *
- * Changes in this version:
- *  - All emoji replaced with inline SVG icons
- *  - Mobile-responsive layout fixes
- *  - Calls appData.onFreeBusyUpdate(result) after each successful free/busy fetch
- *  - Calls appData.onFreeBusyClear() on disconnect
+ * Fix: When fetching free/busy, also fetch events tagged with
+ * commitments_task_id and subtract them from busy intervals so that
+ * work blocks pushed from this app don't reduce computed availability.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import '../styles/gcal.css';
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────────────
 const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES          = [
   'https://www.googleapis.com/auth/calendar.readonly',
@@ -25,7 +23,7 @@ const LS_CALS_KEY     = 'gcal_selected_cals';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// ── SVG icons ─────────────────────────────────────────────────────────────────
+// ── SVG icons ───────────────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -101,7 +99,7 @@ function IconRefresh({ size = 14, style }) {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────────────
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
@@ -126,7 +124,7 @@ function remainingHours(task) {
   return Math.max(0, (parseFloat(task.estimated_hours) || 1) * (1 - prog / 100));
 }
 
-// ── Default calc settings ────────────────────────────────────────────────────
+// ── Default calc settings ────────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
   workStart:   8,
   workEnd:     20,
@@ -147,7 +145,7 @@ function saveSettings(s) {
   localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(s));
 }
 
-// ── Token persistence ────────────────────────────────────────────────────────
+// ── Token persistence ────────────────────────────────────────────────────────────────
 let _tokenClient = null;
 let _accessToken = localStorage.getItem(LS_TOKEN_KEY) || null;
 let _tokenExpiry  = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
@@ -223,7 +221,7 @@ async function gcalFetch(path, opts = {}) {
   return res.json();
 }
 
-// ── Free/busy ────────────────────────────────────────────────────────────────
+// ── Free/busy ───────────────────────────────────────────────────────────────────────
 async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
   return gcalFetch('/freeBusy', {
     method: 'POST',
@@ -237,6 +235,53 @@ async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
 }
 async function fetchCalendarList() {
   return gcalFetch('/users/me/calendarList?maxResults=50');
+}
+
+/**
+ * Fetch all events on the primary calendar that were created by this app
+ * (identified by the private extended property commitments_task_id).
+ * Returns a map of { [isoDate]: [{start, end}] } for use in deduction.
+ */
+async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
+  const blocksByDay = {};
+  let pageToken = null;
+  do {
+    const qs = new URLSearchParams({
+      timeMin,
+      timeMax,
+      privateExtendedProperty: 'commitments_task_id',
+      singleEvents: 'true',
+      maxResults: '250',
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const resp = await gcalFetch(
+      `/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${qs}`
+    );
+    for (const ev of (resp.items || [])) {
+      if (!ev.start?.dateTime) continue; // skip all-day events
+      const iso = ev.start.dateTime.slice(0, 10);
+      (blocksByDay[iso] ??= []).push({ start: ev.start.dateTime, end: ev.end.dateTime });
+    }
+    pageToken = resp.nextPageToken || null;
+  } while (pageToken);
+  return blocksByDay;
+}
+
+/**
+ * Given a list of busy intervals and a list of Commitments block intervals
+ * for the same day, remove the block intervals from the busy list so they
+ * don't reduce computed availability.
+ */
+function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
+  if (!blockIntervals || !blockIntervals.length) return busyIntervals;
+  const blockSet = new Set(
+    blockIntervals.map(b => `${b.start}|${b.end}`)
+  );
+  // Remove exact matches first (the common case — we created the event so
+  // the times are exact). For any remaining overlap, trim the busy interval.
+  return busyIntervals.filter(
+    b => !blockSet.has(`${b.start}|${b.end}`)
+  );
 }
 
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
@@ -289,7 +334,7 @@ function hrLabel(h) {
   return `${h - 12}pm`;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ───────────────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
   const { tasks, onFreeBusyUpdate, onFreeBusyClear } = appData;
   const todayISO = toISO(new Date());
@@ -374,15 +419,27 @@ export default function GCalSync({ appData }) {
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
       const calIds  = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
       if (!calIds.length) throw new Error('No calendars selected.');
-      const resp = await fetchFreeBusy(calIds, timeMin, timeMax);
+
+      // Fetch free/busy and our own work blocks in parallel
+      const [resp, commitmentsBlocks] = await Promise.all([
+        fetchFreeBusy(calIds, timeMin, timeMax),
+        fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})),
+      ]);
+
+      // Build busy-by-day map, then subtract any Commitments blocks so they
+      // don't reduce the availability figure (they're already in the planner).
       const busyByDay = {};
       for (const calId of calIds)
         for (const interval of (resp.calendars?.[calId]?.busy || []))
           (busyByDay[interval.start.slice(0, 10)] ??= []).push(interval);
+
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
         const iso = addDays(todayISO, i);
-        result[iso] = effectiveFreeMinutes(iso, busyByDay[iso] || [], settings);
+        const rawBusy     = busyByDay[iso] || [];
+        const ownBlocks   = commitmentsBlocks[iso] || [];
+        const adjustedBusy = subtractCommitmentsBlocks(rawBusy, ownBlocks);
+        result[iso] = effectiveFreeMinutes(iso, adjustedBusy, settings);
       }
       setFreeBusy(result);
       onFreeBusyUpdate?.(result);
@@ -410,7 +467,7 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Disconnected screen ───────────────────────────────────────────────────
+  // ── Disconnected screen ──────────────────────────────────────────────────────────────
   if (!connected) {
     return (
       <div className="gcal-pane">
@@ -446,7 +503,7 @@ export default function GCalSync({ appData }) {
     );
   }
 
-  // ── Connected screen ──────────────────────────────────────────────────────
+  // ── Connected screen ──────────────────────────────────────────────────────────────
   const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = workEnd - workStart;
 
