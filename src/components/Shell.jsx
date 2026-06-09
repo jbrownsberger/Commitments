@@ -15,7 +15,7 @@ const TABS = [
   { id: 'overview',   label: 'Overview & Queue' },
   { id: 'categories', label: 'Categories'       },
   { id: 'planner',    label: 'Planner'           },
-  { id: 'gcal',       label: '📅 Google Calendar' },
+  { id: 'gcal',       label: 'Google Calendar'   },
 ];
 
 export default function Shell({ appData, userId, userEmail }) {

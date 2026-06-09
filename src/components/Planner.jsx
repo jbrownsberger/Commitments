@@ -79,33 +79,14 @@ function IconChevronDown({ size = 12, style }) {
     </svg>
   );
 }
-function IconGear({ size = 13, style }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
-      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
-      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.1"/>
-      <path d="M7 1.5v1.6M7 10.9v1.6M1.5 7h1.6M10.9 7h1.6M3.2 3.2l1.1 1.1M9.7 9.7l1.1 1.1M10.8 3.2l-1.1 1.1M4.3 9.7l-1.1 1.1"
-        stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
-    </svg>
-  );
-}
-function IconAutoFill({ size = 13, style }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
-      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
-      <path d="M7 1v4M7 9v4M1 7h4M9 7h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-      <circle cx="7" cy="7" r="2" fill="currentColor"/>
-    </svg>
-  );
-}
 
 // ── AutoFill settings ────────────────────────────────────────────────────────
 const DEFAULT_AUTOFILL = {
-  mode:         'procrastinate', // 'procrastinate' | 'spread' | 'front-load'
-  chunkHrs:     1,               // hours per session/chunk
-  maxHrsPerDay: 0,               // 0 = unlimited
+  mode:         'procrastinate',
+  chunkHrs:     1,
+  maxHrsPerDay: 0,
   skipWeekends: false,
-  unallocated:  false,           // true = just assign days, no hour-splitting
+  unallocated:  false,
 };
 
 function loadAutoFillSettings() {
@@ -271,7 +252,6 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
     }
     if (!candidates.length) continue;
 
-    // Pick which days to assign based on mode
     const sessionsNeeded = Math.ceil(rem / chunkHrs);
     let assignedDays;
     if (mode === 'procrastinate') {
@@ -280,7 +260,7 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
     } else if (mode === 'front-load') {
       assignedDays = sessionsNeeded <= candidates.length
         ? candidates.slice(0, sessionsNeeded) : candidates;
-    } else { // spread
+    } else {
       if (sessionsNeeded >= candidates.length) {
         assignedDays = candidates;
       } else {
@@ -291,7 +271,6 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
     }
 
     if (unallocated) {
-      // Just assign days, don't write per-day hours
       task.scheduled_days = assignedDays;
     } else {
       const hrsPerDay = rem / assignedDays.length;
@@ -377,10 +356,7 @@ function AgendaView({
         </div>
         <span className="agenda-week-label">{weekLabel}</span>
         <div className="agenda-actions">
-          <button className="btn btn-sm" onClick={handleAutoFill}>
-            <IconAutoFill size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-            Fill
-          </button>
+          <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Fill</button>
           <button className="btn btn-sm" onClick={handleClearAll}>Clear</button>
         </div>
       </div>
@@ -769,12 +745,9 @@ export default function Planner({ appData, userId, onEditTask }) {
               <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
             </div>
             <div className="planner-actions">
+              <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Auto-fill</button>
               <button className="btn btn-sm" onClick={() => setShowAfModal(true)}
-                title="Auto-fill settings">
-                <IconAutoFill size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                Auto-fill
-                <IconGear size={11} style={{ marginLeft: 4, verticalAlign: 'middle', opacity: 0.6 }} />
-              </button>
+                title="Auto-fill settings">&#9881; Settings</button>
               <button className="btn btn-sm" onClick={handleClearAll}>Clear all</button>
             </div>
           </div>
