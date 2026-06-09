@@ -2,9 +2,10 @@
  * GCalSync — Google Calendar integration tab
  *
  * Changes in this version:
+ *  - All emoji replaced with inline SVG icons
+ *  - Mobile-responsive layout fixes
  *  - Calls appData.onFreeBusyUpdate(result) after each successful free/busy fetch
- *    so Overview and Planner can consume live GCal availability data.
- *  - Calls appData.onFreeBusyClear() on disconnect to wipe the shared cache.
+ *  - Calls appData.onFreeBusyClear() on disconnect
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import '../styles/gcal.css';
@@ -22,8 +23,83 @@ const LS_EXPIRY_KEY   = 'gcal_token_expiry';
 const LS_SETTINGS_KEY = 'gcal_calc_settings';
 const LS_CALS_KEY     = 'gcal_selected_cals';
 
-// Day names indexed by JS getDay() — 0 = Sunday
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+function IconCalendar({ size = 16, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <rect x="1" y="2" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+      <path d="M1 6h14" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M5 1v3M11 1v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <rect x="4" y="8" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <rect x="7" y="8" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <rect x="10" y="8" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <rect x="4" y="11" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <rect x="7" y="11" width="2" height="2" rx="0.5" fill="currentColor"/>
+    </svg>
+  );
+}
+function IconBarChart({ size = 16, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <rect x="1" y="9" width="3" height="5" rx="0.5" fill="currentColor" opacity="0.7"/>
+      <rect x="6" y="5" width="3" height="9" rx="0.5" fill="currentColor" opacity="0.85"/>
+      <rect x="11" y="2" width="3" height="12" rx="0.5" fill="currentColor"/>
+      <path d="M0 14.5h16" stroke="currentColor" strokeWidth="1" opacity="0.4"/>
+    </svg>
+  );
+}
+function IconLink({ size = 16, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.77-1.77a3.5 3.5 0 0 0-4.95-4.95L7.1 3.95"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0L2.78 8.27a3.5 3.5 0 0 0 4.95 4.95l1.17-1.17"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconGear({ size = 16, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.27 1.27M11.33 11.33l1.27 1.27M12.6 3.4l-1.27 1.27M4.67 11.33l-1.27 1.27"
+        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconCheck({ size = 14, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M2.5 7.5l3 3 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+function IconWarning({ size = 14, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M7 1.5L13 12.5H1L7 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+      <path d="M7 5.5v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <circle cx="7" cy="10" r="0.6" fill="currentColor"/>
+    </svg>
+  );
+}
+function IconRefresh({ size = 14, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M12 7A5 5 0 1 1 7 2a5 5 0 0 1 3.54 1.46L12 2v4H8"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function toISO(d) { return d.toISOString().slice(0, 10); }
@@ -52,12 +128,12 @@ function remainingHours(task) {
 
 // ── Default calc settings ────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-  workStart:    8,
-  workEnd:      20,
-  deductMins:   60,
-  bufferMins:   10,
-  efficiency:   85,
-  nonWorkDays:  [],
+  workStart:   8,
+  workEnd:     20,
+  deductMins:  60,
+  bufferMins:  10,
+  efficiency:  85,
+  nonWorkDays: [],
 };
 
 function loadSettings() {
@@ -163,27 +239,13 @@ async function fetchCalendarList() {
   return gcalFetch('/users/me/calendarList?maxResults=50');
 }
 
-/**
- * Compute effective free minutes on a day after applying all calc settings.
- *
- * Pipeline:
- *  0. If the day’s weekday is in nonWorkDays, return 0 immediately.
- *  1. Clip busy intervals to working window
- *  2. Expand each busy interval by bufferMins on each side (then merge overlaps)
- *  3. Sum buffered-busy minutes
- *  4. Subtract flat deduction (lunch/overhead)
- *  5. Multiply by efficiency %
- */
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
-
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
   if ((nonWorkDays || []).includes(dowIndex)) return 0;
-
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2,'0')}:00:00`).getTime();
   const winEnd   = new Date(`${isoDate}T${String(workEnd  ).padStart(2,'0')}:00:00`).getTime();
   const winMins  = (winEnd - winStart) / 60_000;
-
   const bufMs = bufferMins * 60_000;
   const expanded = busyIntervals
     .map(({ start, end }) => ({
@@ -192,22 +254,17 @@ function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
     }))
     .filter(({ s, e }) => e > s)
     .sort((a, b) => a.s - b.s);
-
   const merged = [];
   for (const iv of expanded) {
-    if (merged.length && iv.s <= merged[merged.length - 1].e) {
+    if (merged.length && iv.s <= merged[merged.length - 1].e)
       merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, iv.e);
-    } else {
-      merged.push({ ...iv });
-    }
+    else merged.push({ ...iv });
   }
-
   const busyMins    = merged.reduce((sum, { s, e }) => sum + (e - s) / 60_000, 0);
   const afterDeduct = Math.max(0, winMins - busyMins - deductMins);
   return afterDeduct * (efficiency / 100);
 }
 
-// ── Create work block ────────────────────────────────────────────────────────
 async function createWorkBlock(task, isoDate, durationHours) {
   const tz    = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const start = new Date(`${isoDate}T09:00:00`);
@@ -225,7 +282,6 @@ async function createWorkBlock(task, isoDate, durationHours) {
   });
 }
 
-// ── Hour label ────────────────────────────────────────────────────────────────
 function hrLabel(h) {
   if (h === 0)  return '12am';
   if (h < 12)   return `${h}am`;
@@ -259,8 +315,8 @@ export default function GCalSync({ appData }) {
     catch { return new Set(); }
   });
 
-  const [freeBusy,  setFreeBusy]  = useState(null);
-  const [loadingFB, setLoadingFB] = useState(false);
+  const [freeBusy,    setFreeBusy]    = useState(null);
+  const [loadingFB,   setLoadingFB]   = useState(false);
   const [blockStatus, setBlockStatus] = useState({});
   const [activePanel, setActivePanel] = useState('availability');
 
@@ -307,11 +363,9 @@ export default function GCalSync({ appData }) {
     setCalendars([]);
     setSelCals(new Set());
     setFreeBusy(null);
-    // Wipe the shared store so Overview / Planner stop using stale GCal data
     onFreeBusyClear?.();
   };
 
-  // ── Fetch free/busy ───────────────────────────────────────────────────────
   const handleFetchFreeBusy = useCallback(async () => {
     setLoadingFB(true); setError(null);
     try {
@@ -320,25 +374,17 @@ export default function GCalSync({ appData }) {
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
       const calIds  = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
       if (!calIds.length) throw new Error('No calendars selected.');
-
       const resp = await fetchFreeBusy(calIds, timeMin, timeMax);
-
       const busyByDay = {};
-      for (const calId of calIds) {
-        for (const interval of (resp.calendars?.[calId]?.busy || [])) {
-          const day = interval.start.slice(0, 10);
-          (busyByDay[day] ??= []).push(interval);
-        }
-      }
-
+      for (const calId of calIds)
+        for (const interval of (resp.calendars?.[calId]?.busy || []))
+          (busyByDay[interval.start.slice(0, 10)] ??= []).push(interval);
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
         const iso = addDays(todayISO, i);
         result[iso] = effectiveFreeMinutes(iso, busyByDay[iso] || [], settings);
       }
-
       setFreeBusy(result);
-      // → Push into the shared store so Overview + Planner see fresh data
       onFreeBusyUpdate?.(result);
     } catch (e) {
       setError(e.message);
@@ -369,11 +415,14 @@ export default function GCalSync({ appData }) {
     return (
       <div className="gcal-pane">
         <div className="gcal-hero">
-          <div className="gcal-hero-icon">&#128197;</div>
+          <div className="gcal-hero-icon">
+            <IconCalendar size={48} />
+          </div>
           <h2>Google Calendar</h2>
           <p>Connect your Google Calendar to see real free time each day and push work blocks directly to your calendar.</p>
           <button className="btn btn-primary gcal-connect-btn" onClick={handleConnect} disabled={connecting}>
-            {connecting ? 'Connecting…' : '🔗 Connect Google Calendar'}
+            <IconLink size={15} style={{ marginRight: 7, verticalAlign: 'middle' }} />
+            {connecting ? 'Connecting…' : 'Connect Google Calendar'}
           </button>
           {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
         </div>
@@ -387,7 +436,10 @@ export default function GCalSync({ appData }) {
             <li>Add <code>VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com</code> to your <code>.env</code> file and redeploy.</li>
           </ol>
           {!CLIENT_ID && (
-            <div className="gcal-warning">⚠️ <code>VITE_GOOGLE_CLIENT_ID</code> is not set.</div>
+            <div className="gcal-warning">
+              <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+              <code>VITE_GOOGLE_CLIENT_ID</code> is not set.
+            </div>
           )}
         </div>
       </div>
@@ -409,10 +461,14 @@ export default function GCalSync({ appData }) {
   return (
     <div className="gcal-pane">
       <div className="gcal-header">
-        <span className="gcal-connected-badge">✓ Connected to Google Calendar</span>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <span className="gcal-connected-badge">
+          <IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+          Connected to Google Calendar
+        </span>
+        <div className="gcal-header-actions">
           <button className="btn btn-sm" onClick={() => setShowSettings(s => !s)}>
-            ⚙ Settings
+            <IconGear size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+            Settings
           </button>
           <button className="btn btn-sm" onClick={handleDisconnect}>Disconnect</button>
         </div>
@@ -448,15 +504,11 @@ export default function GCalSync({ appData }) {
                 {DAY_NAMES.map((name, idx) => {
                   const isOff = (nonWorkDays || []).includes(idx);
                   return (
-                    <button
-                      key={idx}
-                      type="button"
+                    <button key={idx} type="button"
                       className={`gcal-dow-btn${isOff ? ' gcal-dow-off' : ''}`}
                       onClick={() => toggleNonWorkDay(idx)}
                       title={isOff ? `${name}: non-work day` : `${name}: work day`}
-                    >
-                      {name}
-                    </button>
+                    >{name}</button>
                   );
                 })}
               </div>
@@ -530,16 +582,23 @@ export default function GCalSync({ appData }) {
 
           <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }}
             onClick={() => { setShowSettings(false); handleFetchFreeBusy(); }}>
-            ↻ Apply &amp; Refresh
+            <IconRefresh size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+            Apply &amp; Refresh
           </button>
         </div>
       )}
 
       <div className="gcal-panel-tabs">
         <button className={`gcal-panel-tab${activePanel === 'availability' ? ' active' : ''}`}
-          onClick={() => setActivePanel('availability')}>📊 Availability</button>
+          onClick={() => setActivePanel('availability')}>
+          <IconBarChart size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+          Availability
+        </button>
         <button className={`gcal-panel-tab${activePanel === 'blocks' ? ' active' : ''}`}
-          onClick={() => setActivePanel('blocks')}>📅 Work Blocks</button>
+          onClick={() => setActivePanel('blocks')}>
+          <IconCalendar size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+          Work Blocks
+        </button>
       </div>
 
       {activePanel === 'availability' && (
@@ -556,7 +615,8 @@ export default function GCalSync({ appData }) {
           {!freeBusy ? (
             <div className="gcal-empty">
               <button className="btn btn-primary" onClick={handleFetchFreeBusy} disabled={loadingFB}>
-                {loadingFB ? 'Loading…' : '📊 Load my availability'}
+                <IconBarChart size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />
+                {loadingFB ? 'Loading…' : 'Load my availability'}
               </button>
               <p>Fetches only busy/free status — no event details are read.</p>
             </div>
@@ -564,7 +624,8 @@ export default function GCalSync({ appData }) {
             <>
               <div className="gcal-fb-refresh-row">
                 <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB}>
-                  {loadingFB ? 'Loading…' : '↻ Refresh'}
+                  <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                  {loadingFB ? 'Loading…' : 'Refresh'}
                 </button>
               </div>
               <div className="gcal-fb-grid">
@@ -574,7 +635,6 @@ export default function GCalSync({ appData }) {
                   const isToday = iso === todayISO;
                   const isPast  = iso < todayISO;
                   const isOff   = (nonWorkDays || []).includes(new Date(iso + 'T00:00:00').getDay());
-
                   const planH = tasks.reduce((sum, t) => {
                     const dayHrs = (t.scheduled_day_hours || {})[iso];
                     if (dayHrs !== undefined) return sum + dayHrs;
@@ -586,7 +646,6 @@ export default function GCalSync({ appData }) {
                     return sum + (unw.length ? Math.max(rem - expTotal, 0) / unw.length : 0);
                   }, 0);
                   const overcommitted = planH > freeH + 0.05;
-
                   return (
                     <div key={iso} className={
                       `gcal-fb-row${isToday ? ' gcal-today' : ''}${isPast ? ' gcal-past' : ''}${overcommitted ? ' gcal-over' : ''}${isOff ? ' gcal-day-off' : ''}`
@@ -642,9 +701,9 @@ export default function GCalSync({ appData }) {
                     const hrs = (() => {
                       const dh = (task.scheduled_day_hours || {})[iso];
                       if (dh !== undefined) return dh;
-                      const rem  = remainingHours(task);
-                      const exp  = task.futureDays.reduce((s, d) => s + ((task.scheduled_day_hours||{})[d]||0), 0);
-                      const unw  = task.futureDays.filter(d => !(task.scheduled_day_hours||{})[d]);
+                      const rem = remainingHours(task);
+                      const exp = task.futureDays.reduce((s, d) => s + ((task.scheduled_day_hours||{})[d]||0), 0);
+                      const unw = task.futureDays.filter(d => !(task.scheduled_day_hours||{})[d]);
                       return unw.length ? Math.max(rem - exp, 0) / unw.length : 0;
                     })();
                     return (
@@ -657,8 +716,8 @@ export default function GCalSync({ appData }) {
                           disabled={status === 'pending' || status === 'done'}
                         >
                           {status === 'pending' ? '…' :
-                           status === 'done'    ? '✓ Added' :
-                           status === 'error'   ? '✕ Retry' :
+                           status === 'done'    ? 'Added' :
+                           status === 'error'   ? 'Retry' :
                            '+ Add to GCal'}
                         </button>
                       </div>
