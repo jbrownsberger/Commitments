@@ -3,7 +3,7 @@ import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgen
 import QuickTasks from './QuickTasks.jsx';
 import '../styles/overview.css';
 
-/* ── Inline capacity editor ─────────────────────────────────────────────── */
+/* ── Inline capacity editor ──────────────────────────────────────────────────── */
 function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   const [val, setVal] = useState(String(weeklyHours));
   const commit = () => {
@@ -37,7 +37,7 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   );
 }
 
-/* ── Gear SVG ────────────────────────────────────────────────────────────── */
+/* ── Gear SVG ──────────────────────────────────────────────────────────────────── */
 const GearIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -60,7 +60,7 @@ a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
+/* ── Helpers ───────────────────────────────────────────────────────────────────── */
 function hoursToday(task) {
   const todayISO = new Date().toISOString().slice(0, 10);
   if (!task.scheduled_days?.includes(todayISO)) return 0;
@@ -77,19 +77,53 @@ function statusFromProgress(prog, current) {
   return current === 'done' ? 'not started' : (current || 'not started');
 }
 
-/* ── Overview ────────────────────────────────────────────────────────────── */
+/* ── Compute GCal weekly hours from the free/busy map ────────────────────────── */
+function gcalWeeklyHours(gcalFreeBusy) {
+  if (!gcalFreeBusy) return null;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  // Sunday-anchored week end
+  const weekEndDate = new Date();
+  weekEndDate.setDate(weekEndDate.getDate() + (7 - weekEndDate.getDay()) % 7 || 7);
+  const weekEndISO = weekEndDate.toISOString().slice(0, 10);
+  let total = 0;
+  for (const [iso, freeMin] of Object.entries(gcalFreeBusy)) {
+    if (iso >= todayISO && iso <= weekEndISO) total += freeMin / 60;
+  }
+  return Math.round(total * 10) / 10;   // one decimal
+}
+
+const CAP_MODE_KEY = 'capacity_mode';
+
+/* ── Overview ──────────────────────────────────────────────────────────────────── */
 export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const {
     categories, tasks, preferences,
     quickTasks = [], saveTask, removeTask,
     saveQuickTask, removeQuickTask,
     savePreferences,
+    gcalFreeBusy,
   } = appData;
 
   const [panelTask, setPanelTask] = useState(null);
   const [editingCapacity, setEditingCapacity] = useState(false);
 
-  const weeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
+  // ── Capacity mode toggle (persisted) ──────────────────────────────────────
+  const [capacityMode, setCapacityMode] = useState(
+    () => localStorage.getItem(CAP_MODE_KEY) || 'manual'
+  );
+  const switchCapacityMode = (mode) => {
+    localStorage.setItem(CAP_MODE_KEY, mode);
+    setCapacityMode(mode);
+    setEditingCapacity(false);
+  };
+
+  const manualWeeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
+  const gcalHours         = gcalWeeklyHours(gcalFreeBusy);
+  // Resolved value used everywhere downstream
+  const weeklyHours = capacityMode === 'gcal' && gcalHours !== null
+    ? gcalHours
+    : manualWeeklyHours;
+
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
 
   const enrich = (t) => ({
@@ -129,15 +163,14 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     return s + explicit + perUw * unweighted.length;
   }, 0);
 
-  // Greedy apportionment: fill remaining weekly capacity with unscheduled task hours
-  const remainingCapacity = Math.max(weeklyHours - plannedThisWeek, 0);
-  const unscheduledTotal = allInc.reduce((s, t) => {
+  const remainingCapacity   = Math.max(weeklyHours - plannedThisWeek, 0);
+  const unscheduledTotal    = allInc.reduce((s, t) => {
     const hasAnySchedule = t.scheduled_days?.some(d => d >= todayISO);
     if (hasAnySchedule) return s;
     return s + remainingHours(t);
   }, 0);
   const greedyUnscheduled = Math.min(unscheduledTotal, remainingCapacity);
-  const committedLoad = plannedThisWeek + greedyUnscheduled;
+  const committedLoad     = plannedThisWeek + greedyUnscheduled;
   const capPct  = Math.min(100, Math.round(committedLoad / Math.max(weeklyHours, 1) * 100));
   const capFill = capPct >= 100 ? 'var(--color-text-danger)'
     : capPct >= 75 ? '#BA7517'
@@ -195,6 +228,9 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
 
+  // ── GCal nudge: mode is GCal but no data yet
+  const gcalNoData = capacityMode === 'gcal' && gcalHours === null;
+
   return (
     <div className="plan-layout">
       <div>
@@ -212,32 +248,74 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         {/* Weekly capacity */}
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div className="section-label" style={{ marginBottom: 0 }}>This week's focus</div>
-            {editingCapacity ? (
-              <CapacityEditor
-                weeklyHours={weeklyHours}
-                onSave={handleSaveCapacity}
-                onCancel={() => setEditingCapacity(false)}
-              />
-            ) : (
-              <button
-                className="btn btn-sm"
-                onClick={() => setEditingCapacity(true)}
-                title="Change weekly hours"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              >
-                <GearIcon />
-                <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{weeklyHours}h/wk</span>
-              </button>
-            )}
+            <div className="section-label" style={{ marginBottom: 0 }}>This week’s focus</div>
+
+            {/* ── Right side: mode toggle + gear/editor ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+
+              {/* Manual | GCal toggle pill */}
+              <div className="capacity-mode-toggle">
+                <button
+                  className={capacityMode === 'manual' ? 'active' : ''}
+                  onClick={() => switchCapacityMode('manual')}
+                >Manual</button>
+                <button
+                  className={capacityMode === 'gcal' ? 'active' : ''}
+                  onClick={() => switchCapacityMode('gcal')}
+                >GCal</button>
+              </div>
+
+              {/* Gear / inline editor (only in manual mode) */}
+              {capacityMode === 'manual' && (
+                editingCapacity ? (
+                  <CapacityEditor
+                    weeklyHours={manualWeeklyHours}
+                    onSave={handleSaveCapacity}
+                    onCancel={() => setEditingCapacity(false)}
+                  />
+                ) : (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => setEditingCapacity(true)}
+                    title="Change weekly hours"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <GearIcon />
+                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{manualWeeklyHours}h/wk</span>
+                  </button>
+                )
+              )}
+
+              {/* GCal mode: show resolved hours or a stale/disconnected badge */}
+              {capacityMode === 'gcal' && !gcalNoData && (
+                <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                  &#128197; {gcalHours}h/wk
+                </span>
+              )}
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
-            {weeklyHours}h available · tasks ranked by urgency · click to open
-          </div>
+
+          {/* Hint line */}
+          {gcalNoData ? (
+            <div style={{
+              fontSize: 11,
+              color: 'var(--color-text-secondary)',
+              marginBottom: 8,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <span>&#9888;&#65039;</span>
+              <span>No GCal data yet — load availability in the <strong>GCal</strong> tab, or switch to Manual.</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
+              {weeklyHours}h available
+              {capacityMode === 'gcal' ? ' (from Google Calendar)' : ''}
+              {' '}· tasks ranked by urgency · click to open
+            </div>
+          )}
+
           <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-            <span style={{ color: 'var(--color-text-secondary)' }}>
-              Committed load this week
-            </span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>Committed load this week</span>
             <span style={{ color: capFill, fontWeight: 500 }}>{committedLoad.toFixed(1)}h / {weeklyHours}h</span>
           </div>
           <div className="progress-track" style={{ height: 8, marginBottom: 6 }}>
@@ -289,7 +367,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         {todayPlan.length > 0 && (
           <div className="today-plan-panel">
             <div className="today-plan-title">
-              <span>📅 Today's plan</span>
+              <span>📅 Today’s plan</span>
               <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{todayPlanHours.toFixed(1)}h</span>
             </div>
             {todayPlan.map(t => {

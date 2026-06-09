@@ -1,4 +1,4 @@
-/* ── Overview layout ──────────────────────────────────────────────────────── */
+/* ── Overview layout ──────────────────────────────────────────────────────────── */
 .right-col {
   display: flex;
   flex-direction: column;
@@ -35,7 +35,37 @@
   margin-bottom: 8px;
 }
 
-/* ── Urgent bar rows ──────────────────────────────────────────────────────── */
+/* ── Capacity mode toggle pill ─────────────────────────────────────────────────── */
+.capacity-mode-toggle {
+  display: inline-flex;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--color-background-secondary);
+}
+.capacity-mode-toggle button {
+  padding: 2px 9px;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+.capacity-mode-toggle button.active {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-weight: 500;
+  border-radius: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.capacity-mode-toggle button:hover:not(.active) {
+  color: var(--color-text-primary);
+}
+
+/* ── Urgent bar rows ──────────────────────────────────────────────────────────── */
 .urgent-bar-row {
   display: flex;
   align-items: flex-start;
@@ -62,7 +92,7 @@
 }
 .urgent-bar-days { font-size: 11px; white-space: nowrap; padding-top: 2px; }
 
-/* ── Focus cards ──────────────────────────────────────────────────────────── */
+/* ── Focus cards ───────────────────────────────────────────────────────────────── */
 .focus-card {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-md);
@@ -138,7 +168,7 @@
   padding: 1px 7px;
 }
 
-/* ── Today's plan panel ───────────────────────────────────────────────────── */
+/* ── Today’s plan panel ───────────────────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-lg);
