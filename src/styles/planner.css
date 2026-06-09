@@ -27,7 +27,7 @@
   gap: 0;
 }
 
-/* Sidebar toggle (desktop only now — mobile uses agenda) */
+/* Sidebar toggle */
 .sidebar-toggle {
   display: none;
   align-items: center;
@@ -111,7 +111,6 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
   opacity: 0.5;
   padding: 4px;
   line-height: 1;
@@ -121,6 +120,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--color-text-secondary);
 }
 .sidebar-schedule-btn:hover,
 .sidebar-schedule-btn:focus { opacity: 1; background: var(--color-bg-tertiary); }
@@ -188,6 +188,8 @@
 .day-load-badge.over { color: var(--color-text-danger); font-weight: 600; }
 
 .due-chip {
+  display: flex;
+  align-items: center;
   font-size: 9px;
   padding: 2px 5px;
   border-radius: 8px;
@@ -377,6 +379,115 @@ body.is-touch-dragging .sidebar-card {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   AUTO-FILL SETTINGS MODAL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.autofill-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.autofill-modal {
+  background: var(--color-bg-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+  padding: 20px;
+  box-sizing: border-box;
+}
+.autofill-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.autofill-modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 20px; color: var(--color-text-secondary);
+  padding: 4px 8px; line-height: 1;
+  min-width: 36px; min-height: 36px;
+}
+.autofill-field {
+  margin-bottom: 18px;
+}
+.autofill-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.autofill-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.autofill-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.autofill-radio input { cursor: pointer; flex-shrink: 0; }
+.autofill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.autofill-input {
+  width: 72px;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+.autofill-unit {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.autofill-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 5px;
+  line-height: 1.4;
+}
+.autofill-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.autofill-checkbox input { cursor: pointer; flex-shrink: 0; }
+.autofill-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MOBILE AGENDA VIEW  (≤700px)
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -456,7 +567,6 @@ body.is-touch-dragging .sidebar-card {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 16px;
   padding: 6px;
   min-width: 36px;
   min-height: 36px;
@@ -465,6 +575,7 @@ body.is-touch-dragging .sidebar-card {
   justify-content: center;
   opacity: 0.6;
   flex-shrink: 0;
+  color: var(--color-text-secondary);
 }
 .agenda-schedule-btn:active { opacity: 1; }
 
@@ -522,7 +633,12 @@ body.is-touch-dragging .sidebar-card {
   font-size: 13px;
 }
 .agenda-due-row:active { background: var(--color-bg-secondary); }
-.agenda-due-icon { flex-shrink: 0; font-size: 14px; }
+.agenda-due-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+}
 .agenda-due-name { flex: 1; color: var(--color-text-secondary); font-style: italic; }
 
 /* Scheduled task row */
@@ -584,7 +700,6 @@ body.is-touch-dragging .sidebar-card {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
   padding: 6px;
   min-width: 36px;
   min-height: 36px;
@@ -593,6 +708,7 @@ body.is-touch-dragging .sidebar-card {
   justify-content: center;
   opacity: 0.55;
   flex-shrink: 0;
+  color: var(--color-text-secondary);
 }
 .agenda-schedule-btn-sm:active { opacity: 1; }
 
