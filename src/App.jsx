@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase.js';
 import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
+import { loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -20,14 +21,12 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Login page ───────────────────────────────────────────────────────────────
-
+// ── Login page ──────────────────────────────────────────────────────────────────
 function LoginPage() {
-  // mode: 'magic' | 'password' | 'signup'
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
   const [pw,      setPw]      = useState('');
-  const [msg,     setMsg]     = useState(null);  // { type: 'success'|'error', text }
+  const [msg,     setMsg]     = useState(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async (e) => {
@@ -42,7 +41,6 @@ function LoginPage() {
       } else if (mode === 'password') {
         const { error } = await signInWithPassword(email, pw);
         if (error) throw error;
-        // session change will auto-redirect
       } else {
         const { error } = await signUpWithPassword(email, pw);
         if (error) throw error;
@@ -63,7 +61,6 @@ function LoginPage() {
         Your personal task &amp; planning system.
       </p>
 
-      {/* Mode switcher */}
       <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
         {[['magic','Magic link'],['password','Password'],['signup','Sign up']].map(([m, label]) => (
           <button key={m}
@@ -122,10 +119,24 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ──────────────────────────────────────────────────────────────
-
+// ── Authed shell ────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
+
+  // ── GCal free/busy ───────────────────────────────────────────────────
+  // Initialise from localStorage so availability survives page reloads.
+  const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
+
+  const onFreeBusyUpdate = (data) => {
+    saveFreeBusy(data);
+    setGcalFreeBusy(data);
+  };
+
+  const onFreeBusyClear = () => {
+    clearFreeBusy();
+    setGcalFreeBusy(null);
+  };
+
   if (appData.loading) return <Splash text="Loading your data…" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
@@ -133,7 +144,16 @@ function AuthedApp({ userId, userEmail }) {
       <strong>Error loading data:</strong> {appData.error}
     </div>
   );
-  return <Shell userId={userId} userEmail={userEmail} appData={appData} />;
+
+  // Merge GCal availability into appData so every tab can consume it.
+  const enrichedAppData = {
+    ...appData,
+    gcalFreeBusy,        // { [isoDate]: freeMinutes } | null
+    onFreeBusyUpdate,    // (data) => void  — called by GCalSync after fetch
+    onFreeBusyClear,     // () => void       — called by GCalSync on disconnect
+  };
+
+  return <Shell userId={userId} userEmail={userEmail} appData={enrichedAppData} />;
 }
 
 function Splash({ text }) {
