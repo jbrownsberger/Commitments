@@ -148,28 +148,22 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     return d.toISOString().slice(0, 10);
   })();
 
-  // ── plannedThisWeek ──────────────────────────────────────────────────────────
-  // For each scheduled task, compute the correct per-day share using ALL
-  // future scheduled days (not just in-window days), then sum only the
-  // in-window days at that rate.  This mirrors the Planner's hoursOnDay().
   const plannedThisWeek = allInc.reduce((s, t) => {
     if (!t.scheduled_days?.length) return s;
 
     const dh         = t.scheduled_day_hours || {};
-    const allFuture  = t.scheduled_days.filter(d => d >= todayISO);  // all future days
+    const allFuture  = t.scheduled_days.filter(d => d >= todayISO);
     if (!allFuture.length) return s;
 
-    const inWindow   = allFuture.filter(d => d <= weekEnd);           // subset in this week
+    const inWindow   = allFuture.filter(d => d <= weekEnd);
     if (!inWindow.length) return s;
 
-    // Per-day rate for unweighted days, computed over ALL future days
     const explicitTotal = allFuture.reduce((a, d) => a + (dh[d] || 0), 0);
     const allUnweighted = allFuture.filter(d => !dh[d]);
     const perUw = allUnweighted.length > 0
       ? Math.max(remainingHours(t) - explicitTotal, 0) / allUnweighted.length
       : 0;
 
-    // Sum in-window days only
     const windowSum = inWindow.reduce((a, d) => a + (dh[d] !== undefined ? dh[d] : perUw), 0);
     return s + windowSum;
   }, 0);
@@ -255,7 +249,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div className="section-label" style={{ marginBottom: 0 }}>This week’s focus</div>
+            <div className="section-label" style={{ marginBottom: 0 }}>This week's focus</div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div className="capacity-mode-toggle">
@@ -291,7 +285,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
               {capacityMode === 'gcal' && !gcalNoData && (
                 <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                  &#128197; {gcalHours}h/wk
+                  {gcalHours}h/wk
                 </span>
               )}
             </div>
@@ -364,7 +358,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         {todayPlan.length > 0 && (
           <div className="today-plan-panel">
             <div className="today-plan-title">
-              <span>📅 Today’s plan</span>
+              <span>Today's plan</span>
               <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{todayPlanHours.toFixed(1)}h</span>
             </div>
             {todayPlan.map(t => {
