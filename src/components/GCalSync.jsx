@@ -1,12 +1,10 @@
 /**
  * GCalSync — Google Calendar integration tab
  *
- * Fixes in this version:
- *  - Token + connection state persisted to localStorage; survives tab switches
- *  - Silent re-auth on mount if a valid token is cached
- *  - Calc settings: working window, flat daily deduction, per-event buffer, efficiency %
- *  - Non-work days: mark specific weekdays (e.g. Sunday) as 0 availability
- *  - All settings persisted to localStorage
+ * Changes in this version:
+ *  - Calls appData.onFreeBusyUpdate(result) after each successful free/busy fetch
+ *    so Overview and Planner can consume live GCal availability data.
+ *  - Calls appData.onFreeBusyClear() on disconnect to wipe the shared cache.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import '../styles/gcal.css';
@@ -54,12 +52,12 @@ function remainingHours(task) {
 
 // ── Default calc settings ────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
-  workStart:    8,    // hour 0-23
-  workEnd:      20,   // hour 0-23
-  deductMins:   60,   // flat daily deduction (lunch + overhead), minutes
-  bufferMins:   10,   // padding added before+after each calendar event, minutes
-  efficiency:   85,   // % of remaining free time actually available for deep work
-  nonWorkDays:  [],   // JS getDay() indices (0=Sun … 6=Sat) treated as 0 availability
+  workStart:    8,
+  workEnd:      20,
+  deductMins:   60,
+  bufferMins:   10,
+  efficiency:   85,
+  nonWorkDays:  [],
 };
 
 function loadSettings() {
@@ -169,7 +167,7 @@ async function fetchCalendarList() {
  * Compute effective free minutes on a day after applying all calc settings.
  *
  * Pipeline:
- *  0. If the day's weekday is in nonWorkDays, return 0 immediately.
+ *  0. If the day’s weekday is in nonWorkDays, return 0 immediately.
  *  1. Clip busy intervals to working window
  *  2. Expand each busy interval by bufferMins on each side (then merge overlaps)
  *  3. Sum buffered-busy minutes
@@ -179,15 +177,13 @@ async function fetchCalendarList() {
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
 
-  // 0. Non-work day → zero availability
-  const dowIndex = new Date(isoDate + 'T00:00:00').getDay(); // 0=Sun … 6=Sat
+  const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
   if ((nonWorkDays || []).includes(dowIndex)) return 0;
 
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2,'0')}:00:00`).getTime();
   const winEnd   = new Date(`${isoDate}T${String(workEnd  ).padStart(2,'0')}:00:00`).getTime();
   const winMins  = (winEnd - winStart) / 60_000;
 
-  // 1+2. Expand + clip each interval, then merge
   const bufMs = bufferMins * 60_000;
   const expanded = busyIntervals
     .map(({ start, end }) => ({
@@ -197,7 +193,6 @@ function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
     .filter(({ s, e }) => e > s)
     .sort((a, b) => a.s - b.s);
 
-  // Merge overlapping intervals
   const merged = [];
   for (const iv of expanded) {
     if (merged.length && iv.s <= merged[merged.length - 1].e) {
@@ -207,13 +202,8 @@ function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
     }
   }
 
-  // 3. Busy minutes after buffering
-  const busyMins = merged.reduce((sum, { s, e }) => sum + (e - s) / 60_000, 0);
-
-  // 4. Subtract deduction, floor at 0
+  const busyMins    = merged.reduce((sum, { s, e }) => sum + (e - s) / 60_000, 0);
   const afterDeduct = Math.max(0, winMins - busyMins - deductMins);
-
-  // 5. Efficiency
   return afterDeduct * (efficiency / 100);
 }
 
@@ -245,15 +235,13 @@ function hrLabel(h) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
-  const { tasks } = appData;
-  const todayISO  = toISO(new Date());
+  const { tasks, onFreeBusyUpdate, onFreeBusyClear } = appData;
+  const todayISO = toISO(new Date());
 
-  // ── Persistent connection state ───────────────────────────────────────────
   const [connected,  setConnected]  = useState(hasValidCachedToken);
   const [connecting, setConnecting] = useState(false);
   const [error,      setError]      = useState(null);
 
-  // ── Calc settings (persisted) ─────────────────────────────────────────────
   const [settings,     setSettings]     = useState(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -265,22 +253,17 @@ export default function GCalSync({ appData }) {
     });
   };
 
-  // ── Calendar list (persisted via localStorage for display; refetched on connect) ──
   const [calendars, setCalendars] = useState([]);
   const [selCals,   setSelCals]   = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(LS_CALS_KEY) || 'null') || []); }
     catch { return new Set(); }
   });
 
-  // ── Free/busy ────────────────────────────────────────────────────────────
   const [freeBusy,  setFreeBusy]  = useState(null);
   const [loadingFB, setLoadingFB] = useState(false);
-
-  // ── Work blocks ──────────────────────────────────────────────────────────
   const [blockStatus, setBlockStatus] = useState({});
   const [activePanel, setActivePanel] = useState('availability');
 
-  // ── On mount: if token is cached, quietly reload the calendar list ────────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -298,7 +281,6 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  // ── Connect ───────────────────────────────────────────────────────────────
   const handleConnect = async () => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
@@ -325,6 +307,8 @@ export default function GCalSync({ appData }) {
     setCalendars([]);
     setSelCals(new Set());
     setFreeBusy(null);
+    // Wipe the shared store so Overview / Planner stop using stale GCal data
+    onFreeBusyClear?.();
   };
 
   // ── Fetch free/busy ───────────────────────────────────────────────────────
@@ -352,15 +336,17 @@ export default function GCalSync({ appData }) {
         const iso = addDays(todayISO, i);
         result[iso] = effectiveFreeMinutes(iso, busyByDay[iso] || [], settings);
       }
+
       setFreeBusy(result);
+      // → Push into the shared store so Overview + Planner see fresh data
+      onFreeBusyUpdate?.(result);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoadingFB(false);
     }
-  }, [calendars, selCals, settings, todayISO]);
+  }, [calendars, selCals, settings, todayISO, onFreeBusyUpdate]);
 
-  // ── Create work block ─────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
@@ -373,7 +359,6 @@ export default function GCalSync({ appData }) {
     }
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const scheduled = tasks
     .filter(t => t.status !== 'done' && t.scheduled_days?.some(d => d >= todayISO))
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
@@ -413,7 +398,6 @@ export default function GCalSync({ appData }) {
   const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = workEnd - workStart;
 
-  // Toggle a weekday index in/out of the nonWorkDays array
   const toggleNonWorkDay = (dowIndex) => {
     const current = nonWorkDays || [];
     const next = current.includes(dowIndex)
@@ -424,7 +408,6 @@ export default function GCalSync({ appData }) {
 
   return (
     <div className="gcal-pane">
-      {/* Header */}
       <div className="gcal-header">
         <span className="gcal-connected-badge">✓ Connected to Google Calendar</span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -437,12 +420,10 @@ export default function GCalSync({ appData }) {
 
       {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
 
-      {/* ── Calc settings panel ── */}
       {showSettings && (
         <div className="gcal-settings-panel">
           <div className="gcal-settings-grid">
 
-            {/* Working window */}
             <div className="gcal-setting-group">
               <div className="gcal-section-label">Working window</div>
               <div className="gcal-hours-row">
@@ -459,7 +440,6 @@ export default function GCalSync({ appData }) {
               </div>
             </div>
 
-            {/* Non-work days */}
             <div className="gcal-setting-group">
               <div className="gcal-section-label">
                 Non-work days <span className="gcal-setting-hint">(automatically 0 availability)</span>
@@ -473,7 +453,7 @@ export default function GCalSync({ appData }) {
                       type="button"
                       className={`gcal-dow-btn${isOff ? ' gcal-dow-off' : ''}`}
                       onClick={() => toggleNonWorkDay(idx)}
-                      title={isOff ? `${name}: non-work day (click to re-enable)` : `${name}: work day (click to mark as off)`}
+                      title={isOff ? `${name}: non-work day` : `${name}: work day`}
                     >
                       {name}
                     </button>
@@ -487,65 +467,50 @@ export default function GCalSync({ appData }) {
               )}
             </div>
 
-            {/* Flat daily deduction */}
             <div className="gcal-setting-group">
               <div className="gcal-section-label">Daily deduction <span className="gcal-setting-hint">(lunch, overhead, life)</span></div>
               <div className="gcal-hours-row">
-                <input
-                  type="number" min={0} max={480} step={5}
+                <input type="number" min={0} max={480} step={5}
                   value={deductMins}
                   onChange={e => updateSetting('deductMins', +e.target.value)}
-                  style={{ width: 70 }}
-                />
+                  style={{ width: 70 }} />
                 <span className="gcal-setting-unit">minutes/day</span>
               </div>
-              <div className="gcal-setting-preview">
-                = {(deductMins / 60).toFixed(1)}h subtracted before anything else
-              </div>
+              <div className="gcal-setting-preview">= {(deductMins / 60).toFixed(1)}h subtracted before anything else</div>
             </div>
 
-            {/* Event buffer */}
             <div className="gcal-setting-group">
               <div className="gcal-section-label">Event buffer <span className="gcal-setting-hint">(context-switching time)</span></div>
               <div className="gcal-hours-row">
-                <input
-                  type="number" min={0} max={60} step={5}
+                <input type="number" min={0} max={60} step={5}
                   value={bufferMins}
                   onChange={e => updateSetting('bufferMins', +e.target.value)}
-                  style={{ width: 70 }}
-                />
+                  style={{ width: 70 }} />
                 <span className="gcal-setting-unit">min before &amp; after each event</span>
               </div>
             </div>
 
-            {/* Efficiency */}
             <div className="gcal-setting-group">
               <div className="gcal-section-label">Efficiency <span className="gcal-setting-hint">(of remaining free time)</span></div>
               <div className="gcal-efficiency-row">
-                <input
-                  type="range" min={10} max={100} step={5}
+                <input type="range" min={10} max={100} step={5}
                   value={efficiency}
                   onChange={e => updateSetting('efficiency', +e.target.value)}
-                  className="gcal-slider"
-                />
+                  className="gcal-slider" />
                 <span className="gcal-efficiency-val">{efficiency}%</span>
               </div>
-              <div className="gcal-setting-preview">
-                e.g. a day with 6h free → {(6 * efficiency / 100).toFixed(1)}h usable
-              </div>
+              <div className="gcal-setting-preview">e.g. a day with 6h free → {(6 * efficiency / 100).toFixed(1)}h usable</div>
             </div>
 
           </div>
 
-          {/* Calendar selector */}
           {calendars.length > 0 && (
             <div className="gcal-setting-group" style={{ marginTop: 16 }}>
               <div className="gcal-section-label">Calendars to include</div>
               <div className="gcal-cal-list">
                 {calendars.map(cal => (
                   <label key={cal.id} className="gcal-cal-item">
-                    <input
-                      type="checkbox"
+                    <input type="checkbox"
                       checked={selCals.has(cal.id)}
                       onChange={e => {
                         setSelCals(prev => {
@@ -554,8 +519,7 @@ export default function GCalSync({ appData }) {
                           localStorage.setItem(LS_CALS_KEY, JSON.stringify([...next]));
                           return next;
                         });
-                      }}
-                    />
+                      }} />
                     <span className="gcal-cal-dot" style={{ background: cal.backgroundColor || '#888' }} />
                     <span>{cal.summary}</span>
                   </label>
@@ -564,30 +528,22 @@ export default function GCalSync({ appData }) {
             </div>
           )}
 
-          <button
-            className="btn btn-primary btn-sm"
-            style={{ marginTop: 14 }}
-            onClick={() => { setShowSettings(false); handleFetchFreeBusy(); }}
-          >↻ Apply &amp; Refresh</button>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }}
+            onClick={() => { setShowSettings(false); handleFetchFreeBusy(); }}>
+            ↻ Apply &amp; Refresh
+          </button>
         </div>
       )}
 
-      {/* Panel tabs */}
       <div className="gcal-panel-tabs">
-        <button
-          className={`gcal-panel-tab${activePanel === 'availability' ? ' active' : ''}`}
-          onClick={() => setActivePanel('availability')}
-        >📊 Availability</button>
-        <button
-          className={`gcal-panel-tab${activePanel === 'blocks' ? ' active' : ''}`}
-          onClick={() => setActivePanel('blocks')}
-        >📅 Work Blocks</button>
+        <button className={`gcal-panel-tab${activePanel === 'availability' ? ' active' : ''}`}
+          onClick={() => setActivePanel('availability')}>📊 Availability</button>
+        <button className={`gcal-panel-tab${activePanel === 'blocks' ? ' active' : ''}`}
+          onClick={() => setActivePanel('blocks')}>📅 Work Blocks</button>
       </div>
 
-      {/* ── Availability panel ── */}
       {activePanel === 'availability' && (
         <div className="gcal-availability">
-          {/* Settings summary pill */}
           <div className="gcal-settings-summary">
             {hrLabel(workStart)}–{hrLabel(workEnd)} window
             {(nonWorkDays || []).length > 0 && ` · ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
@@ -666,7 +622,6 @@ export default function GCalSync({ appData }) {
         </div>
       )}
 
-      {/* ── Work Blocks panel ── */}
       {activePanel === 'blocks' && (
         <div className="gcal-blocks">
           <p className="gcal-blocks-intro">
