@@ -18,7 +18,7 @@ const TABS = [
   { id: 'gcal',       label: 'Google Calendar'   },
 ];
 
-export default function Shell({ appData, userId, userEmail }) {
+export default function Shell({ appData, userId, userEmail, darkMode, onToggleDarkMode }) {
   const [tab,       setTab]       = useState('overview');
   const [editModal, setEditModal] = useState(null);
 
@@ -49,13 +49,21 @@ export default function Shell({ appData, userId, userEmail }) {
           onClick={undo}
           disabled={!canUndo}
           title="Undo"
-        >↩ Undo</button>
+        >\u21a9 Undo</button>
         <button
           className="btn btn-sm"
           onClick={redo}
           disabled={!canRedo}
           title="Redo"
-        >↪ Redo</button>
+        >\u21aa Redo</button>
+        <button
+          className="btn-theme-toggle"
+          onClick={onToggleDarkMode}
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {darkMode ? '\u2600\ufe0f' : '\ud83c\udf19'}
+        </button>
         <button className="btn btn-sm" onClick={() => signOut()}>Sign out</button>
       </div>
 
