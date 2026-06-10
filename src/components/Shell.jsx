@@ -22,7 +22,7 @@ export default function Shell({ appData, userId, userEmail }) {
   const [tab,       setTab]       = useState('overview');
   const [editModal, setEditModal] = useState(null);
 
-  const { categories, saveTask, saveCategory } = appData;
+  const { categories, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
 
   const openAdd = () => {
     if (categories.length === 0) return;
@@ -44,6 +44,18 @@ export default function Shell({ appData, userId, userEmail }) {
       <div className="toolbar">
         {userEmail && <span className="toolbar-label">{userEmail}</span>}
         <ImportExport appData={{ ...appData, saveCategory }} />
+        <button
+          className="btn btn-sm"
+          onClick={undo}
+          disabled={!canUndo}
+          title="Undo"
+        >↩ Undo</button>
+        <button
+          className="btn btn-sm"
+          onClick={redo}
+          disabled={!canRedo}
+          title="Redo"
+        >↪ Redo</button>
         <button className="btn btn-sm" onClick={() => signOut()}>Sign out</button>
       </div>
 
