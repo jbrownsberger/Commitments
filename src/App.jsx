@@ -23,12 +23,12 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <Splash text="Loading\u2026" />;
+  if (session === undefined) return <Splash text="Loading…" />;
   if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Login page ────────────────────────────────────────────────────────────────────
+// ── Login page ──────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -117,7 +117,7 @@ function LoginPage() {
           disabled={loading}
           style={{ width: '100%' }}
         >
-          {loading ? 'Please wait\u2026' :
+          {loading ? 'Please wait…' :
             mode === 'magic'    ? 'Send magic link' :
             mode === 'password' ? 'Sign in' : 'Create account'}
         </button>
@@ -126,11 +126,11 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ────────────────────────────────────────────────────────────────────
+// ── Authed shell ────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
-  // ── Dark mode: sync with preferences once loaded, and apply to <html> ───────
+  // ── Dark mode: sync with preferences once loaded, and apply to <html> ──────
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ function AuthedApp({ userId, userEmail }) {
     await appData.savePreferences({ ...appData.preferences, dark_mode: next });
   }, [darkMode, appData]);
 
-  // ── GCal free/busy ─────────────────────────────────────────────────────
+  // ── GCal free/busy ──────────────────────────────────────────────────────────
   const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
 
   const onFreeBusyUpdate = (data) => {
@@ -162,11 +162,9 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
-  // ── GCal connection state ──────────────────────────────────────────────────
+  // ── GCal connection state ───────────────────────────────────────────────────
   const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
 
-  // Start silent refresh on mount if a valid token is already cached,
-  // and stop it cleanly when the component unmounts.
   useEffect(() => {
     if (hasValidCachedToken()) {
       startSilentTokenRefresh((isConnected) => {
@@ -179,7 +177,6 @@ function AuthedApp({ userId, userEmail }) {
   const onConnectionChange = useCallback((isConnected) => {
     setGcalConnected(isConnected);
     if (isConnected) {
-      // User just connected — start the refresh cycle
       startSilentTokenRefresh((stillConnected) => {
         setGcalConnected(stillConnected);
       });
@@ -188,11 +185,11 @@ function AuthedApp({ userId, userEmail }) {
     }
   }, []);
 
-  // ── GCal settings + selected calendars ───────────────────────────────────────
+  // ── GCal settings + selected calendars ──────────────────────────────────────
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
-  if (appData.loading) return <Splash text="Loading your data\u2026" />;
+  if (appData.loading) return <Splash text="Loading your data…" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
       color: 'var(--color-text-danger)', fontSize: 13 }}>
