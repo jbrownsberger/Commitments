@@ -8,6 +8,8 @@ import {
   hasValidCachedToken,
   loadGcalSettings,
   loadSelectedCals,
+  startSilentTokenRefresh,
+  stopSilentTokenRefresh,
 } from './lib/gcalScheduler.js';
 
 export default function App() {
@@ -21,7 +23,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <Splash text="Loading…" />;
+  if (session === undefined) return <Splash text="Loading\u2026" />;
   if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
@@ -115,7 +117,7 @@ function LoginPage() {
           disabled={loading}
           style={{ width: '100%' }}
         >
-          {loading ? 'Please wait…' :
+          {loading ? 'Please wait\u2026' :
             mode === 'magic'    ? 'Send magic link' :
             mode === 'password' ? 'Sign in' : 'Create account'}
         </button>
@@ -142,25 +144,36 @@ function AuthedApp({ userId, userEmail }) {
   };
 
   // ── GCal connection state ──────────────────────────────────────────
-  // Initialise from the cached token so Planner shows GCal buttons
-  // immediately on page load without waiting for GCalSync to mount.
   const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
+
+  // Start silent refresh on mount if a valid token is already cached,
+  // and stop it cleanly when the component unmounts.
+  useEffect(() => {
+    if (hasValidCachedToken()) {
+      startSilentTokenRefresh((isConnected) => {
+        setGcalConnected(isConnected);
+      });
+    }
+    return () => stopSilentTokenRefresh();
+  }, []);
 
   const onConnectionChange = useCallback((isConnected) => {
     setGcalConnected(isConnected);
+    if (isConnected) {
+      // User just connected — start the refresh cycle
+      startSilentTokenRefresh((stillConnected) => {
+        setGcalConnected(stillConnected);
+      });
+    } else {
+      stopSilentTokenRefresh();
+    }
   }, []);
 
-  // ── GCal settings + selected calendars (read from localStorage) ────────
-  // These are read once at mount and kept in sync via GCalSync's own
-  // saveGcalSettings / saveSelectedCals calls. Planner reads them as
-  // stable references for createWorkBlock; they don’t need to be reactive
-  // because Planner re-reads them at the moment it fires a block creation.
-  // If you need live reactivity here in a future iteration, lift the
-  // settings state up into AuthedApp and thread a setter down.
+  // ── GCal settings + selected calendars ────────────────────────────
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
-  if (appData.loading) return <Splash text="Loading your data…" />;
+  if (appData.loading) return <Splash text="Loading your data\u2026" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
       color: 'var(--color-text-danger)', fontSize: 13 }}>
@@ -168,19 +181,15 @@ function AuthedApp({ userId, userEmail }) {
     </div>
   );
 
-  // Merge GCal state into appData so every tab can consume it.
   const enrichedAppData = {
     ...appData,
-    // Availability
-    gcalFreeBusy,           // { [isoDate]: freeMinutes } | null
-    onFreeBusyUpdate,       // (data) => void  — called by GCalSync after fetch
-    onFreeBusyClear,        // () => void       — called by GCalSync on disconnect
-    // Connection
-    gcalConnected,          // boolean — true when a valid token exists
-    onConnectionChange,     // (bool) => void   — called by GCalSync on connect/disconnect
-    // Scheduling config (for Planner → createWorkBlock calls)
-    gcalSettings,           // { workStart, workEnd, bufferMins, … }
-    gcalSelCals,            // string[]  — selected calendar IDs
+    gcalFreeBusy,
+    onFreeBusyUpdate,
+    onFreeBusyClear,
+    gcalConnected,
+    onConnectionChange,
+    gcalSettings,
+    gcalSelCals,
   };
 
   return <Shell userId={userId} userEmail={userEmail} appData={enrichedAppData} />;

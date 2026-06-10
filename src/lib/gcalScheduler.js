@@ -8,6 +8,8 @@
  *     hasValidCachedToken()
  *     getAccessToken(forceConsent?)
  *     revokeToken()
+ *     startSilentTokenRefresh(onRefresh?)
+ *     stopSilentTokenRefresh()
  *
  *   Core API
  *     gcalFetch(path, opts?)
@@ -53,6 +55,9 @@ export const LS_SETTINGS_KEY = 'gcal_calc_settings';
 export const LS_CALS_KEY = 'gcal_selected_cals';
 export const LS_PUSH_REGISTRY = 'gcal_push_registry';
 
+// Refresh 5 minutes before the token expires
+const REFRESH_BEFORE_MS = 5 * 60_000;
+
 // ── Default settings ──────────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS = {
   workStart:   8,
@@ -90,7 +95,6 @@ export function saveSelectedCals(set) {
 // ── Push registry ─────────────────────────────────────────────────────────────
 // Shape: { ["taskId|isoDate"]: { eventId: string, hours: number } }
 
-// Single private helper — used by all registry mutators below
 function _savePushRegistry(reg) {
   localStorage.setItem(LS_PUSH_REGISTRY, JSON.stringify(reg));
 }
@@ -131,10 +135,6 @@ export function clearPushEntriesForTask(taskId) {
 /**
  * Given a list of ISO dates, return a gcalPushStatus map pre-seeded with
  * 'done' for any (task, day) pairs that have a registry entry on that day.
- * Used to restore push-status UI after component remount.
- *
- * @param {string[]} isoList  — list of ISO dates in the current planner window
- * @returns {{ [iso: string]: 'done' }}
  */
 export function seedPushStatusFromRegistry(isoList) {
   const reg = getPushRegistry();
@@ -150,6 +150,7 @@ export function seedPushStatusFromRegistry(isoList) {
 let _tokenClient = null;
 let _accessToken = localStorage.getItem(LS_TOKEN_KEY) || null;
 let _tokenExpiry = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
+let _refreshTimer = null;
 
 function persistToken(token, expiresIn) {
   _accessToken = token;
@@ -162,6 +163,7 @@ export function clearToken() {
   _accessToken = null;
   _tokenExpiry = 0;
   _tokenClient = null;
+  stopSilentTokenRefresh();
   localStorage.removeItem(LS_TOKEN_KEY);
   localStorage.removeItem(LS_EXPIRY_KEY);
 }
@@ -207,11 +209,78 @@ export function revokeToken() {
   clearToken();
 }
 
-// ── Core API fetch ─────────────────────────────────────────────────────────────
+// ── Silent token refresh ───────────────────────────────────────────────────────
 /**
- * Authenticated fetch against the Google Calendar v3 API.
- * Handles both JSON responses and 204 No Content (e.g. DELETE).
+ * Schedule a silent token refresh ~5 minutes before the current token expires.
+ * Reschedules itself after each successful refresh so the session stays alive
+ * as long as the user's Google browser session is active.
+ *
+ * @param {function} [onRefresh]  — optional callback(isConnected: boolean)
+ *   called after each refresh attempt so callers can update UI.
+ *   Receives true on success, false if the silent refresh fails (e.g. Google
+ *   session expired — user will be prompted on their next GCal action).
  */
+export function startSilentTokenRefresh(onRefresh) {
+  stopSilentTokenRefresh(); // clear any existing timer first
+
+  if (!hasValidCachedToken()) return;
+
+  const msUntilExpiry  = _tokenExpiry - Date.now();
+  const msUntilRefresh = Math.max(msUntilExpiry - REFRESH_BEFORE_MS, 0);
+
+  _refreshTimer = setTimeout(async () => {
+    try {
+      await loadGsiScript();
+      // Re-init token client if needed (e.g. after page reload)
+      if (!_tokenClient) {
+        await new Promise((resolve, reject) => {
+          _tokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: (resp) => {
+              if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
+              persistToken(resp.access_token, resp.expires_in);
+              resolve();
+            },
+          });
+          // prompt: '' means silent — no popup if user already consented
+          _tokenClient.requestAccessToken({ prompt: '' });
+        });
+      } else {
+        await new Promise((resolve, reject) => {
+          // Temporarily swap callback to capture this refresh's response
+          const prev = _tokenClient.callback;
+          _tokenClient.callback = (resp) => {
+            _tokenClient.callback = prev;
+            if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
+            persistToken(resp.access_token, resp.expires_in);
+            resolve();
+          };
+          _tokenClient.requestAccessToken({ prompt: '' });
+        });
+      }
+      onRefresh?.(true);
+      // Schedule the next refresh for the new token
+      startSilentTokenRefresh(onRefresh);
+    } catch {
+      // Silent refresh failed (Google session expired, user offline, etc.)
+      // Don't clear the token — let the next explicit GCal action prompt them.
+      onRefresh?.(false);
+    }
+  }, msUntilRefresh);
+}
+
+/**
+ * Cancel the pending silent refresh timer. Called by clearToken/revokeToken.
+ */
+export function stopSilentTokenRefresh() {
+  if (_refreshTimer !== null) {
+    clearTimeout(_refreshTimer);
+    _refreshTimer = null;
+  }
+}
+
+// ── Core API fetch ─────────────────────────────────────────────────────────────
 export async function gcalFetch(path, opts = {}) {
   const token = await getAccessToken();
   const res = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
@@ -249,10 +318,6 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
 }
 
 // ── Commitments block intervals ────────────────────────────────────────────────
-/**
- * Fetch all events tagged with commitments_task_id within a time range.
- * Returns { [isoDate]: [{ startMs, endMs }] }.
- */
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   const blocksByDay = {};
   let pageToken = null;
@@ -281,10 +346,6 @@ export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   return blocksByDay;
 }
 
-/**
- * Remove Commitments-owned busy intervals from a free/busy list.
- * A busy interval is dropped if fully covered by any of our own blocks.
- */
 export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
   if (!blockIntervals || !blockIntervals.length) return busyIntervals;
   return busyIntervals.filter(b => {
@@ -295,20 +356,10 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
 }
 
 // ── Slot finder ────────────────────────────────────────────────────────────────
-/**
- * Find the earliest contiguous free slot on isoDate that fits durationHours.
- * Respects workStart/workEnd window and bufferMins padding around events.
- * Falls back to workStart if nothing fits.
- */
 export async function findBestSlot(isoDate, durationHours, settings, calIds) {
   return findBestSlotAfter(isoDate, durationHours, 0, settings, calIds);
 }
 
-/**
- * Like findBestSlot but also respects a notBeforeMs floor (Unix ms).
- * Used when scheduling multiple tasks sequentially on the same day so each
- * one starts after the previous one ends.
- */
 export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds) {
   const { workStart, workEnd, bufferMins } = settings;
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
@@ -330,7 +381,6 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2, '0')}:00:00`).getTime();
   const winEnd   = new Date(`${isoDate}T${String(workEnd).padStart(2, '0')}:00:00`).getTime();
 
-  // Apply notBeforeMs floor, clamped to the working window
   const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, winStart) : winStart;
 
   const blocked = busy
@@ -348,7 +398,6 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
     else merged.push({ ...iv });
   }
 
-  // Walk gaps from earliest; return first that fits the block
   let cursor = earliest;
   for (const block of [...merged, { s: winEnd, e: winEnd }]) {
     if (block.s <= cursor) {
@@ -363,9 +412,6 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
 }
 
 // ── Block creation ─────────────────────────────────────────────────────────────
-/**
- * Create a new work block. Prefer upsertWorkBlock for Planner push flows.
- */
 export async function createWorkBlock(task, isoDate, durationHours, settings, calIds) {
   const s   = settings || loadGcalSettings();
   const ids = calIds   || [...loadSelectedCals()];
@@ -388,14 +434,6 @@ export async function createWorkBlock(task, isoDate, durationHours, settings, ca
 }
 
 // ── Upsert block ───────────────────────────────────────────────────────────────
-/**
- * Create or update a work block, deduplicating via the push registry.
- *
- * - No registry entry   → POST new event, save entry. Returns { event, endMs, created: true }.
- * - Entry, same hours   → skip (no API call).          Returns { event: null, endMs, created: false }.
- * - Entry, hours differ → PATCH end time, update entry. Returns { event, endMs, created: false }.
- * - Entry but 404       → clear entry, fall through to POST.
- */
 export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
   const s   = settings || loadGcalSettings();
   const ids = calIds   || [...loadSelectedCals()];
@@ -407,7 +445,6 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
     const hoursChanged = Math.abs((existing.hours || 0) - durationHours) > 0.01;
 
     if (!hoursChanged) {
-      // No change needed — estimate endMs for cursor chaining
       const estStart = Math.max(notBeforeMs, 0);
       return { event: null, endMs: estStart + durationHours * 3_600_000, created: false };
     }
@@ -432,12 +469,10 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
       return { event: patched, endMs: newEnd.getTime(), created: false };
     } catch (err) {
       if (!err.message?.includes('404')) throw err;
-      // Event was deleted externally — fall through to recreate
       clearPushEntry(task.id, isoDate);
     }
   }
 
-  // Create new event
   const start = await findBestSlotAfter(isoDate, durationHours, notBeforeMs, s, ids);
   const end   = new Date(start.getTime() + durationHours * 3_600_000);
 
@@ -458,10 +493,6 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 }
 
 // ── Block deletion ─────────────────────────────────────────────────────────────
-/**
- * Delete all Commitments-owned blocks on a given day and clear registry entries.
- * Returns the count of deleted events.
- */
 export async function deleteWorkBlock(isoDate) {
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
