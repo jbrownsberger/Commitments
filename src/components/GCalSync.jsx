@@ -32,6 +32,7 @@ const LOOK_AHEAD_DAYS = 28;
 const DAY_NAMES       = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── Helpers (UI-only, not shared) ─────────────────────────────────────────────
+
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
@@ -55,31 +56,58 @@ function remainingHours(task) {
     : (task.manual_progress ?? task.manualProgress ?? 0);
   return Math.max(0, (parseFloat(task.estimated_hours) || 1) * (1 - prog / 100));
 }
+
+/**
+ * Computes free minutes for a day, respecting multiple work windows.
+ * workWindows: [{ start: number, end: number }, ...]
+ */
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
-  const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
+  const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
   if ((nonWorkDays || []).includes(dowIndex)) return 0;
-  const winStart = new Date(`${isoDate}T${String(workStart).padStart(2,'0')}:00:00`).getTime();
-  const winEnd   = new Date(`${isoDate}T${String(workEnd  ).padStart(2,'0')}:00:00`).getTime();
-  const winMins  = (winEnd - winStart) / 60_000;
-  const bufMs    = bufferMins * 60_000;
-  const expanded = busyIntervals
-    .map(({ start, end }) => ({
-      s: Math.max(new Date(start).getTime() - bufMs, winStart),
-      e: Math.min(new Date(end  ).getTime() + bufMs, winEnd),
-    }))
-    .filter(({ s, e }) => e > s)
-    .sort((a, b) => a.s - b.s);
-  const merged = [];
-  for (const iv of expanded) {
-    if (merged.length && iv.s <= merged[merged.length - 1].e)
-      merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, iv.e);
-    else merged.push({ ...iv });
+
+  // Normalise windows
+  const windows = (workWindows || [{ start: 8, end: 20 }])
+    .filter(w => w.end > w.start)
+    .map(w => ({
+      s: new Date(`${isoDate}T${String(w.start).padStart(2,'0')}:00:00`).getTime(),
+      e: new Date(`${isoDate}T${String(w.end  ).padStart(2,'0')}:00:00`).getTime(),
+    }));
+
+  if (!windows.length) return 0;
+
+  const bufMs = bufferMins * 60_000;
+  let totalFreeMs = 0;
+
+  for (const win of windows) {
+    const winMs = win.e - win.s;
+    const expanded = busyIntervals
+      .map(({ start, end }) => ({
+        s: Math.max(new Date(start).getTime() - bufMs, win.s),
+        e: Math.min(new Date(end  ).getTime() + bufMs, win.e),
+      }))
+      .filter(({ s, e }) => e > s)
+      .sort((a, b) => a.s - b.s);
+    const merged = [];
+    for (const iv of expanded) {
+      if (merged.length && iv.s <= merged[merged.length - 1].e)
+        merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, iv.e);
+      else merged.push({ ...iv });
+    }
+    const busyMs = merged.reduce((sum, { s, e }) => sum + (e - s), 0);
+    totalFreeMs += Math.max(0, winMs - busyMs);
   }
-  const busyMins    = merged.reduce((sum, { s, e }) => sum + (e - s) / 60_000, 0);
-  const afterDeduct = Math.max(0, winMins - busyMins - deductMins);
+
+  const totalWindowMins = windows.reduce((s, w) => s + (w.e - w.s), 0) / 60_000;
+  const afterDeduct = Math.max(0, totalFreeMs / 60_000 - deductMins);
   return afterDeduct * (efficiency / 100);
 }
+
+function totalWindowHours(settings) {
+  const windows = settings.workWindows || [{ start: 8, end: 20 }];
+  return windows.filter(w => w.end > w.start).reduce((s, w) => s + (w.end - w.start), 0);
+}
+
 function hrLabel(h) {
   if (h === 0)  return '12am';
   if (h < 12)   return `${h}am`;
@@ -87,7 +115,14 @@ function hrLabel(h) {
   return `${h - 12}pm`;
 }
 
-// ── SVG icons ───────────────────────────────────────────────────────────────────
+function windowSummary(workWindows) {
+  return (workWindows || [{ start: 8, end: 20 }])
+    .filter(w => w.end > w.start)
+    .map(w => `${hrLabel(w.start)}–${hrLabel(w.end)}`)
+    .join(', ');
+}
+
+// ── SVG icons ───────────────────────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -171,8 +206,81 @@ function IconTrash({ size = 13, style }) {
     </svg>
   );
 }
+function IconPlus({ size = 12, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  );
+}
 
-// ── Component ──────────────────────────────────────────────────────────────────────
+// ── WorkWindowsEditor ────────────────────────────────────────────────────────────────
+/**
+ * Editable list of work windows, each with a From/To hour selector.
+ * Allows multiple non-overlapping time blocks (e.g. 8–12 and 13–17).
+ */
+function WorkWindowsEditor({ windows, onChange }) {
+  const hourOptions = Array.from({ length: 25 }, (_, i) => i); // 0..24
+
+  const updateWindow = (idx, key, val) => {
+    const next = windows.map((w, i) => i === idx ? { ...w, [key]: val } : w);
+    onChange(next);
+  };
+
+  const addWindow = () => {
+    // Default new window: one hour after the last window ends, or 13–17 if nothing
+    const last = windows[windows.length - 1];
+    const start = last ? Math.min(last.end + 1, 23) : 13;
+    const end   = Math.min(start + 4, 24);
+    onChange([...windows, { start, end }]);
+  };
+
+  const removeWindow = (idx) => {
+    if (windows.length <= 1) return; // keep at least one window
+    onChange(windows.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="gcal-work-windows">
+      {windows.map((w, idx) => (
+        <div key={idx} className="gcal-work-window-row">
+          <label className="gcal-ww-label">
+            From
+            <select value={w.start} onChange={e => updateWindow(idx, 'start', +e.target.value)}>
+              {hourOptions.slice(0, 24).map(h => (
+                <option key={h} value={h}>{hrLabel(h)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="gcal-ww-label">
+            To
+            <select value={w.end} onChange={e => updateWindow(idx, 'end', +e.target.value)}>
+              {hourOptions.slice(1).map(h => (
+                <option key={h} value={h}>{hrLabel(h)}</option>
+              ))}
+            </select>
+          </label>
+          {w.end <= w.start && (
+            <span className="gcal-ww-warn">End must be after start</span>
+          )}
+          {windows.length > 1 && (
+            <button className="gcal-ww-remove" onClick={() => removeWindow(idx)} title="Remove this window">&times;</button>
+          )}
+        </div>
+      ))}
+      <button className="gcal-ww-add btn btn-sm" onClick={addWindow}>
+        <IconPlus size={11} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+        Add window
+      </button>
+      <div className="gcal-setting-preview">
+        Total: {windows.filter(w => w.end > w.start).reduce((s, w) => s + (w.end - w.start), 0)}h/day
+      </div>
+    </div>
+  );
+}
+
+// ── Component ───────────────────────────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
   const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange } = appData;
   const todayISO = toISO(new Date());
@@ -197,16 +305,15 @@ export default function GCalSync({ appData }) {
 
   const [freeBusy,    setFreeBusy]    = useState(null);
   const [loadingFB,   setLoadingFB]   = useState(false);
-  // blockStatus values: null | 'pending' | 'done' | 'deleting' | 'error'
   const [blockStatus, setBlockStatus] = useState({});
   const [activePanel, setActivePanel] = useState('availability');
 
-  // ── Notify App of connection state changes ─────────────────────────────────
+  // ── Notify App of connection state changes ──────────────────────────────────
   useEffect(() => {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
 
-  // ── Load calendar list on connect (runs on page load if already authed) ─────
+  // ── Load calendar list on connect ──────────────────────────────────────────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -221,13 +328,11 @@ export default function GCalSync({ appData }) {
         });
       })
       .catch(() => {});
-    // Bootstrap the dedicated Commitments calendar for existing sessions that
-    // were authenticated before this feature was deployed.
     ensureCommitmentsCalendar().catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  // ── Pre-load existing block status when Work Blocks panel opens ──────────────
+  // ── Pre-load block status when Work Blocks panel opens ────────────────────
   useEffect(() => {
     if (activePanel !== 'blocks' || !connected) return;
     const todayISO = toISO(new Date());
@@ -251,7 +356,7 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePanel, connected]);
 
-  // ── Auth handlers ────────────────────────────────────────────────────────────
+  // ── Auth handlers ────────────────────────────────────────────────────────────────
   const handleConnect = async () => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
@@ -264,7 +369,6 @@ export default function GCalSync({ appData }) {
       const all = new Set(cals.map(c => c.id));
       setSelCals(all);
       saveSelectedCals(all);
-      // Ensure the dedicated Commitments Work Blocks calendar exists
       await ensureCommitmentsCalendar();
     } catch (e) {
       setError(e.message);
@@ -285,7 +389,7 @@ export default function GCalSync({ appData }) {
     onFreeBusyClear?.();
   };
 
-  // ── Availability ────────────────────────────────────────────────────────────
+  // ── Availability ────────────────────────────────────────────────────────────────
   const handleFetchFreeBusy = useCallback(async () => {
     setLoadingFB(true); setError(null);
     try {
@@ -293,8 +397,6 @@ export default function GCalSync({ appData }) {
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
-      // Exclude the Commitments calendar so pushed work blocks don't eat into
-      // the availability numbers.
       const commitmentsCalId = loadCommitmentsCalId();
       const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
       const calIds    = commitmentsCalId
@@ -325,7 +427,7 @@ export default function GCalSync({ appData }) {
     }
   }, [calendars, selCals, settings, todayISO, onFreeBusyUpdate]);
 
-  // ── Block create ────────────────────────────────────────────────────────────
+  // ── Block create ────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
@@ -338,7 +440,7 @@ export default function GCalSync({ appData }) {
     }
   };
 
-  // ── Block delete ────────────────────────────────────────────────────────────
+  // ── Block delete ────────────────────────────────────────────────────────────────
   const handleDeleteBlock = async (task, iso) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'deleting' }));
@@ -356,7 +458,7 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Disconnected screen ────────────────────────────────────────────────────────
+  // ── Disconnected screen ─────────────────────────────────────────────────────────
   if (!connected) {
     return (
       <div className="gcal-pane">
@@ -366,7 +468,7 @@ export default function GCalSync({ appData }) {
           <p>Connect your Google Calendar to see real free time each day and push work blocks directly to your calendar.</p>
           <button className="btn btn-primary gcal-connect-btn" onClick={handleConnect} disabled={connecting}>
             <IconLink size={15} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-            {connecting ? 'Connecting…' : 'Connect Google Calendar'}
+            {connecting ? 'Connecting\u2026' : 'Connect Google Calendar'}
           </button>
           {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
         </div>
@@ -390,9 +492,9 @@ export default function GCalSync({ appData }) {
     );
   }
 
-  // ── Connected screen ────────────────────────────────────────────────────────────
-  const { workStart, workEnd, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
-  const windowH = workEnd - workStart;
+  // ── Connected screen ──────────────────────────────────────────────────────────────────
+  const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
+  const windowH = totalWindowHours(settings);
 
   const toggleNonWorkDay = (dowIndex) => {
     const current = nonWorkDays || [];
@@ -425,19 +527,11 @@ export default function GCalSync({ appData }) {
           <div className="gcal-settings-grid">
 
             <div className="gcal-setting-group">
-              <div className="gcal-section-label">Working window</div>
-              <div className="gcal-hours-row">
-                <label>From
-                  <select value={workStart} onChange={e => updateSetting('workStart', +e.target.value)}>
-                    {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{hrLabel(i)}</option>)}
-                  </select>
-                </label>
-                <label>To
-                  <select value={workEnd} onChange={e => updateSetting('workEnd', +e.target.value)}>
-                    {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{hrLabel(i)}</option>)}
-                  </select>
-                </label>
-              </div>
+              <div className="gcal-section-label">Working windows</div>
+              <WorkWindowsEditor
+                windows={workWindows || [{ start: 8, end: 20 }]}
+                onChange={next => updateSetting('workWindows', next)}
+              />
             </div>
 
             <div className="gcal-setting-group">
@@ -550,11 +644,11 @@ export default function GCalSync({ appData }) {
       {activePanel === 'availability' && (
         <div className="gcal-availability">
           <div className="gcal-settings-summary">
-            {hrLabel(workStart)}–{hrLabel(workEnd)} window
-            {(nonWorkDays || []).length > 0 && ` · ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
-            {deductMins > 0 && ` · −${deductMins}m deduction`}
-            {bufferMins > 0 && ` · ${bufferMins}m event buffer`}
-            {efficiency < 100 && ` · ${efficiency}% efficiency`}
+            {windowSummary(workWindows)}
+            {(nonWorkDays || []).length > 0 && ` \u00b7 ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
+            {deductMins > 0 && ` \u00b7 \u2212${deductMins}m deduction`}
+            {bufferMins > 0 && ` \u00b7 ${bufferMins}m event buffer`}
+            {efficiency < 100 && ` \u00b7 ${efficiency}% efficiency`}
             <button className="gcal-settings-edit" onClick={() => setShowSettings(s => !s)}>edit</button>
           </div>
 
@@ -562,7 +656,7 @@ export default function GCalSync({ appData }) {
             <div className="gcal-empty">
               <button className="btn btn-primary" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                 <IconBarChart size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-                {loadingFB ? 'Loading…' : 'Load my availability'}
+                {loadingFB ? 'Loading\u2026' : 'Load my availability'}
               </button>
               <p>Fetches only busy/free status — no event details are read.</p>
             </div>
@@ -571,7 +665,7 @@ export default function GCalSync({ appData }) {
               <div className="gcal-fb-refresh-row">
                 <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                   <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  {loadingFB ? 'Loading…' : 'Refresh'}
+                  {loadingFB ? 'Loading\u2026' : 'Refresh'}
                 </button>
               </div>
               <div className="gcal-fb-grid">
@@ -665,10 +759,10 @@ export default function GCalSync({ appData }) {
                           onClick={() => handleCreateBlock(task, iso, hrs)}
                           disabled={isPending || isDone || isDeleting}
                         >
-                          {isPending  ? '…'          :
+                          {isPending  ? '\u2026'        :
                            isDone     ? 'Added'      :
                            isError    ? 'Retry'      :
-                           isDeleting ? '…'          :
+                           isDeleting ? '\u2026'        :
                            '+ Add to GCal'}
                         </button>
                         {isDone && (
