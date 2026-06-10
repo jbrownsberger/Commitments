@@ -21,7 +21,7 @@
  *     findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds)
  *     createWorkBlock(task, isoDate, durationHours, settings, calIds)
  *     upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds)
- *     deleteWorkBlock(taskId, isoDate)
+ *     deleteWorkBlock(isoDate)
  *
  *   Push registry (localStorage dedup)
  *     getPushRegistry()
@@ -40,17 +40,17 @@
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-const SCOPES          = [
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
 export const CALENDAR_ID = 'primary';
 
-const LS_TOKEN_KEY    = 'gcal_access_token';
-const LS_EXPIRY_KEY   = 'gcal_token_expiry';
-export const LS_SETTINGS_KEY  = 'gcal_calc_settings';
-export const LS_CALS_KEY      = 'gcal_selected_cals';
+const LS_TOKEN_KEY = 'gcal_access_token';
+const LS_EXPIRY_KEY = 'gcal_token_expiry';
+export const LS_SETTINGS_KEY = 'gcal_calc_settings';
+export const LS_CALS_KEY = 'gcal_selected_cals';
 export const LS_PUSH_REGISTRY = 'gcal_push_registry';
 
 // ── Default settings ──────────────────────────────────────────────────────────
@@ -90,16 +90,17 @@ export function saveSelectedCals(set) {
 // ── Push registry ─────────────────────────────────────────────────────────────
 // Shape: { ["taskId|isoDate"]: { eventId: string, hours: number } }
 
+// Single private helper — used by all registry mutators below
+function _savePushRegistry(reg) {
+  localStorage.setItem(LS_PUSH_REGISTRY, JSON.stringify(reg));
+}
+
 export function getPushRegistry() {
   try {
     const raw = localStorage.getItem(LS_PUSH_REGISTRY);
     if (raw) return JSON.parse(raw);
   } catch {}
   return {};
-}
-
-function savePushRegistry(reg) {
-  localStorage.setItem(LS_PUSH_REGISTRY, JSON.stringify(reg));
 }
 
 export function getPushEntry(taskId, isoDate) {
@@ -109,13 +110,13 @@ export function getPushEntry(taskId, isoDate) {
 export function setPushEntry(taskId, isoDate, eventId, hours) {
   const reg = getPushRegistry();
   reg[`${taskId}|${isoDate}`] = { eventId, hours };
-  savePushRegistry(reg);
+  _savePushRegistry(reg);
 }
 
 export function clearPushEntry(taskId, isoDate) {
   const reg = getPushRegistry();
   delete reg[`${taskId}|${isoDate}`];
-  savePushRegistry(reg);
+  _savePushRegistry(reg);
 }
 
 export function clearPushEntriesForTask(taskId) {
@@ -124,7 +125,7 @@ export function clearPushEntriesForTask(taskId) {
   for (const key of Object.keys(reg)) {
     if (key.startsWith(prefix)) delete reg[key];
   }
-  savePushRegistry(reg);
+  _savePushRegistry(reg);
 }
 
 /**
@@ -136,12 +137,9 @@ export function clearPushEntriesForTask(taskId) {
  * @returns {{ [iso: string]: 'done' }}
  */
 export function seedPushStatusFromRegistry(isoList) {
-  const reg    = getPushRegistry();
+  const reg = getPushRegistry();
+  const pushedDays = new Set(Object.keys(reg).map(k => k.split('|')[1]));
   const status = {};
-  // An iso date is "done" if at least one task has been pushed for it
-  const pushedDays = new Set(
-    Object.keys(reg).map(k => k.split('|')[1])
-  );
   for (const iso of isoList) {
     if (pushedDays.has(iso)) status[iso] = 'done';
   }
@@ -151,19 +149,19 @@ export function seedPushStatusFromRegistry(isoList) {
 // ── Token management ──────────────────────────────────────────────────────────
 let _tokenClient = null;
 let _accessToken = localStorage.getItem(LS_TOKEN_KEY) || null;
-let _tokenExpiry  = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
+let _tokenExpiry = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
 
 function persistToken(token, expiresIn) {
   _accessToken = token;
-  _tokenExpiry  = Date.now() + (expiresIn ?? 3600) * 1000;
-  localStorage.setItem(LS_TOKEN_KEY,  token);
+  _tokenExpiry = Date.now() + (expiresIn ?? 3600) * 1000;
+  localStorage.setItem(LS_TOKEN_KEY, token);
   localStorage.setItem(LS_EXPIRY_KEY, String(_tokenExpiry));
 }
 
 export function clearToken() {
   _accessToken = null;
-  _tokenExpiry  = 0;
-  _tokenClient  = null;
+  _tokenExpiry = 0;
+  _tokenClient = null;
   localStorage.removeItem(LS_TOKEN_KEY);
   localStorage.removeItem(LS_EXPIRY_KEY);
 }
@@ -176,8 +174,8 @@ function loadGsiScript() {
   return new Promise((resolve, reject) => {
     if (window.google?.accounts?.oauth2) { resolve(); return; }
     const s = document.createElement('script');
-    s.src     = 'https://accounts.google.com/gsi/client';
-    s.onload  = resolve;
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
   });
@@ -301,12 +299,6 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
  * Find the earliest contiguous free slot on isoDate that fits durationHours.
  * Respects workStart/workEnd window and bufferMins padding around events.
  * Falls back to workStart if nothing fits.
- *
- * @param {string}   isoDate        — 'YYYY-MM-DD'
- * @param {number}   durationHours  — length of the desired block in hours
- * @param {object}   settings       — gcal settings (workStart, workEnd, bufferMins, …)
- * @param {string[]} calIds         — calendar IDs to check for conflicts
- * @returns {Promise<Date>}         — the best start time as a Date object
  */
 export async function findBestSlot(isoDate, durationHours, settings, calIds) {
   return findBestSlotAfter(isoDate, durationHours, 0, settings, calIds);
@@ -316,13 +308,6 @@ export async function findBestSlot(isoDate, durationHours, settings, calIds) {
  * Like findBestSlot but also respects a notBeforeMs floor (Unix ms).
  * Used when scheduling multiple tasks sequentially on the same day so each
  * one starts after the previous one ends.
- *
- * @param {string}   isoDate
- * @param {number}   durationHours
- * @param {number}   notBeforeMs    — earliest allowed start in Unix ms (0 = no constraint)
- * @param {object}   settings
- * @param {string[]} calIds
- * @returns {Promise<Date>}
  */
 export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds) {
   const { workStart, workEnd, bufferMins } = settings;
@@ -343,15 +328,15 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
   const bufMs    = bufferMins * 60_000;
   const neededMs = durationHours * 3_600_000;
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2, '0')}:00:00`).getTime();
-  const winEnd   = new Date(`${isoDate}T${String(workEnd  ).padStart(2, '0')}:00:00`).getTime();
+  const winEnd   = new Date(`${isoDate}T${String(workEnd).padStart(2, '0')}:00:00`).getTime();
 
-  // Apply notBeforeMs floor (clamp to working window)
+  // Apply notBeforeMs floor, clamped to the working window
   const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, winStart) : winStart;
 
   const blocked = busy
     .map(b => ({
       s: Math.max(new Date(b.start).getTime() - bufMs, winStart),
-      e: Math.min(new Date(b.end  ).getTime() + bufMs, winEnd),
+      e: Math.min(new Date(b.end).getTime()   + bufMs, winEnd),
     }))
     .filter(b => b.e > b.s)
     .sort((a, b) => a.s - b.s);
@@ -363,34 +348,23 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
     else merged.push({ ...iv });
   }
 
-  // Walk gaps starting from `earliest`, return first gap that fits
+  // Walk gaps from earliest; return first that fits the block
   let cursor = earliest;
   for (const block of [...merged, { s: winEnd, e: winEnd }]) {
     if (block.s <= cursor) {
       cursor = Math.max(cursor, block.e);
       continue;
     }
-    if (block.s - cursor >= neededMs)
-      return new Date(cursor);
+    if (block.s - cursor >= neededMs) return new Date(cursor);
     cursor = block.e;
   }
 
-  // Fallback: earliest allowed start
   return new Date(earliest);
 }
 
 // ── Block creation ─────────────────────────────────────────────────────────────
 /**
- * Create a work block on Google Calendar for a task on a given day.
- * Uses findBestSlot to pick the start time intelligently.
- * NOTE: prefer upsertWorkBlock for push-from-Planner flows.
- *
- * @param {object}   task
- * @param {string}   isoDate
- * @param {number}   durationHours
- * @param {object}   settings
- * @param {string[]} calIds
- * @returns {Promise<object>}  the created GCal event object
+ * Create a new work block. Prefer upsertWorkBlock for Planner push flows.
  */
 export async function createWorkBlock(task, isoDate, durationHours, settings, calIds) {
   const s   = settings || loadGcalSettings();
@@ -415,25 +389,12 @@ export async function createWorkBlock(task, isoDate, durationHours, settings, ca
 
 // ── Upsert block ───────────────────────────────────────────────────────────────
 /**
- * Create or update a work block for a task/day, using the push registry to
- * deduplicate and avoid re-creating events that already exist.
+ * Create or update a work block, deduplicating via the push registry.
  *
- * Behaviour:
- *   - No registry entry → create new event at best slot (respecting notBeforeMs),
- *     save to registry. Returns { event, endMs, created: true }.
- *   - Registry entry, hours unchanged → skip. Returns { event: null, endMs, created: false }.
- *   - Registry entry, hours changed   → PATCH the existing event's end time,
- *     update registry. Returns { event, endMs, created: false }.
- *   - Registry entry, but PATCH returns 404 (event deleted externally) → fall
- *     through and create a new event. Returns { event, endMs, created: true }.
- *
- * @param {object}   task
- * @param {string}   isoDate
- * @param {number}   durationHours
- * @param {number}   notBeforeMs    — floor for slot search (Unix ms, 0 = no constraint)
- * @param {object}   settings
- * @param {string[]} calIds
- * @returns {Promise<{ event: object|null, endMs: number, created: boolean }>}
+ * - No registry entry   → POST new event, save entry. Returns { event, endMs, created: true }.
+ * - Entry, same hours   → skip (no API call).          Returns { event: null, endMs, created: false }.
+ * - Entry, hours differ → PATCH end time, update entry. Returns { event, endMs, created: false }.
+ * - Entry but 404       → clear entry, fall through to POST.
  */
 export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
   const s   = settings || loadGcalSettings();
@@ -442,23 +403,16 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 
   const existing = getPushEntry(task.id, isoDate);
 
-  // ── Case: existing event, try update or skip ──────────────────────────────
   if (existing) {
     const hoursChanged = Math.abs((existing.hours || 0) - durationHours) > 0.01;
 
     if (!hoursChanged) {
-      // Nothing to do — compute endMs from stored start so caller can chain
-      // We don't store startMs, so we re-derive it from notBeforeMs as a best
-      // approximation; the actual start is already on GCal.
-      // For chaining purposes, return a reasonable endMs estimate.
+      // No change needed — estimate endMs for cursor chaining
       const estStart = Math.max(notBeforeMs, 0);
-      const endMs    = estStart + durationHours * 3_600_000;
-      return { event: null, endMs, created: false };
+      return { event: null, endMs: estStart + durationHours * 3_600_000, created: false };
     }
 
-    // Hours changed — PATCH the existing event
     try {
-      // Fetch the existing event to get its actual start time
       const existingEvent = await gcalFetch(
         `/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existing.eventId}`
       );
@@ -477,13 +431,13 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
       setPushEntry(task.id, isoDate, existing.eventId, durationHours);
       return { event: patched, endMs: newEnd.getTime(), created: false };
     } catch (err) {
-      // If the event no longer exists (404), fall through to create
       if (!err.message?.includes('404')) throw err;
+      // Event was deleted externally — fall through to recreate
       clearPushEntry(task.id, isoDate);
     }
   }
 
-  // ── Case: no entry (or cleared after 404) — create new ───────────────────
+  // Create new event
   const start = await findBestSlotAfter(isoDate, durationHours, notBeforeMs, s, ids);
   const end   = new Date(start.getTime() + durationHours * 3_600_000);
 
@@ -505,12 +459,8 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 
 // ── Block deletion ─────────────────────────────────────────────────────────────
 /**
- * Find and delete the Commitments-owned work block for a given day.
- * Also clears any push registry entries for tasks on that day.
- * If multiple matching blocks exist (edge case), deletes all of them.
- *
- * @param {string} isoDate — 'YYYY-MM-DD'
- * @returns {Promise<number>} — count of events deleted
+ * Delete all Commitments-owned blocks on a given day and clear registry entries.
+ * Returns the count of deleted events.
  */
 export async function deleteWorkBlock(isoDate) {
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
@@ -541,17 +491,11 @@ export async function deleteWorkBlock(isoDate) {
     )
   );
 
-  // Clear registry entries for this day
   const reg = getPushRegistry();
   for (const key of Object.keys(reg)) {
     if (key.endsWith(`|${isoDate}`)) delete reg[key];
   }
-  savePushRegistry(reg);
+  _savePushRegistry(reg);
 
   return matches.length;
-}
-
-// keep savePushRegistry accessible within module only — exported via helpers above
-function savePushRegistry(reg) {
-  localStorage.setItem(LS_PUSH_REGISTRY, JSON.stringify(reg));
 }
