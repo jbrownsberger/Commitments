@@ -718,3 +718,92 @@ body.is-touch-dragging .sidebar-card {
   color: var(--color-text-tertiary);
   font-size: 13px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DAY-GCAL PUSH BUTTON  (Planner desktop + agenda)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+  Shared base: a compact icon-only button that sits inline with
+  other header content without adding height.
+*/
+.day-gcal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* size: just big enough to hit 28px touch target */
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-sm, 4px);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  /* keep 28x28 touch target without expanding layout */
+  touch-action: manipulation;
+  position: relative;
+}
+.day-gcal-btn::before {
+  /* expand tap target without growing layout */
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+/* desktop header: sit below the date text, centred */
+.planner-day-header .day-gcal-btn {
+  margin-top: 3px;
+  display: flex; /* override inline-flex to break out of text flow */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* agenda header: sits on the right, vertically centred */
+.agenda-day-header .day-gcal-btn {
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* Hover / focus */
+.day-gcal-btn:hover:not(:disabled) {
+  background: var(--color-bg-info);
+  border-color: var(--color-border-info);
+  color: var(--color-text-info);
+}
+.day-gcal-btn:focus-visible {
+  outline: 2px solid var(--color-text-info);
+  outline-offset: 2px;
+}
+
+/* State modifiers */
+.day-gcal-btn.done {
+  background: var(--color-bg-success);
+  border-color: transparent;
+  color: var(--color-text-success);
+  cursor: default;
+}
+/* allow re-push even after done — cursor reverts to pointer on hover */
+.day-gcal-btn.done:hover:not(:disabled) {
+  background: var(--color-bg-success);
+  color: var(--color-text-success);
+  cursor: pointer;
+}
+.day-gcal-btn.error {
+  background: var(--color-bg-danger);
+  border-color: transparent;
+  color: var(--color-text-danger);
+}
+.day-gcal-btn.error:hover:not(:disabled) {
+  background: var(--color-bg-danger);
+  color: var(--color-text-danger);
+  border-color: var(--color-border-danger);
+}
+.day-gcal-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

@@ -1,4 +1,4 @@
-/* ── GCalSync styles ────────────────────────────────────────────────────────── */
+/* ── GCalSync styles ─────────────────────────────────────────────────────────────────────────────── */
 
 .gcal-pane {
   max-width: 760px;
@@ -299,6 +299,45 @@
 .gcal-push-btn:disabled { opacity: 0.5; cursor: default; }
 .gcal-push-btn.done  { background: var(--color-bg-success); color: var(--color-text-success); border-color: transparent; }
 .gcal-push-btn.error { background: var(--color-bg-danger);  color: var(--color-text-danger);  border-color: transparent; }
+
+/* ── Work-block delete button ─────────────────────────────────────────────────────────────────────── */
+/*
+  Sits inline in .gcal-day-row alongside .gcal-push-btn.
+  Styled as a ghost danger button so it’s clearly destructive
+  but subdued at rest — only becomes vivid on hover.
+*/
+.gcal-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  min-height: 28px;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.gcal-delete-btn:hover:not(:disabled) {
+  background: var(--color-bg-danger);
+  border-color: var(--color-border-danger, transparent);
+  color: var(--color-text-danger);
+}
+.gcal-delete-btn:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+/* While deleting, show the … spinner in a neutral muted state */
+.gcal-delete-btn.deleting {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  border-color: var(--color-border-tertiary);
+  cursor: wait;
+}
 
 /* ── Non-work day toggles ── */
 .gcal-dow-row {
