@@ -25,6 +25,29 @@
   --border-radius-lg: 10px;
 }
 
+/* ── Dark mode overrides ──────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --color-text-primary:       #e8e8e8;
+  --color-text-secondary:     #a0a0a0;
+  --color-text-tertiary:      #666;
+  --color-text-danger:        #f28b82;
+  --color-text-success:       #81c995;
+  --color-text-warning:       #fdd663;
+  --color-text-info:          #8ab4f8;
+  --color-background-primary:   #1e1e1e;
+  --color-background-secondary: #2a2a2a;
+  --color-background-danger:    #3b1f1f;
+  --color-background-success:   #1b3a26;
+  --color-background-warning:   #3b2e0a;
+  --color-background-info:      #1a2a42;
+  --color-border-primary:   #444;
+  --color-border-secondary: #3a3a3a;
+  --color-border-tertiary:  #2e2e2e;
+  --color-border-danger:    #7a3535;
+  --color-border-success:   #2e6644;
+  --color-border-info:      #2e4a7a;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body { height: 100%; }
@@ -34,6 +57,10 @@ body {
   color: var(--color-text-primary);
   background: #fafafa;
   min-height: 100vh;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+[data-theme="dark"] body {
+  background: #161616;
 }
 
 #root {
@@ -57,6 +84,21 @@ body {
   color: var(--color-text-tertiary);
   margin-right: auto;
 }
+
+/* ── Dark mode toggle button ─────────────────────────────────────────────── */
+.btn-theme-toggle {
+  font-size: 14px;
+  padding: 3px 8px;
+  line-height: 1;
+  background: transparent;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  transition: background 0.15s ease;
+}
+.btn-theme-toggle:hover { background: var(--color-background-secondary); }
 
 /* ── Import / Export bar ─────────────────────────────────────────────── */
 .import-export-bar {
@@ -277,6 +319,7 @@ body {
   -webkit-appearance: none;
   appearance: none;
 }
+[data-theme="dark"] .progress-track { background: #3a3a3a; }
 .progress-fill {
   height: 100%;
   border-radius: 0;
@@ -299,6 +342,7 @@ body {
 .badge-low      { background: var(--color-background-success); color: var(--color-text-success); }
 .badge-med      { background: var(--color-background-warning); color: var(--color-text-warning); }
 .badge-high     { background: #FAEEDA; color: #854F0B; }
+[data-theme="dark"] .badge-high { background: #3b2a10; color: #fdd663; }
 .badge-critical { background: var(--color-background-danger);  color: var(--color-text-danger); }
 
 /* ── Color picker ──────────────────────────────────────────────────────────── */
