@@ -16,6 +16,12 @@
  *     fetchFreeBusy(calendarIds, timeMin, timeMax)
  *     fetchCalendarList()
  *
+ *   Commitments calendar
+ *     ensureCommitmentsCalendar()
+ *     loadCommitmentsCalId()
+ *     saveCommitmentsCalId(id)
+ *     clearCommitmentsCalId()
+ *
  *   Block management
  *     fetchCommitmentsBlockIntervals(timeMin, timeMax)
  *     subtractCommitmentsBlocks(busyIntervals, blockIntervals)
@@ -44,16 +50,19 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES = [
-  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
+
+// Kept for reference; block CRUD now uses loadCommitmentsCalId() instead.
 export const CALENDAR_ID = 'primary';
 
-const LS_TOKEN_KEY = 'gcal_access_token';
-const LS_EXPIRY_KEY = 'gcal_token_expiry';
-export const LS_SETTINGS_KEY = 'gcal_calc_settings';
-export const LS_CALS_KEY = 'gcal_selected_cals';
-export const LS_PUSH_REGISTRY = 'gcal_push_registry';
+const LS_TOKEN_KEY    = 'gcal_access_token';
+const LS_EXPIRY_KEY   = 'gcal_token_expiry';
+export const LS_SETTINGS_KEY          = 'gcal_calc_settings';
+export const LS_CALS_KEY              = 'gcal_selected_cals';
+export const LS_PUSH_REGISTRY         = 'gcal_push_registry';
+export const LS_COMMITMENTS_CAL_KEY   = 'gcal_commitments_cal_id';
 
 // Refresh 5 minutes before the token expires
 const REFRESH_BEFORE_MS = 5 * 60_000;
@@ -90,6 +99,44 @@ export function loadSelectedCals() {
 
 export function saveSelectedCals(set) {
   localStorage.setItem(LS_CALS_KEY, JSON.stringify([...set]));
+}
+
+// ── Commitments calendar helpers ──────────────────────────────────────────────
+export function loadCommitmentsCalId() {
+  return localStorage.getItem(LS_COMMITMENTS_CAL_KEY) || null;
+}
+
+export function saveCommitmentsCalId(id) {
+  localStorage.setItem(LS_COMMITMENTS_CAL_KEY, id);
+}
+
+export function clearCommitmentsCalId() {
+  localStorage.removeItem(LS_COMMITMENTS_CAL_KEY);
+}
+
+/**
+ * Ensures the "Commitments Work Blocks" calendar exists and returns its ID.
+ * Creates it if absent; idempotent across reconnects.
+ */
+export async function ensureCommitmentsCalendar() {
+  const existing = loadCommitmentsCalId();
+  if (existing) return existing;
+
+  // Check whether it already exists in the user's calendar list
+  const list = await fetchCalendarList();
+  const found = (list.items || []).find(c => c.summary === 'Commitments Work Blocks');
+  if (found) {
+    saveCommitmentsCalId(found.id);
+    return found.id;
+  }
+
+  // Create it
+  const created = await gcalFetch('/calendars', {
+    method: 'POST',
+    body: JSON.stringify({ summary: 'Commitments Work Blocks' }),
+  });
+  saveCommitmentsCalId(created.id);
+  return created.id;
 }
 
 // ── Push registry ─────────────────────────────────────────────────────────────
@@ -318,7 +365,9 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
 }
 
 // ── Commitments block intervals ────────────────────────────────────────────────
+// Still exported for any callers that need direct interval data.
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
+  const calId = loadCommitmentsCalId() || 'primary';
   const blocksByDay = {};
   let pageToken = null;
   do {
@@ -331,7 +380,7 @@ export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
     });
     params.append('privateExtendedProperty', 'commitments_task_id=true');
     const resp = await gcalFetch(
-      `/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${params}`
+      `/calendars/${encodeURIComponent(calId)}/events?${params}`
     );
     for (const ev of (resp.items || [])) {
       if (!ev.start?.dateTime) continue;
@@ -351,7 +400,7 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
   return busyIntervals.filter(b => {
     const bs = new Date(b.start).getTime();
     const be = new Date(b.end).getTime();
-    return !blockIntervals.some(bl => bl.startMs <= bs && bl.endMs >= be);
+    return !blockIntervals.some(bl => bl.startMs < be && bl.endMs > bs);
   });
 }
 
@@ -365,16 +414,18 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
 
-  const [fbResp, ownBlocksByDay] = await Promise.all([
-    fetchFreeBusy(calIds, timeMin, timeMax).catch(() => ({ calendars: {} })),
-    fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})),
-  ]);
+  // Exclude the Commitments calendar from free/busy — its blocks are our own
+  // scheduled work and must not count against available time.
+  const commitmentsCalId = loadCommitmentsCalId();
+  const fbCalIds = commitmentsCalId
+    ? calIds.filter(id => id !== commitmentsCalId)
+    : calIds;
+
+  const fbResp = await fetchFreeBusy(fbCalIds, timeMin, timeMax).catch(() => ({ calendars: {} }));
 
   let busy = [];
-  for (const id of calIds)
+  for (const id of fbCalIds)
     busy.push(...(fbResp.calendars?.[id]?.busy || []));
-
-  busy = subtractCommitmentsBlocks(busy, ownBlocksByDay[isoDate] || []);
 
   const bufMs    = bufferMins * 60_000;
   const neededMs = durationHours * 3_600_000;
@@ -413,14 +464,15 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
 
 // ── Block creation ─────────────────────────────────────────────────────────────
 export async function createWorkBlock(task, isoDate, durationHours, settings, calIds) {
-  const s   = settings || loadGcalSettings();
-  const ids = calIds   || [...loadSelectedCals()];
-  const tz  = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const s     = settings || loadGcalSettings();
+  const ids   = calIds   || [...loadSelectedCals()];
+  const tz    = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const calId = loadCommitmentsCalId() || 'primary';
 
   const start = await findBestSlot(isoDate, durationHours, s, ids);
   const end   = new Date(start.getTime() + durationHours * 3_600_000);
 
-  return gcalFetch(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events`, {
+  return gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
     method: 'POST',
     body: JSON.stringify({
       summary:     `Work on: ${task.name}`,
@@ -435,9 +487,10 @@ export async function createWorkBlock(task, isoDate, durationHours, settings, ca
 
 // ── Upsert block ───────────────────────────────────────────────────────────────
 export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
-  const s   = settings || loadGcalSettings();
-  const ids = calIds   || [...loadSelectedCals()];
-  const tz  = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const s     = settings || loadGcalSettings();
+  const ids   = calIds   || [...loadSelectedCals()];
+  const tz    = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const calId = loadCommitmentsCalId() || 'primary';
 
   const existing = getPushEntry(task.id, isoDate);
 
@@ -451,12 +504,12 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 
     try {
       const existingEvent = await gcalFetch(
-        `/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existing.eventId}`
+        `/calendars/${encodeURIComponent(calId)}/events/${existing.eventId}`
       );
       const startMs = new Date(existingEvent.start.dateTime).getTime();
       const newEnd  = new Date(startMs + durationHours * 3_600_000);
       const patched = await gcalFetch(
-        `/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existing.eventId}`,
+        `/calendars/${encodeURIComponent(calId)}/events/${existing.eventId}`,
         {
           method: 'PATCH',
           body: JSON.stringify({
@@ -476,7 +529,7 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
   const start = await findBestSlotAfter(isoDate, durationHours, notBeforeMs, s, ids);
   const end   = new Date(start.getTime() + durationHours * 3_600_000);
 
-  const event = await gcalFetch(`/calendars/${encodeURIComponent(CALENDAR_ID)}/events`, {
+  const event = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
     method: 'POST',
     body: JSON.stringify({
       summary:     `Work on: ${task.name}`,
@@ -494,6 +547,7 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 
 // ── Block deletion ─────────────────────────────────────────────────────────────
 export async function deleteWorkBlock(isoDate) {
+  const calId   = loadCommitmentsCalId() || 'primary';
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
 
@@ -506,7 +560,7 @@ export async function deleteWorkBlock(isoDate) {
   params.append('privateExtendedProperty', 'commitments_task_id=true');
 
   const resp = await gcalFetch(
-    `/calendars/${encodeURIComponent(CALENDAR_ID)}/events?${params}`
+    `/calendars/${encodeURIComponent(calId)}/events?${params}`
   );
 
   const matches = (resp.items || []).filter(
@@ -516,7 +570,7 @@ export async function deleteWorkBlock(isoDate) {
   await Promise.all(
     matches.map(ev =>
       gcalFetch(
-        `/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${ev.id}`,
+        `/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,
         { method: 'DELETE' }
       )
     )

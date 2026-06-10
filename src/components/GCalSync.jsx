@@ -21,6 +21,9 @@ import {
   saveSelectedCals,
   DEFAULT_SETTINGS,
   LS_CALS_KEY,
+  ensureCommitmentsCalendar,
+  loadCommitmentsCalId,
+  clearCommitmentsCalId,
 } from '../lib/gcalScheduler.js';
 import '../styles/gcal.css';
 
@@ -230,20 +233,9 @@ export default function GCalSync({ appData }) {
     const timeMax  = new Date(endISO   + 'T23:59:59').toISOString();
     fetchCommitmentsBlockIntervals(timeMin, timeMax)
       .then(blocksByDay => {
-        const preloaded = {};
-        for (const [iso, intervals] of Object.entries(blocksByDay)) {
-          if (intervals.length > 0) {
-            // Mark every task-day combo on that date as already done
-            // We key by iso only here; handleCreateBlock keys by task.id-iso
-            // Use a sentinel key so we know blocks exist without a task match
-            preloaded[`__preloaded__${iso}`] = intervals;
-          }
-        }
-        // Rebuild blockStatus: mark task-day pairs where a block already exists
         setBlockStatus(prev => {
           const next = { ...prev };
           for (const iso of Object.keys(blocksByDay)) {
-            // Find any scheduled task that matches this day and isn't already tracked
             tasks.forEach(task => {
               const key = `${task.id}-${iso}`;
               if (!next[key]) next[key] = 'done';
@@ -269,6 +261,8 @@ export default function GCalSync({ appData }) {
       const all = new Set(cals.map(c => c.id));
       setSelCals(all);
       saveSelectedCals(all);
+      // Ensure the dedicated Commitments Work Blocks calendar exists
+      await ensureCommitmentsCalendar();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -279,6 +273,7 @@ export default function GCalSync({ appData }) {
   const handleDisconnect = () => {
     revokeToken();
     localStorage.removeItem(LS_CALS_KEY);
+    clearCommitmentsCalId();
     setConnected(false);
     setCalendars([]);
     setSelCals(new Set());
@@ -294,13 +289,18 @@ export default function GCalSync({ appData }) {
       const endISO  = addDays(todayISO, LOOK_AHEAD_DAYS);
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
-      const calIds  = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
+
+      // Exclude the Commitments calendar so pushed work blocks don't eat into
+      // the availability numbers.
+      const commitmentsCalId = loadCommitmentsCalId();
+      const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
+      const calIds    = commitmentsCalId
+        ? allCalIds.filter(id => id !== commitmentsCalId)
+        : allCalIds;
+
       if (!calIds.length) throw new Error('No calendars selected.');
 
-      const [resp, commitmentsBlocks] = await Promise.all([
-        fetchFreeBusy(calIds, timeMin, timeMax),
-        fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})),
-      ]);
+      const resp = await fetchFreeBusy(calIds, timeMin, timeMax);
 
       const busyByDay = {};
       for (const calId of calIds)
@@ -309,11 +309,9 @@ export default function GCalSync({ appData }) {
 
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
-        const iso          = addDays(todayISO, i);
-        const rawBusy      = busyByDay[iso] || [];
-        const ownBlocks    = commitmentsBlocks[iso] || [];
-        const adjustedBusy = subtractCommitmentsBlocks(rawBusy, ownBlocks);
-        result[iso] = effectiveFreeMinutes(iso, adjustedBusy, settings);
+        const iso     = addDays(todayISO, i);
+        const rawBusy = busyByDay[iso] || [];
+        result[iso]   = effectiveFreeMinutes(iso, rawBusy, settings);
       }
       setFreeBusy(result);
       onFreeBusyUpdate?.(result);
@@ -343,7 +341,6 @@ export default function GCalSync({ appData }) {
     setBlockStatus(s => ({ ...s, [key]: 'deleting' }));
     try {
       await deleteWorkBlock(iso);
-      // Reset to null so the “+ Add to GCal” button reappears
       setBlockStatus(s => ({ ...s, [key]: null }));
     } catch (e) {
       setBlockStatus(s => ({ ...s, [key]: 'error' }));
@@ -504,7 +501,9 @@ export default function GCalSync({ appData }) {
             <div className="gcal-setting-group" style={{ marginTop: 16 }}>
               <div className="gcal-section-label">Calendars to include</div>
               <div className="gcal-cal-list">
-                {calendars.map(cal => (
+                {calendars
+                  .filter(cal => cal.id !== loadCommitmentsCalId())
+                  .map(cal => (
                   <label key={cal.id} className="gcal-cal-item">
                     <input type="checkbox"
                       checked={selCals.has(cal.id)}
