@@ -28,7 +28,7 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Login page ────────────────────────────────────────────────────────────
+// ── Login page ────────────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -126,11 +126,30 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ──────────────────────────────────────────────────────────────
+// ── Authed shell ────────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
-  // ── GCal free/busy ──────────────────────────────────────────────
+  // ── Dark mode: sync with preferences once loaded, and apply to <html> ───────
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (appData.preferences && appData.preferences.dark_mode !== undefined) {
+      setDarkMode(!!appData.preferences.dark_mode);
+    }
+  }, [appData.preferences]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
+  const toggleDarkMode = useCallback(async () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    await appData.savePreferences({ ...appData.preferences, dark_mode: next });
+  }, [darkMode, appData]);
+
+  // ── GCal free/busy ─────────────────────────────────────────────────────
   const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
 
   const onFreeBusyUpdate = (data) => {
@@ -143,7 +162,7 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
-  // ── GCal connection state ──────────────────────────────────────────
+  // ── GCal connection state ──────────────────────────────────────────────────
   const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
 
   // Start silent refresh on mount if a valid token is already cached,
@@ -169,7 +188,7 @@ function AuthedApp({ userId, userEmail }) {
     }
   }, []);
 
-  // ── GCal settings + selected calendars ────────────────────────────
+  // ── GCal settings + selected calendars ───────────────────────────────────────
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
@@ -192,7 +211,13 @@ function AuthedApp({ userId, userEmail }) {
     gcalSelCals,
   };
 
-  return <Shell userId={userId} userEmail={userEmail} appData={enrichedAppData} />;
+  return <Shell
+    userId={userId}
+    userEmail={userEmail}
+    appData={enrichedAppData}
+    darkMode={darkMode}
+    onToggleDarkMode={toggleDarkMode}
+  />;
 }
 
 function Splash({ text }) {
