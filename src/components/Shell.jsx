@@ -74,7 +74,7 @@ export default function Shell({ appData, userId, userEmail }) {
         <div className="tab-content">
           {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
           {tab === 'categories' && <Categories appData={appData} userId={userId} onEditTask={openEdit} />}
-          {tab === 'planner'    && <Planner    appData={appData} userId={userId} />}
+          {tab === 'planner'    && <Planner    appData={appData} userId={userId} onEditTask={openEdit} />}
           {tab === 'gcal'       && <GCalSync   appData={appData} userId={userId} />}
         </div>
       </div>
