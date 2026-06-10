@@ -77,7 +77,7 @@ const PRIORITY_STYLES = {
 };
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────
 
 export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit }) {
   const [local, setLocal] = useState({
@@ -317,7 +317,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       {/* ── Footer ── */}
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Close</button>
-        <button className="btn" onClick={() => { onClose(); onEdit(local); }}>Edit</button>
+        <button className="btn" onClick={() => { onEdit(local); onClose(); }}>Edit</button>
         <button
           className="btn btn-danger"
           onClick={() => {
