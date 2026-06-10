@@ -275,6 +275,11 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
 
     if (unallocated) {
       task.scheduled_days = assignedDays;
+      // Track load even in unallocated mode so subsequent tasks don't overlap
+      const hrsPerDay = rem / assignedDays.length;
+      for (const iso of assignedDays) {
+        dayLoad[iso] = (dayLoad[iso] || 0) + hrsPerDay;
+      }
     } else {
       const hrsPerDay = rem / assignedDays.length;
       for (const iso of assignedDays) {
