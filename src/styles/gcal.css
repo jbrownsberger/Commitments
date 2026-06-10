@@ -301,11 +301,6 @@
 .gcal-push-btn.error { background: var(--color-bg-danger);  color: var(--color-text-danger);  border-color: transparent; }
 
 /* ── Work-block delete button ─────────────────────────────────────────────────────────────────────── */
-/*
-  Sits inline in .gcal-day-row alongside .gcal-push-btn.
-  Styled as a ghost danger button so it’s clearly destructive
-  but subdued at rest — only becomes vivid on hover.
-*/
 .gcal-delete-btn {
   display: inline-flex;
   align-items: center;
@@ -331,7 +326,6 @@
   opacity: 0.45;
   cursor: wait;
 }
-/* While deleting, show the … spinner in a neutral muted state */
 .gcal-delete-btn.deleting {
   background: var(--color-bg-secondary);
   color: var(--color-text-tertiary);
@@ -372,4 +366,58 @@
   color: var(--color-text-tertiary);
   border-radius: var(--radius-sm, 3px);
   padding: 1px 5px;
+}
+
+/* ── Work Windows Editor ─────────────────────────────────────────────────────────────────────── */
+.gcal-work-windows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gcal-work-window-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gcal-ww-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.gcal-ww-label select {
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.gcal-ww-warn {
+  font-size: 11px;
+  color: var(--color-text-warning);
+}
+
+.gcal-ww-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm, 3px);
+  transition: color 0.12s;
+}
+.gcal-ww-remove:hover { color: var(--color-text-danger); }
+
+.gcal-ww-add {
+  align-self: flex-start;
+  margin-top: 2px;
 }
