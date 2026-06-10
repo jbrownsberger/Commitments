@@ -27,6 +27,8 @@
  *     subtractCommitmentsBlocks(busyIntervals, blockIntervals)
  *     findBestSlot(isoDate, durationHours, settings, calIds)
  *     findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds)
+ *     findFreeSlots(isoDate, notBeforeMs, settings, calIds)
+ *     createChunkedWorkBlocks(task, isoDate, durationHours, notBeforeMs, settings, calIds)
  *     createWorkBlock(task, isoDate, durationHours, settings, calIds)
  *     upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds)
  *     deleteWorkBlock(isoDate)
@@ -63,6 +65,10 @@ export const LS_SETTINGS_KEY          = 'gcal_calc_settings';
 export const LS_CALS_KEY              = 'gcal_selected_cals';
 export const LS_PUSH_REGISTRY         = 'gcal_push_registry';
 export const LS_COMMITMENTS_CAL_KEY   = 'gcal_commitments_cal_id';
+
+// Minimum chunk size in hours — gaps smaller than this are skipped to avoid
+// cluttering the calendar with tiny slivers.
+const MIN_CHUNK_HOURS = 0.5;
 
 // Refresh 5 minutes before the token expires
 const REFRESH_BEFORE_MS = 5 * 60_000;
@@ -140,7 +146,8 @@ export async function ensureCommitmentsCalendar() {
 }
 
 // ── Push registry ─────────────────────────────────────────────────────────────
-// Shape: { ["taskId|isoDate"]: { eventId: string, hours: number } }
+// Shape: { ["taskId|isoDate"]: { eventId: string, eventIds: string[], hours: number } }
+// eventId (singular) = first chunk's ID, kept for backward compat.
 
 function _savePushRegistry(reg) {
   localStorage.setItem(LS_PUSH_REGISTRY, JSON.stringify(reg));
@@ -158,9 +165,13 @@ export function getPushEntry(taskId, isoDate) {
   return getPushRegistry()[`${taskId}|${isoDate}`] || null;
 }
 
-export function setPushEntry(taskId, isoDate, eventId, hours) {
+export function setPushEntry(taskId, isoDate, eventId, hours, eventIds) {
   const reg = getPushRegistry();
-  reg[`${taskId}|${isoDate}`] = { eventId, hours };
+  reg[`${taskId}|${isoDate}`] = {
+    eventId,
+    eventIds: eventIds || [eventId],
+    hours,
+  };
   _savePushRegistry(reg);
 }
 
@@ -268,7 +279,7 @@ export function revokeToken() {
  *   session expired — user will be prompted on their next GCal action).
  */
 export function startSilentTokenRefresh(onRefresh) {
-  stopSilentTokenRefresh(); // clear any existing timer first
+  stopSilentTokenRefresh();
 
   if (!hasValidCachedToken()) return;
 
@@ -278,7 +289,6 @@ export function startSilentTokenRefresh(onRefresh) {
   _refreshTimer = setTimeout(async () => {
     try {
       await loadGsiScript();
-      // Re-init token client if needed (e.g. after page reload)
       if (!_tokenClient) {
         await new Promise((resolve, reject) => {
           _tokenClient = window.google.accounts.oauth2.initTokenClient({
@@ -290,12 +300,10 @@ export function startSilentTokenRefresh(onRefresh) {
               resolve();
             },
           });
-          // prompt: '' means silent — no popup if user already consented
           _tokenClient.requestAccessToken({ prompt: '' });
         });
       } else {
         await new Promise((resolve, reject) => {
-          // Temporarily swap callback to capture this refresh's response
           const prev = _tokenClient.callback;
           _tokenClient.callback = (resp) => {
             _tokenClient.callback = prev;
@@ -307,19 +315,13 @@ export function startSilentTokenRefresh(onRefresh) {
         });
       }
       onRefresh?.(true);
-      // Schedule the next refresh for the new token
       startSilentTokenRefresh(onRefresh);
     } catch {
-      // Silent refresh failed (Google session expired, user offline, etc.)
-      // Don't clear the token — let the next explicit GCal action prompt them.
       onRefresh?.(false);
     }
   }, msUntilRefresh);
 }
 
-/**
- * Cancel the pending silent refresh timer. Called by clearToken/revokeToken.
- */
 export function stopSilentTokenRefresh() {
   if (_refreshTimer !== null) {
     clearTimeout(_refreshTimer);
@@ -365,7 +367,6 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
 }
 
 // ── Commitments block intervals ────────────────────────────────────────────────
-// Still exported for any callers that need direct interval data.
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   const calId = loadCommitmentsCalId() || 'primary';
   const blocksByDay = {};
@@ -404,18 +405,27 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
   });
 }
 
-// ── Slot finder ────────────────────────────────────────────────────────────────
-export async function findBestSlot(isoDate, durationHours, settings, calIds) {
-  return findBestSlotAfter(isoDate, durationHours, 0, settings, calIds);
-}
-
-export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds) {
+// ── Free slot enumeration ────────────────────────────────────────────────────────
+/**
+ * Returns all free gap intervals within the working window for isoDate,
+ * after applying buffer padding and merging overlapping busy intervals.
+ * Excludes the Commitments calendar so existing work blocks are invisible
+ * to the slot finder.
+ *
+ * Each returned gap: { startMs: number, endMs: number }
+ * Gaps smaller than MIN_CHUNK_HOURS are omitted.
+ *
+ * @param {string}   isoDate
+ * @param {number}   notBeforeMs  — clamp gap starts to this timestamp (0 = no clamp)
+ * @param {object}   settings
+ * @param {string[]} calIds
+ * @returns {Promise<Array<{startMs: number, endMs: number}>>}
+ */
+export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const { workStart, workEnd, bufferMins } = settings;
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
 
-  // Exclude the Commitments calendar from free/busy — its blocks are our own
-  // scheduled work and must not count against available time.
   const commitmentsCalId = loadCommitmentsCalId();
   const fbCalIds = commitmentsCalId
     ? calIds.filter(id => id !== commitmentsCalId)
@@ -428,10 +438,8 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
     busy.push(...(fbResp.calendars?.[id]?.busy || []));
 
   const bufMs    = bufferMins * 60_000;
-  const neededMs = durationHours * 3_600_000;
   const winStart = new Date(`${isoDate}T${String(workStart).padStart(2, '0')}:00:00`).getTime();
   const winEnd   = new Date(`${isoDate}T${String(workEnd).padStart(2, '0')}:00:00`).getTime();
-
   const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, winStart) : winStart;
 
   const blocked = busy
@@ -449,40 +457,114 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
     else merged.push({ ...iv });
   }
 
+  const minChunkMs = MIN_CHUNK_HOURS * 3_600_000;
+  const gaps = [];
   let cursor = earliest;
+
   for (const block of [...merged, { s: winEnd, e: winEnd }]) {
     if (block.s <= cursor) {
       cursor = Math.max(cursor, block.e);
       continue;
     }
-    if (block.s - cursor >= neededMs) return new Date(cursor);
+    const gapEnd = Math.min(block.s, winEnd);
+    if (gapEnd - cursor >= minChunkMs)
+      gaps.push({ startMs: cursor, endMs: gapEnd });
     cursor = block.e;
   }
 
+  return gaps;
+}
+
+// ── Slot finder (kept for backward compat) ──────────────────────────────────
+export async function findBestSlot(isoDate, durationHours, settings, calIds) {
+  return findBestSlotAfter(isoDate, durationHours, 0, settings, calIds);
+}
+
+export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, settings, calIds) {
+  const neededMs = durationHours * 3_600_000;
+  const gaps = await findFreeSlots(isoDate, notBeforeMs, settings, calIds);
+
+  for (const gap of gaps) {
+    if (gap.endMs - gap.startMs >= neededMs) return new Date(gap.startMs);
+  }
+
+  // No gap large enough — fall back to start of window
+  const { workStart } = settings;
+  const winStart = new Date(`${isoDate}T${String(workStart).padStart(2, '0')}:00:00`).getTime();
+  const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, winStart) : winStart;
   return new Date(earliest);
 }
 
-// ── Block creation ─────────────────────────────────────────────────────────────
-export async function createWorkBlock(task, isoDate, durationHours, settings, calIds) {
+// ── Chunked block creation ──────────────────────────────────────────────────────────
+/**
+ * Greedily fills all available free gaps on isoDate with chunks of work,
+ * up to durationHours total. Each chunk becomes one GCal event.
+ *
+ * Gaps smaller than MIN_CHUNK_HOURS are skipped.
+ * A chunk is capped at the gap size — it never overflows into busy time.
+ *
+ * @returns {{ events: object[], hoursPlaced: number }}
+ */
+export async function createChunkedWorkBlocks(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
   const s     = settings || loadGcalSettings();
   const ids   = calIds   || [...loadSelectedCals()];
   const tz    = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const calId = loadCommitmentsCalId() || 'primary';
 
-  const start = await findBestSlot(isoDate, durationHours, s, ids);
-  const end   = new Date(start.getTime() + durationHours * 3_600_000);
+  const gaps = await findFreeSlots(isoDate, notBeforeMs, s, ids);
 
-  return gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
-    method: 'POST',
-    body: JSON.stringify({
-      summary:     `Work on: ${task.name}`,
-      description: task.description || '',
-      start: { dateTime: start.toISOString(), timeZone: tz },
-      end:   { dateTime: end.toISOString(),   timeZone: tz },
-      colorId: '2',
-      extendedProperties: { private: { commitments_task_id: 'true' } },
-    }),
-  });
+  let remainingMs = durationHours * 3_600_000;
+  const events = [];
+
+  for (const gap of gaps) {
+    if (remainingMs <= 0) break;
+    const availableMs = gap.endMs - gap.startMs;
+    const chunkMs     = Math.min(availableMs, remainingMs);
+    const start       = new Date(gap.startMs);
+    const end         = new Date(gap.startMs + chunkMs);
+    const chunkHours  = chunkMs / 3_600_000;
+    const totalChunks = events.length; // will be index of this chunk (0-based)
+
+    // Label multi-chunk events so the user knows which piece this is
+    const suffix = durationHours > (gap.endMs - gap.startMs) / 3_600_000
+      ? ` (part ${totalChunks + 1})`
+      : '';
+
+    const ev = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
+      method: 'POST',
+      body: JSON.stringify({
+        summary:     `Work on: ${task.name}${suffix}`,
+        description: task.description || '',
+        start: { dateTime: start.toISOString(), timeZone: tz },
+        end:   { dateTime: end.toISOString(),   timeZone: tz },
+        colorId: '2',
+        extendedProperties: { private: { commitments_task_id: 'true' } },
+      }),
+    });
+
+    events.push(ev);
+    remainingMs -= chunkMs;
+  }
+
+  const hoursPlaced = (durationHours * 3_600_000 - remainingMs) / 3_600_000;
+  return { events, hoursPlaced };
+}
+
+// ── Block creation ─────────────────────────────────────────────────────────────
+export async function createWorkBlock(task, isoDate, durationHours, settings, calIds) {
+  const s   = settings || loadGcalSettings();
+  const ids = calIds   || [...loadSelectedCals()];
+
+  const { events, hoursPlaced } = await createChunkedWorkBlocks(
+    task, isoDate, durationHours, 0, s, ids
+  );
+
+  if (events.length === 0) return null;
+
+  const eventIds = events.map(e => e.id);
+  setPushEntry(task.id, isoDate, eventIds[0], hoursPlaced, eventIds);
+
+  return events[0];
 }
 
 // ── Upsert block ───────────────────────────────────────────────────────────────
@@ -498,51 +580,36 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
     const hoursChanged = Math.abs((existing.hours || 0) - durationHours) > 0.01;
 
     if (!hoursChanged) {
-      const estStart = Math.max(notBeforeMs, 0);
-      return { event: null, endMs: estStart + durationHours * 3_600_000, created: false };
+      // Nothing to do — return an estimated endMs based on the last chunk
+      const estEndMs = (notBeforeMs > 0 ? notBeforeMs : 0) + durationHours * 3_600_000;
+      return { events: [], hoursPlaced: existing.hours, created: false, endMs: estEndMs };
     }
 
-    try {
-      const existingEvent = await gcalFetch(
-        `/calendars/${encodeURIComponent(calId)}/events/${existing.eventId}`
-      );
-      const startMs = new Date(existingEvent.start.dateTime).getTime();
-      const newEnd  = new Date(startMs + durationHours * 3_600_000);
-      const patched = await gcalFetch(
-        `/calendars/${encodeURIComponent(calId)}/events/${existing.eventId}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            summary: `Work on: ${task.name}`,
-            end: { dateTime: newEnd.toISOString(), timeZone: tz },
-          }),
-        }
-      );
-      setPushEntry(task.id, isoDate, existing.eventId, durationHours);
-      return { event: patched, endMs: newEnd.getTime(), created: false };
-    } catch (err) {
-      if (!err.message?.includes('404')) throw err;
-      clearPushEntry(task.id, isoDate);
-    }
+    // Hours changed: delete all existing chunks then re-create
+    const idsToDelete = existing.eventIds || [existing.eventId].filter(Boolean);
+    await Promise.allSettled(
+      idsToDelete.map(id =>
+        gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${id}`, { method: 'DELETE' })
+      )
+    );
+    clearPushEntry(task.id, isoDate);
   }
 
-  const start = await findBestSlotAfter(isoDate, durationHours, notBeforeMs, s, ids);
-  const end   = new Date(start.getTime() + durationHours * 3_600_000);
+  const { events, hoursPlaced } = await createChunkedWorkBlocks(
+    task, isoDate, durationHours, notBeforeMs, s, ids
+  );
 
-  const event = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
-    method: 'POST',
-    body: JSON.stringify({
-      summary:     `Work on: ${task.name}`,
-      description: task.description || '',
-      start: { dateTime: start.toISOString(), timeZone: tz },
-      end:   { dateTime: end.toISOString(),   timeZone: tz },
-      colorId: '2',
-      extendedProperties: { private: { commitments_task_id: 'true' } },
-    }),
-  });
+  if (events.length === 0) {
+    return { events: [], hoursPlaced: 0, created: false, endMs: notBeforeMs };
+  }
 
-  setPushEntry(task.id, isoDate, event.id, durationHours);
-  return { event, endMs: end.getTime(), created: true };
+  const eventIds = events.map(e => e.id);
+  setPushEntry(task.id, isoDate, eventIds[0], hoursPlaced, eventIds);
+
+  // endMs = end of the last chunk created
+  const lastEv   = events[events.length - 1];
+  const endMs    = new Date(lastEv.end.dateTime).getTime();
+  return { events, hoursPlaced, created: true, endMs };
 }
 
 // ── Block deletion ─────────────────────────────────────────────────────────────
