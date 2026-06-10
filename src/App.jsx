@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/supabase.js';
 import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
 import { loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
+import {
+  hasValidCachedToken,
+  loadGcalSettings,
+  loadSelectedCals,
+} from './lib/gcalScheduler.js';
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -21,7 +26,7 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Login page ──────────────────────────────────────────────────────────────────
+// ── Login page ────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -119,12 +124,11 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ────────────────────────────────────────────────────────────────
+// ── Authed shell ──────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
-  // ── GCal free/busy ───────────────────────────────────────────────────
-  // Initialise from localStorage so availability survives page reloads.
+  // ── GCal free/busy ──────────────────────────────────────────────
   const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
 
   const onFreeBusyUpdate = (data) => {
@@ -137,6 +141,25 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
+  // ── GCal connection state ──────────────────────────────────────────
+  // Initialise from the cached token so Planner shows GCal buttons
+  // immediately on page load without waiting for GCalSync to mount.
+  const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
+
+  const onConnectionChange = useCallback((isConnected) => {
+    setGcalConnected(isConnected);
+  }, []);
+
+  // ── GCal settings + selected calendars (read from localStorage) ────────
+  // These are read once at mount and kept in sync via GCalSync's own
+  // saveGcalSettings / saveSelectedCals calls. Planner reads them as
+  // stable references for createWorkBlock; they don’t need to be reactive
+  // because Planner re-reads them at the moment it fires a block creation.
+  // If you need live reactivity here in a future iteration, lift the
+  // settings state up into AuthedApp and thread a setter down.
+  const gcalSettings = loadGcalSettings();
+  const gcalSelCals  = [...loadSelectedCals()];
+
   if (appData.loading) return <Splash text="Loading your data…" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
@@ -145,12 +168,19 @@ function AuthedApp({ userId, userEmail }) {
     </div>
   );
 
-  // Merge GCal availability into appData so every tab can consume it.
+  // Merge GCal state into appData so every tab can consume it.
   const enrichedAppData = {
     ...appData,
-    gcalFreeBusy,        // { [isoDate]: freeMinutes } | null
-    onFreeBusyUpdate,    // (data) => void  — called by GCalSync after fetch
-    onFreeBusyClear,     // () => void       — called by GCalSync on disconnect
+    // Availability
+    gcalFreeBusy,           // { [isoDate]: freeMinutes } | null
+    onFreeBusyUpdate,       // (data) => void  — called by GCalSync after fetch
+    onFreeBusyClear,        // () => void       — called by GCalSync on disconnect
+    // Connection
+    gcalConnected,          // boolean — true when a valid token exists
+    onConnectionChange,     // (bool) => void   — called by GCalSync on connect/disconnect
+    // Scheduling config (for Planner → createWorkBlock calls)
+    gcalSettings,           // { workStart, workEnd, bufferMins, … }
+    gcalSelCals,            // string[]  — selected calendar IDs
   };
 
   return <Shell userId={userId} userEmail={userEmail} appData={enrichedAppData} />;
