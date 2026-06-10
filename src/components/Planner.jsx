@@ -1,6 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import TaskPanel from './TaskPanel.jsx';
-import { createWorkBlock } from '../lib/gcalScheduler.js';
+import {
+  upsertWorkBlock,
+  clearPushEntry,
+  seedPushStatusFromRegistry,
+} from '../lib/gcalScheduler.js';
 import '../styles/planner.css';
 
 const SHOW_WEEKS = 4;
@@ -490,13 +494,20 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [isMobile,       setIsMobile]       = useState(() => window.innerWidth <= 700);
   const [afSettings,     setAfSettings]     = useState(loadAutoFillSettings);
   const [showAfModal,    setShowAfModal]    = useState(false);
-  const [gcalPushStatus, setGcalPushStatus] = useState({});
+  // Seed push status from registry so ✓ survives tab navigation
+  const [gcalPushStatus, setGcalPushStatus] = useState(() => seedPushStatusFromRegistry(buildISOs(0)));
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 700);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+
+  // Re-seed push status whenever the visible window changes
+  useEffect(() => {
+    setGcalPushStatus(prev => ({ ...seedPushStatusFromRegistry(allISOs), ...prev }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekOffset]);
 
   const dragging       = useRef(null);
   const touchDragging  = useRef(null);
@@ -581,10 +592,15 @@ export default function Planner({ appData, userId, onEditTask }) {
 
     setGcalPushStatus(s => ({ ...s, [iso]: 'pushing' }));
     try {
+      // cursor chains each task to start after the previous one ends
+      let cursorMs = 0;
       for (const task of dayTasks) {
         const hrs = hoursOnDay(task, iso, todayISO);
         if (hrs < 0.1) continue;
-        await createWorkBlock(task, iso, hrs, gcalSettings, gcalSelCals);
+        const { endMs } = await upsertWorkBlock(
+          task, iso, hrs, cursorMs, gcalSettings, gcalSelCals
+        );
+        cursorMs = endMs;
       }
       setGcalPushStatus(s => ({ ...s, [iso]: 'done' }));
     } catch (e) {
@@ -717,6 +733,13 @@ export default function Planner({ appData, userId, onEditTask }) {
     await setTaskSchedule(task.id, days);
     if (JSON.stringify(task.scheduled_day_hours) !== JSON.stringify(dayHrs))
       await saveTask({ ...task, scheduled_day_hours: dayHrs });
+    // Clear push registry so the day button resets and won't skip on next push
+    clearPushEntry(task.id, iso);
+    setGcalPushStatus(prev => {
+      // Only clear the day badge if no other tasks on that day are still registered
+      const { [iso]: _removed, ...rest } = prev;
+      return rest;
+    });
   }, [setTaskSchedule, saveTask]);
 
   const setDayHours = useCallback(async (task, iso, hrs) => {
