@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import TaskPanel from './TaskPanel.jsx';
+import { createWorkBlock } from '../lib/gcalScheduler.js';
 import '../styles/planner.css';
 
 const SHOW_WEEKS = 4;
@@ -47,7 +48,7 @@ function hoursOnDay(task, iso, todayISO) {
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
 }
 
-// ── SVG icons ────────────────────────────────────────────────────────────────
+// ── SVG icons ───────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 14, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
@@ -60,6 +61,18 @@ function IconCalendar({ size = 14, style }) {
       <rect x="9" y="7" width="1.5" height="1.5" rx="0.3" fill="currentColor"/>
       <rect x="3.5" y="9.5" width="1.5" height="1.5" rx="0.3" fill="currentColor"/>
       <rect x="6.25" y="9.5" width="1.5" height="1.5" rx="0.3" fill="currentColor"/>
+    </svg>
+  );
+}
+function IconCalendarPush({ size = 11, style }) {
+  // Calendar icon with a small ↑ arrow overlay to signal “push to GCal”
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <rect x="1" y="1.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.1" fill="none"/>
+      <path d="M1 5.5h12" stroke="currentColor" strokeWidth="1.1"/>
+      <path d="M4.5 0.5v2M9.5 0.5v2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+      <path d="M7 12V7M5 9l2-2 2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -80,7 +93,7 @@ function IconChevronDown({ size = 12, style }) {
   );
 }
 
-// ── AutoFill settings ────────────────────────────────────────────────────────
+// ── AutoFill settings ─────────────────────────────────────────────────────────────
 const DEFAULT_AUTOFILL = {
   mode:         'procrastinate',
   chunkHrs:     1,
@@ -176,7 +189,7 @@ function AutoFillModal({ settings, onChange, onApply, onClose }) {
   );
 }
 
-/* ── Build a per-day availability map ─────────────────────────────────────── */
+/* ── Build a per-day availability map ───────────────────────────────────────────── */
 function buildPerDayAvail(weeklyHours, gcalFreeBusy, skipWeekends, horizonDays = 16 * 7) {
   const fallback = weeklyHours / 7;
   const map      = {};
@@ -196,7 +209,7 @@ function buildPerDayAvail(weeklyHours, gcalFreeBusy, skipWeekends, horizonDays =
   return map;
 }
 
-/* ── autoFill ─────────────────────────────────────────────────────────────── */
+/* ── autoFill ──────────────────────────────────────────────────────────────────── */
 function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
   const { mode, chunkHrs, maxHrsPerDay, unallocated } = afSettings;
   const todayISO = toISO(new Date());
@@ -287,7 +300,7 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
   return updated;
 }
 
-// ── Day-picker modal ─────────────────────────────────────────────────────────
+// ── Day-picker modal ──────────────────────────────────────────────────────────────
 function DayPickerModal({ task, allISOs, onPick, onClose }) {
   const weeks = [];
   for (let w = 0; w < SHOW_WEEKS; w++) weeks.push(allISOs.slice(w * 7, w * 7 + 7));
@@ -319,7 +332,7 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
   );
 }
 
-// ── Mobile Agenda View ───────────────────────────────────────────────────────
+// ── Mobile Agenda View ──────────────────────────────────────────────────────────────
 function AgendaView({
   allISOs, todayISO, weekOffset, setWeekOffset,
   scheduledOnDay, dueOnDay, dayLoad, dayAvail,
@@ -328,6 +341,7 @@ function AgendaView({
   sortByDue,
   onOpenPanel, onSchedule, onRemoveDay,
   handleAutoFill, handleClearAll,
+  gcalConnected, onPushDayToGCal, gcalPushStatus,
 }) {
   const [unschOpen, setUnschOpen] = useState(true);
   const allUnscheduled = sortByDue([...trueUnscheduled, ...scheduledEarlier, ...scheduledLater]);
@@ -399,18 +413,30 @@ function AgendaView({
       {activeDays.length === 0 ? (
         <div className="agenda-empty">Nothing scheduled this window.</div>
       ) : activeDays.map(iso => {
-        const isToday = iso === todayISO;
-        const isPast  = iso < todayISO;
-        const load    = dayLoad[iso] || 0;
-        const over    = load > dayAvail + 0.05;
+        const isToday  = iso === todayISO;
+        const isPast   = iso < todayISO;
+        const load     = dayLoad[iso] || 0;
+        const over     = load > dayAvail + 0.05;
         const dayTasks = scheduledOnDay[iso] || [];
         const dues     = dueOnDay[iso] || [];
+        const pushSt   = gcalPushStatus[iso];
+        const hasTasks = dayTasks.length > 0;
         return (
           <div key={iso} className={`agenda-day${isToday ? ' agenda-today' : ''}${isPast ? ' agenda-past' : ''}`}>
             <div className="agenda-day-header">
               <span className="agenda-day-label">{fmtAgendaDay(iso)}</span>
               {load > 0.05 && (
                 <span className={`agenda-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</span>
+              )}
+              {gcalConnected && hasTasks && (
+                <button
+                  className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
+                  onClick={() => onPushDayToGCal(iso)}
+                  disabled={pushSt === 'pushing'}
+                  title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
+                >
+                  {pushSt === 'pushing' ? '\u2026' : pushSt === 'done' ? '\u2713' : <IconCalendarPush size={13} />}
+                </button>
               )}
             </div>
             {dues.map(t => (
@@ -453,7 +479,10 @@ const DRAG_PX      = 10;
 const DRAG_RATIO   = 1.2;
 
 export default function Planner({ appData, userId, onEditTask }) {
-  const { categories, tasks, preferences, saveTask, removeTask, setTaskSchedule, gcalFreeBusy } = appData;
+  const {
+    categories, tasks, preferences, saveTask, removeTask, setTaskSchedule,
+    gcalFreeBusy, gcalConnected, gcalSettings, gcalSelCals,
+  } = appData;
   const weeklyHours  = preferences?.weekly_hours  ?? 20;
   const dayAvail     = weeklyHours / 7;
 
@@ -467,6 +496,8 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [isMobile,       setIsMobile]       = useState(() => window.innerWidth <= 700);
   const [afSettings,     setAfSettings]     = useState(loadAutoFillSettings);
   const [showAfModal,    setShowAfModal]    = useState(false);
+  // gcalPushStatus: { [isoDate]: 'pushing' | 'done' | 'error' }
+  const [gcalPushStatus, setGcalPushStatus] = useState({});
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 700);
@@ -524,7 +555,7 @@ export default function Planner({ appData, userId, onEditTask }) {
   const sortByDue = arr => arr.slice().sort((a, b) =>
     (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Auto-fill ─────────────────────────────────────────────────────────────
+  // ── Auto-fill ────────────────────────────────────────────────────────────────
   const runAutoFill = useCallback(async (settingsOverride) => {
     const s = settingsOverride || afSettings;
     const perDayAvail = buildPerDayAvail(weeklyHours, gcalFreeBusy || null, s.skipWeekends);
@@ -550,7 +581,29 @@ export default function Planner({ appData, userId, onEditTask }) {
       if (t.scheduled_days?.length) await setTaskSchedule(t.id, []);
   }, [allActive, setTaskSchedule]);
 
-  // ── Mouse drag ───────────────────────────────────────────────────────────
+  // ── GCal per-day push ───────────────────────────────────────────────────────────
+  const handlePushDayToGCal = useCallback(async (iso) => {
+    const dayTasks = (scheduledOnDay[iso] || [])
+      .slice()
+      .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
+    if (!dayTasks.length) return;
+
+    setGcalPushStatus(s => ({ ...s, [iso]: 'pushing' }));
+    try {
+      // Push tasks sequentially so each block is placed before the next
+      // slot search runs, preventing overlap.
+      for (const task of dayTasks) {
+        const hrs = hoursOnDay(task, iso, todayISO);
+        if (hrs < 0.1) continue;
+        await createWorkBlock(task, iso, hrs, gcalSettings, gcalSelCals);
+      }
+      setGcalPushStatus(s => ({ ...s, [iso]: 'done' }));
+    } catch (e) {
+      setGcalPushStatus(s => ({ ...s, [iso]: 'error' }));
+    }
+  }, [scheduledOnDay, todayISO, gcalSettings, gcalSelCals]);
+
+  // ── Mouse drag ─────────────────────────────────────────────────────────────────
   const onDragStart = (e, task) => { dragging.current = task; e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd   = () => { dragging.current = null; };
 
@@ -572,7 +625,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     dragging.current = null;
   }, [setTaskSchedule]);
 
-  // ── Touch drag ───────────────────────────────────────────────────────────
+  // ── Touch drag ─────────────────────────────────────────────────────────────────
   const colAtPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -659,7 +712,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [setTaskSchedule]);
 
-  // ── Day-picker ───────────────────────────────────────────────────────────
+  // ── Day-picker ─────────────────────────────────────────────────────────────────
   const onDayPickerPick = useCallback(async (iso) => {
     const task = dayPickerTask;
     if (!task) return;
@@ -671,7 +724,7 @@ export default function Planner({ appData, userId, onEditTask }) {
     task.scheduled_days = newDays;
   }, [dayPickerTask, setTaskSchedule]);
 
-  // ── Edit helpers ─────────────────────────────────────────────────────────
+  // ── Edit helpers ────────────────────────────────────────────────────────────────
   const removeDay = useCallback(async (task, iso) => {
     const days   = (task.scheduled_days || []).filter(d => d !== iso);
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
@@ -698,7 +751,7 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const totalSidebarCount = trueUnscheduled.length + scheduledEarlier.length + scheduledLater.length;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────────
   return (
     <div className="planner">
       {touchGhost && (
@@ -732,6 +785,9 @@ export default function Planner({ appData, userId, onEditTask }) {
           onRemoveDay={removeDay}
           handleAutoFill={handleAutoFill}
           handleClearAll={handleClearAll}
+          gcalConnected={gcalConnected}
+          onPushDayToGCal={handlePushDayToGCal}
+          gcalPushStatus={gcalPushStatus}
         />
       ) : (
         <>
@@ -838,13 +894,27 @@ export default function Planner({ appData, userId, onEditTask }) {
                   <div key={w} className="planner-week">
                     <div className="planner-week-grid">
                       {weekISOs.map((iso, i) => {
-                        const isToday = iso === todayISO;
-                        const isPast  = iso < todayISO;
+                        const isToday  = iso === todayISO;
+                        const isPast   = iso < todayISO;
+                        const pushSt   = gcalPushStatus[iso];
+                        const hasTasks = (scheduledOnDay[iso] || []).length > 0;
                         return (
                           <div key={`hdr-${iso}`}
                             className={`planner-day-header${isToday ? ' today' : ''}${isPast ? ' past' : ''}`}>
                             {DAY_NAMES[i]}<br />
                             <span className="planner-day-date">{fmtShort(iso)}</span>
+                            {gcalConnected && hasTasks && (
+                              <button
+                                className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
+                                onClick={() => handlePushDayToGCal(iso)}
+                                disabled={pushSt === 'pushing'}
+                                title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
+                              >
+                                {pushSt === 'pushing' ? '\u2026'
+                                  : pushSt === 'done'  ? '\u2713'
+                                  : <IconCalendarPush size={10} />}
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -943,7 +1013,7 @@ export default function Planner({ appData, userId, onEditTask }) {
   );
 }
 
-// ── PlannerTaskCard ──────────────────────────────────────────────────────────
+// ── PlannerTaskCard ────────────────────────────────────────────────────────────────
 function PlannerTaskCard({
   task, cat, iso, hrs, isCustom,
   isPopoverOpen, hrsInput,
@@ -995,7 +1065,7 @@ function PlannerTaskCard({
   );
 }
 
-// ── SidebarCard ──────────────────────────────────────────────────────────────
+// ── SidebarCard ────────────────────────────────────────────────────────────────
 function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onRemoveDay, onClick, onSchedule }) {
   const color   = cat?.color || '#888';
   const due     = task.due_date ? `due ${fmtShort(task.due_date)}` : 'no deadline';
