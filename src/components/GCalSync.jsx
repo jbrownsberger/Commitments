@@ -206,7 +206,7 @@ export default function GCalSync({ appData }) {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
 
-  // ── Load calendar list on connect ───────────────────────────────────────────
+  // ── Load calendar list on connect (runs on page load if already authed) ─────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -221,6 +221,9 @@ export default function GCalSync({ appData }) {
         });
       })
       .catch(() => {});
+    // Bootstrap the dedicated Commitments calendar for existing sessions that
+    // were authenticated before this feature was deployed.
+    ensureCommitmentsCalendar().catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
