@@ -11,7 +11,6 @@
 .planner-nav    { display: flex; gap: 6px; flex-wrap: wrap; }
 .planner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-/* ── Outer layout: sidebar + scrollable weeks */
 .planner-layout {
   display: grid;
   grid-template-columns: 200px 1fr;
@@ -20,14 +19,12 @@
   min-width: 0;
 }
 
-/* ── Sidebar wrapper */
 .planner-sidebar-wrap {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-/* Sidebar toggle */
 .sidebar-toggle {
   display: none;
   align-items: center;
@@ -45,7 +42,6 @@
   margin-bottom: 4px;
 }
 
-/* ── Sidebar */
 .planner-sidebar {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
@@ -125,7 +121,6 @@
 .sidebar-schedule-btn:hover,
 .sidebar-schedule-btn:focus { opacity: 1; background: var(--color-bg-tertiary); }
 
-/* ── Week container */
 .planner-weeks {
   display: flex;
   flex-direction: column;
@@ -145,7 +140,11 @@
 }
 
 .planner-day-header {
-  text-align: center;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -158,7 +157,10 @@
   border-bottom-color: var(--color-text-info);
 }
 .planner-day-header.past { opacity: 0.45; }
-.planner-day-date { font-weight: 400; font-size: 10px; }
+.planner-day-date {
+  font-weight: 400;
+  font-size: 10px;
+}
 
 .planner-col {
   min-height: 80px;
@@ -201,7 +203,6 @@
   cursor: default;
 }
 
-/* ── Task card (in day column) */
 .planner-task-card {
   border-radius: var(--radius-sm);
   padding: 5px 7px;
@@ -283,7 +284,6 @@ body.is-touch-dragging .sidebar-card {
 }
 .hrs-popover-row button:hover { background: rgba(255,255,255,0.4); }
 
-/* ── Touch drag ghost */
 .touch-ghost {
   position: fixed;
   pointer-events: none;
@@ -300,7 +300,6 @@ body.is-touch-dragging .sidebar-card {
   will-change: transform;
 }
 
-/* ── Day-picker modal */
 .day-picker-overlay {
   position: fixed;
   inset: 0;
@@ -377,10 +376,6 @@ body.is-touch-dragging .sidebar-card {
   margin-top: 8px;
   text-align: center;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   AUTO-FILL SETTINGS MODAL
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 .autofill-overlay {
   position: fixed;
@@ -487,17 +482,12 @@ body.is-touch-dragging .sidebar-card {
   margin-top: 4px;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE AGENDA VIEW  (≤700px)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 .agenda-view {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-/* Nav bar */
 .agenda-nav {
   display: flex;
   align-items: center;
@@ -516,7 +506,6 @@ body.is-touch-dragging .sidebar-card {
   white-space: nowrap;
 }
 
-/* Unscheduled section */
 .agenda-unscheduled {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
@@ -579,7 +568,6 @@ body.is-touch-dragging .sidebar-card {
 }
 .agenda-schedule-btn:active { opacity: 1; }
 
-/* Day sections */
 .agenda-day {
   margin-bottom: 4px;
   border-radius: var(--radius-lg);
@@ -621,7 +609,6 @@ body.is-touch-dragging .sidebar-card {
   font-weight: 600;
 }
 
-/* Due row */
 .agenda-due-row {
   display: flex;
   align-items: center;
@@ -641,7 +628,6 @@ body.is-touch-dragging .sidebar-card {
 }
 .agenda-due-name { flex: 1; color: var(--color-text-secondary); font-style: italic; }
 
-/* Scheduled task row */
 .agenda-task-row {
   display: flex;
   align-items: center;
@@ -719,19 +705,10 @@ body.is-touch-dragging .sidebar-card {
   font-size: 13px;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   DAY-GCAL PUSH BUTTON  (Planner desktop + agenda)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/*
-  Shared base: a compact icon-only button that sits inline with
-  other header content without adding height.
-*/
 .day-gcal-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* size: just big enough to hit 28px touch target */
   width: 22px;
   height: 22px;
   padding: 0;
@@ -744,32 +721,21 @@ body.is-touch-dragging .sidebar-card {
   line-height: 1;
   flex-shrink: 0;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
-  /* keep 28x28 touch target without expanding layout */
   touch-action: manipulation;
   position: relative;
 }
 .day-gcal-btn::before {
-  /* expand tap target without growing layout */
   content: '';
   position: absolute;
   inset: -4px;
 }
-
-/* desktop header: sit below the date text, centred */
 .planner-day-header .day-gcal-btn {
-  margin-top: 3px;
-  display: flex; /* override inline-flex to break out of text flow */
-  margin-left: auto;
-  margin-right: auto;
+  flex-shrink: 0;
 }
-
-/* agenda header: sits on the right, vertically centred */
 .agenda-day-header .day-gcal-btn {
   margin-left: 6px;
   flex-shrink: 0;
 }
-
-/* Hover / focus */
 .day-gcal-btn:hover:not(:disabled) {
   background: var(--color-bg-info);
   border-color: var(--color-border-info);
@@ -780,14 +746,12 @@ body.is-touch-dragging .sidebar-card {
   outline-offset: 2px;
 }
 
-/* State modifiers */
 .day-gcal-btn.done {
   background: var(--color-bg-success);
   border-color: transparent;
   color: var(--color-text-success);
   cursor: default;
 }
-/* allow re-push even after done — cursor reverts to pointer on hover */
 .day-gcal-btn.done:hover:not(:disabled) {
   background: var(--color-bg-success);
   color: var(--color-text-success);

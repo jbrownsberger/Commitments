@@ -48,7 +48,6 @@ function hoursOnDay(task, iso, todayISO) {
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
 }
 
-// ── SVG icons ───────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 14, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
@@ -65,7 +64,6 @@ function IconCalendar({ size = 14, style }) {
   );
 }
 function IconCalendarPush({ size = 11, style }) {
-  // Calendar icon with a small ↑ arrow overlay to signal “push to GCal”
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
       xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
@@ -93,7 +91,6 @@ function IconChevronDown({ size = 12, style }) {
   );
 }
 
-// ── AutoFill settings ─────────────────────────────────────────────────────────────
 const DEFAULT_AUTOFILL = {
   mode:         'procrastinate',
   chunkHrs:     1,
@@ -189,7 +186,6 @@ function AutoFillModal({ settings, onChange, onApply, onClose }) {
   );
 }
 
-/* ── Build a per-day availability map ───────────────────────────────────────────── */
 function buildPerDayAvail(weeklyHours, gcalFreeBusy, skipWeekends, horizonDays = 16 * 7) {
   const fallback = weeklyHours / 7;
   const map      = {};
@@ -209,7 +205,6 @@ function buildPerDayAvail(weeklyHours, gcalFreeBusy, skipWeekends, horizonDays =
   return map;
 }
 
-/* ── autoFill ──────────────────────────────────────────────────────────────────── */
 function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
   const { mode, chunkHrs, maxHrsPerDay, unallocated } = afSettings;
   const todayISO = toISO(new Date());
@@ -218,16 +213,11 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
 
   for (const t of tasks) {
     if (!t.scheduled_days) continue;
-    const rem        = remainingHours(t);
     const futureDays = t.scheduled_days.filter(d => d >= todayISO);
-    if (!futureDays.length) continue;
-    const dayHours      = t.scheduled_day_hours || {};
-    const explicitTotal = futureDays.reduce((s, d) => s + (dayHours[d] || 0), 0);
-    const unweighted    = futureDays.filter(d => !dayHours[d]);
-    const perUw         = unweighted.length > 0
-      ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
-    for (const d of futureDays)
-      dayLoad[d] = (dayLoad[d] || 0) + (dayHours[d] !== undefined ? dayHours[d] : perUw);
+    for (const d of futureDays) {
+      const hrs = hoursOnDay(t, d, todayISO);
+      dayLoad[d] = (dayLoad[d] || 0) + hrs;
+    }
   }
 
   const unscheduled = tasks
@@ -292,6 +282,7 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
         const cap    = maxHrsPerDay > 0 ? Math.min(avail, maxHrsPerDay) : avail;
         const space  = Math.max(cap - (dayLoad[iso] || 0), 0);
         const actual = Math.min(hrsPerDay, space);
+        task.scheduled_day_hours[iso] = actual;
         dayLoad[iso] = (dayLoad[iso] || 0) + actual;
       }
       task.scheduled_days = assignedDays;
@@ -300,7 +291,6 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
   return updated;
 }
 
-// ── Day-picker modal ──────────────────────────────────────────────────────────────
 function DayPickerModal({ task, allISOs, onPick, onClose }) {
   const weeks = [];
   for (let w = 0; w < SHOW_WEEKS; w++) weeks.push(allISOs.slice(w * 7, w * 7 + 7));
@@ -332,7 +322,6 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
   );
 }
 
-// ── Mobile Agenda View ──────────────────────────────────────────────────────────────
 function AgendaView({
   allISOs, todayISO, weekOffset, setWeekOffset,
   scheduledOnDay, dueOnDay, dayLoad, dayAvail,
@@ -496,7 +485,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [isMobile,       setIsMobile]       = useState(() => window.innerWidth <= 700);
   const [afSettings,     setAfSettings]     = useState(loadAutoFillSettings);
   const [showAfModal,    setShowAfModal]    = useState(false);
-  // gcalPushStatus: { [isoDate]: 'pushing' | 'done' | 'error' }
   const [gcalPushStatus, setGcalPushStatus] = useState({});
 
   useEffect(() => {
@@ -555,7 +543,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   const sortByDue = arr => arr.slice().sort((a, b) =>
     (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Auto-fill ────────────────────────────────────────────────────────────────
   const runAutoFill = useCallback(async (settingsOverride) => {
     const s = settingsOverride || afSettings;
     const perDayAvail = buildPerDayAvail(weeklyHours, gcalFreeBusy || null, s.skipWeekends);
@@ -581,7 +568,6 @@ export default function Planner({ appData, userId, onEditTask }) {
       if (t.scheduled_days?.length) await setTaskSchedule(t.id, []);
   }, [allActive, setTaskSchedule]);
 
-  // ── GCal per-day push ───────────────────────────────────────────────────────────
   const handlePushDayToGCal = useCallback(async (iso) => {
     const dayTasks = (scheduledOnDay[iso] || [])
       .slice()
@@ -590,8 +576,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
     setGcalPushStatus(s => ({ ...s, [iso]: 'pushing' }));
     try {
-      // Push tasks sequentially so each block is placed before the next
-      // slot search runs, preventing overlap.
       for (const task of dayTasks) {
         const hrs = hoursOnDay(task, iso, todayISO);
         if (hrs < 0.1) continue;
@@ -603,7 +587,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [scheduledOnDay, todayISO, gcalSettings, gcalSelCals]);
 
-  // ── Mouse drag ─────────────────────────────────────────────────────────────────
   const onDragStart = (e, task) => { dragging.current = task; e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd   = () => { dragging.current = null; };
 
@@ -625,7 +608,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     dragging.current = null;
   }, [setTaskSchedule]);
 
-  // ── Touch drag ─────────────────────────────────────────────────────────────────
   const colAtPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -712,7 +694,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [setTaskSchedule]);
 
-  // ── Day-picker ─────────────────────────────────────────────────────────────────
   const onDayPickerPick = useCallback(async (iso) => {
     const task = dayPickerTask;
     if (!task) return;
@@ -724,7 +705,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     task.scheduled_days = newDays;
   }, [dayPickerTask, setTaskSchedule]);
 
-  // ── Edit helpers ────────────────────────────────────────────────────────────────
   const removeDay = useCallback(async (task, iso) => {
     const days   = (task.scheduled_days || []).filter(d => d !== iso);
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
@@ -751,7 +731,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
   const totalSidebarCount = trueUnscheduled.length + scheduledEarlier.length + scheduledLater.length;
 
-  // ── Render ──────────────────────────────────────────────────────────────────────
   return (
     <div className="planner">
       {touchGhost && (
@@ -901,7 +880,7 @@ export default function Planner({ appData, userId, onEditTask }) {
                         return (
                           <div key={`hdr-${iso}`}
                             className={`planner-day-header${isToday ? ' today' : ''}${isPast ? ' past' : ''}`}>
-                            {DAY_NAMES[i]}<br />
+                            {DAY_NAMES[i]}
                             <span className="planner-day-date">{fmtShort(iso)}</span>
                             {gcalConnected && hasTasks && (
                               <button
@@ -1013,7 +992,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   );
 }
 
-// ── PlannerTaskCard ────────────────────────────────────────────────────────────────
 function PlannerTaskCard({
   task, cat, iso, hrs, isCustom,
   isPopoverOpen, hrsInput,
@@ -1065,7 +1043,6 @@ function PlannerTaskCard({
   );
 }
 
-// ── SidebarCard ────────────────────────────────────────────────────────────────
 function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onRemoveDay, onClick, onSchedule }) {
   const color   = cat?.color || '#888';
   const due     = task.due_date ? `due ${fmtShort(task.due_date)}` : 'no deadline';
