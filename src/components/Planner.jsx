@@ -100,7 +100,7 @@ const DEFAULT_AUTOFILL = {
   chunkHrs:     1,
   maxHrsPerDay: 0,
   skipWeekends: false,
-  unallocated:  false,
+  unallocated:  true,
 };
 
 function loadAutoFillSettings() {
@@ -279,7 +279,6 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
 
     if (unallocated) {
       task.scheduled_days = assignedDays;
-      // Track load even in unallocated mode so subsequent tasks don't overlap
       const hrsPerDay = rem / assignedDays.length;
       for (const iso of assignedDays) {
         dayLoad[iso] = (dayLoad[iso] || 0) + hrsPerDay;
@@ -338,7 +337,7 @@ function AgendaView({
   trueUnscheduled, scheduledEarlier, scheduledLater,
   sortByDue,
   onOpenPanel, onSchedule, onRemoveDay,
-  handleAutoFill, handleClearAll,
+  onOpenAutoFillModal, handleClearAll,
   gcalConnected, onPushDayToGCal, gcalPushStatus,
 }) {
   const [unschOpen, setUnschOpen] = useState(true);
@@ -368,7 +367,7 @@ function AgendaView({
         </div>
         <span className="agenda-week-label">{weekLabel}</span>
         <div className="agenda-actions">
-          <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Fill</button>
+          <button className="btn btn-sm" onClick={onOpenAutoFillModal}>&#9889; Fill</button>
           <button className="btn btn-sm" onClick={handleClearAll}>Clear</button>
         </div>
       </div>
@@ -494,7 +493,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [isMobile,       setIsMobile]       = useState(() => window.innerWidth <= 700);
   const [afSettings,     setAfSettings]     = useState(loadAutoFillSettings);
   const [showAfModal,    setShowAfModal]    = useState(false);
-  // Seed push status from registry so ✓ survives tab navigation
   const [gcalPushStatus, setGcalPushStatus] = useState(() => seedPushStatusFromRegistry(buildISOs(0)));
 
   useEffect(() => {
@@ -503,7 +501,6 @@ export default function Planner({ appData, userId, onEditTask }) {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // Re-seed push status whenever the visible window changes
   useEffect(() => {
     setGcalPushStatus(prev => ({ ...seedPushStatusFromRegistry(allISOs), ...prev }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -576,7 +573,8 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [allActive, weeklyHours, gcalFreeBusy, afSettings, setTaskSchedule, saveTask, tasks]);
 
-  const handleAutoFill = useCallback(() => runAutoFill(), [runAutoFill]);
+  // Opens the settings modal; Apply inside the modal calls runAutoFill
+  const handleOpenAutoFillModal = useCallback(() => setShowAfModal(true), []);
 
   const handleClearAll = useCallback(async () => {
     if (!window.confirm('Remove all scheduled days from every task?')) return;
@@ -592,7 +590,6 @@ export default function Planner({ appData, userId, onEditTask }) {
 
     setGcalPushStatus(s => ({ ...s, [iso]: 'pushing' }));
     try {
-      // cursor chains each task to start after the previous one ends
       let cursorMs = 0;
       for (const task of dayTasks) {
         const hrs = hoursOnDay(task, iso, todayISO);
@@ -733,10 +730,8 @@ export default function Planner({ appData, userId, onEditTask }) {
     await setTaskSchedule(task.id, days);
     if (JSON.stringify(task.scheduled_day_hours) !== JSON.stringify(dayHrs))
       await saveTask({ ...task, scheduled_day_hours: dayHrs });
-    // Clear push registry so the day button resets and won't skip on next push
     clearPushEntry(task.id, iso);
     setGcalPushStatus(prev => {
-      // Only clear the day badge if no other tasks on that day are still registered
       const { [iso]: _removed, ...rest } = prev;
       return rest;
     });
@@ -790,7 +785,7 @@ export default function Planner({ appData, userId, onEditTask }) {
           onOpenPanel={openPanel}
           onSchedule={setDayPickerTask}
           onRemoveDay={removeDay}
-          handleAutoFill={handleAutoFill}
+          onOpenAutoFillModal={handleOpenAutoFillModal}
           handleClearAll={handleClearAll}
           gcalConnected={gcalConnected}
           onPushDayToGCal={handlePushDayToGCal}
@@ -808,9 +803,7 @@ export default function Planner({ appData, userId, onEditTask }) {
               <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
             </div>
             <div className="planner-actions">
-              <button className="btn btn-sm" onClick={handleAutoFill}>&#9889; Auto-fill</button>
-              <button className="btn btn-sm" onClick={() => setShowAfModal(true)}
-                title="Auto-fill settings">&#9881; Settings</button>
+              <button className="btn btn-sm" onClick={handleOpenAutoFillModal}>&#9889; Auto-fill</button>
               <button className="btn btn-sm" onClick={handleClearAll}>Clear all</button>
             </div>
           </div>
