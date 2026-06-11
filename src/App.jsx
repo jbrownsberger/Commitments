@@ -28,7 +28,15 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Login page ──────────────────────────────────────────────────────────────
+// ── Feature list shown on the login hero ───────────────────────────────────────────
+const FEATURES = [
+  { icon: '📅', text: 'Track tasks with due dates, priorities, and progress' },
+  { icon: '⏰', text: 'Schedule work across your calendar with a smart planner' },
+  { icon: '📊', text: 'See real free time each day via Google Calendar sync' },
+  { icon: '⚡', text: 'Quick tasks for anything that only takes a few minutes' },
+];
+
+// ── Login page ────────────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -62,75 +70,122 @@ function LoginPage() {
   };
 
   return (
-    <div style={{ maxWidth: 380, margin: '80px auto', padding: '0 1.5rem' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 500, marginBottom: '0.25rem' }}>Commitments</h1>
-      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: '1.75rem' }}>
-        Your personal task &amp; planning system.
-      </p>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
-        {[['magic','Magic link'],['password','Password'],['signup','Sign up']].map(([m, label]) => (
-          <button key={m}
-            className={`btn btn-sm${mode === m ? ' btn-primary' : ''}`}
-            onClick={() => { setMode(m); setMsg(null); }}
-          >{label}</button>
-        ))}
+    <div className="login-page">
+      {/* ── Left: hero ── */}
+      <div className="login-hero">
+        <div className="login-hero-inner">
+          <div className="login-logo">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none"
+              xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="36" height="36" rx="9" fill="currentColor" opacity="0.12"/>
+              <rect x="7" y="8" width="22" height="20" rx="3"
+                stroke="currentColor" strokeWidth="1.8" fill="none"/>
+              <path d="M7 14h22" stroke="currentColor" strokeWidth="1.6"/>
+              <path d="M12 6v4M24 6v4"
+                stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M12 20l3.5 3.5L24 17"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <h1 className="login-hero-title">Commitments</h1>
+          <p className="login-hero-tagline">
+            A personal planning system that keeps your deadlines, tasks,
+            and calendar in one honest view.
+          </p>
+          <ul className="login-features">
+            {FEATURES.map(({ icon, text }) => (
+              <li key={text} className="login-feature-item">
+                <span className="login-feature-icon">{icon}</span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
-      <form onSubmit={submit}>
-        <div className="form-field" style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display:'block', marginBottom:4 }}>Email</label>
-          <input
-            type="email" required
-            value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            style={{ width: '100%', boxSizing: 'border-box' }}
-          />
+      {/* ── Right: auth card ── */}
+      <div className="login-card-wrap">
+        <div className="login-card">
+          <h2 className="login-card-title">
+            {mode === 'signup' ? 'Create account' :
+             mode === 'magic'  ? 'Sign in' : 'Sign in'}
+          </h2>
+
+          <div className="login-mode-tabs">
+            {[['magic','Magic link'], ['password','Password'], ['signup','Sign up']].map(([m, label]) => (
+              <button
+                key={m}
+                className={`login-mode-tab${mode === m ? ' active' : ''}`}
+                onClick={() => { setMode(m); setMsg(null); }}
+              >{label}</button>
+            ))}
+          </div>
+
+          <form onSubmit={submit} className="login-form">
+            <div className="login-field">
+              <label className="login-label">Email</label>
+              <input
+                type="email" required
+                value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="login-input"
+              />
+            </div>
+
+            {(mode === 'password' || mode === 'signup') && (
+              <div className="login-field">
+                <label className="login-label">Password</label>
+                <input
+                  type="password" required minLength={6}
+                  value={pw} onChange={e => setPw(e.target.value)}
+                  placeholder="Min. 6 characters"
+                  className="login-input"
+                />
+              </div>
+            )}
+
+            {msg && (
+              <div className={`login-msg login-msg--${msg.type}`}>{msg.text}</div>
+            )}
+
+            <button
+              type="submit"
+              className="btn btn-primary login-submit"
+              disabled={loading}
+            >
+              {loading       ? 'Please wait…'   :
+               mode === 'magic'    ? 'Send magic link' :
+               mode === 'password' ? 'Sign in'         : 'Create account'}
+            </button>
+          </form>
+
+          <p className="login-hint">
+            {mode === 'magic'
+              ? 'We’ll email you a one-click sign-in link. No password needed.'
+              : mode === 'signup'
+              ? 'You’ll receive a confirmation email before you can sign in.'
+              : null}
+          </p>
         </div>
 
-        {(mode === 'password' || mode === 'signup') && (
-          <div className="form-field" style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display:'block', marginBottom:4 }}>Password</label>
-            <input
-              type="password" required minLength={6}
-              value={pw} onChange={e => setPw(e.target.value)}
-              placeholder="Min. 6 characters"
-              style={{ width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
-        )}
-
-        {msg && (
-          <div style={{
-            fontSize: 13, marginBottom: 12, padding: '8px 12px',
-            borderRadius: 6,
-            background: msg.type === 'error' ? 'var(--color-bg-danger)' : 'var(--color-bg-success)',
-            color:      msg.type === 'error' ? 'var(--color-text-danger)' : 'var(--color-text-success)',
-          }}>
-            {msg.text}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={loading}
-          style={{ width: '100%' }}
-        >
-          {loading ? 'Please wait…' :
-            mode === 'magic'    ? 'Send magic link' :
-            mode === 'password' ? 'Sign in' : 'Create account'}
-        </button>
-      </form>
+        {/* ── Footer links ── */}
+        <div className="login-footer">
+          <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+          <span className="login-footer-sep">&middot;</span>
+          <a href="/terms.html"   target="_blank" rel="noopener noreferrer">Terms of Service</a>
+          <span className="login-footer-sep">&middot;</span>
+          <a href="https://github.com/jbrownsberger/Commitments"
+             target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── Authed shell ────────────────────────────────────────────────────────────
+// ── Authed shell ──────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
-  // ── Dark mode: sync with preferences once loaded, and apply to <html> ──────
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -149,7 +204,6 @@ function AuthedApp({ userId, userEmail }) {
     await appData.savePreferences({ ...appData.preferences, dark_mode: next });
   }, [darkMode, appData]);
 
-  // ── GCal free/busy ──────────────────────────────────────────────────────────
   const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
 
   const onFreeBusyUpdate = (data) => {
@@ -162,7 +216,6 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
-  // ── GCal connection state ───────────────────────────────────────────────────
   const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
 
   useEffect(() => {
@@ -185,7 +238,6 @@ function AuthedApp({ userId, userEmail }) {
     }
   }, []);
 
-  // ── GCal settings + selected calendars ──────────────────────────────────────
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
