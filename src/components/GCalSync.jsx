@@ -295,14 +295,15 @@ export default function GCalSync({ appData }) {
     });
   };
 
-  const [calendars,   setCalendars]   = useState([]);
-  const [selCals,     setSelCals]     = useState(loadSelectedCals);
-  // writeCalId: the calendar work blocks are written to.
-  // Initialised from localStorage; falls back to 'primary'.
-  const [writeCalId,  setWriteCalId]  = useState(loadWriteCalId);
+  const [calendars,  setCalendars]  = useState([]);
+  const [selCals,    setSelCals]    = useState(loadSelectedCals);
+  const [writeCalId, setWriteCalId] = useState(loadWriteCalId);
 
   const [freeBusy,    setFreeBusy]    = useState(null);
   const [loadingFB,   setLoadingFB]   = useState(false);
+  // True only when the fallback subtraction fetch is running alongside the
+  // main free/busy request.  Used to show a subtle status note in the UI.
+  const [subtractingBlocks, setSubtractingBlocks] = useState(false);
   const [blockStatus, setBlockStatus] = useState({});
   const [activePanel, setActivePanel] = useState('availability');
 
@@ -324,8 +325,6 @@ export default function GCalSync({ appData }) {
           saveSelectedCals(all);
           return all;
         });
-        // Sync writeCalId: if the stored value is no longer in the calendar
-        // list (e.g. the user deleted that calendar), reset to 'primary'.
         setWriteCalId(prev => {
           const ids = cals.map(c => c.id);
           if (prev !== 'primary' && !ids.includes(prev)) {
@@ -395,41 +394,73 @@ export default function GCalSync({ appData }) {
     setWriteCalId('primary');
     setFreeBusy(null);
     setBlockStatus({});
+    setSubtractingBlocks(false);
     onFreeBusyClear?.();
   };
 
   // ── Availability ──────────────────────────────────────────────────────────────────
   const handleFetchFreeBusy = useCallback(async () => {
-    setLoadingFB(true); setError(null);
+    setLoadingFB(true); setError(null); setSubtractingBlocks(false);
     try {
       const endISO  = addDays(todayISO, LOOK_AHEAD_DAYS);
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
       const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
-      // Exclude the write calendar: its app-written events are handled via
-      // fetchCommitmentsBlockIntervals / subtractCommitmentsBlocks.
+      // Always exclude the write calendar from the free/busy query —
+      // it's either a dedicated calendar (preferred path, nothing else writes
+      // there) or primary (fallback path, where we subtract tagged blocks below).
       const calIds = allCalIds.filter(id => id !== writeCalId);
 
       if (!calIds.length) throw new Error('No calendars selected.');
 
-      const resp = await fetchFreeBusy(calIds, timeMin, timeMax);
+      // ── Fire both requests in parallel on the fallback path ────────────────
+      // On the preferred path (dedicated calendar) the write calendar is
+      // already excluded from the query, so no subtraction is needed.
+      const isFallback = writeCalId === 'primary';
 
+      const [fbResp, blocksByDay] = await Promise.all([
+        fetchFreeBusy(calIds, timeMin, timeMax).catch(() => ({ calendars: {} })),
+        isFallback
+          ? (setSubtractingBlocks(true),
+             fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})))
+          : Promise.resolve({}),
+      ]);
+      setSubtractingBlocks(false);
+
+      // Collate raw busy intervals per day.
       const busyByDay = {};
       for (const calId of calIds)
-        for (const interval of (resp.calendars?.[calId]?.busy || []))
+        for (const interval of (fbResp.calendars?.[calId]?.busy || []))
           (busyByDay[interval.start.slice(0, 10)] ??= []).push(interval);
 
+      // Subtract app-written blocks on the fallback path.
+      // blocksByDay maps iso → [{ startMs, endMs }, ...] (from gcalScheduler).
+      // subtractCommitmentsBlocks expects busy intervals in { start, end } ISO
+      // string form, so we convert the block intervals to match before passing.
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
-        const iso     = addDays(todayISO, i);
-        const rawBusy = busyByDay[iso] || [];
-        result[iso]   = effectiveFreeMinutes(iso, rawBusy, settings);
+        const iso      = addDays(todayISO, i);
+        let   rawBusy  = busyByDay[iso] || [];
+
+        if (isFallback && blocksByDay[iso]?.length) {
+          // Convert { startMs, endMs } → { start, end } ISO strings for
+          // subtractCommitmentsBlocks, which works on the busy-interval format.
+          const blockIntervalsAsISO = blocksByDay[iso].map(b => ({
+            start: new Date(b.startMs).toISOString(),
+            end:   new Date(b.endMs  ).toISOString(),
+          }));
+          rawBusy = subtractCommitmentsBlocks(rawBusy, blocksByDay[iso]);
+        }
+
+        result[iso] = effectiveFreeMinutes(iso, rawBusy, settings);
       }
+
       setFreeBusy(result);
       onFreeBusyUpdate?.(result);
     } catch (e) {
       setError(e.message);
+      setSubtractingBlocks(false);
     } finally {
       setLoadingFB(false);
     }
@@ -512,8 +543,6 @@ export default function GCalSync({ appData }) {
     updateSetting('nonWorkDays', next);
   };
 
-  // Is the write calendar the raw 'primary' fallback (i.e. user hasn't
-  // configured a dedicated one yet)?
   const usingPrimaryFallback = writeCalId === 'primary';
 
   return (
@@ -613,8 +642,6 @@ export default function GCalSync({ appData }) {
                 Work blocks calendar
                 <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
               </div>
-
-              {/* Recommended setup callout */}
               <div className="gcal-write-cal-tip">
                 <strong>For best results:</strong> create a dedicated calendar in Google Calendar
                 (e.g. “Commitments Work Blocks”), then select it below. Work blocks will be written
@@ -628,7 +655,6 @@ export default function GCalSync({ appData }) {
                   Create one now ↗
                 </a>
               </div>
-
               <select
                 className="gcal-write-cal-select"
                 value={writeCalId}
@@ -648,18 +674,14 @@ export default function GCalSync({ appData }) {
                   ))
                 }
               </select>
-
-              {/* Advisory banner when falling back to primary */}
               {usingPrimaryFallback && (
                 <div className="gcal-write-cal-warning">
                   <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  Writing to your primary calendar. A dedicated calendar gives more accurate
-                  availability — app-written blocks are identified by tag and subtracted,
-                  but a dedicated calendar is cleaner.
+                  Writing to your primary calendar. App-written blocks are identified by tag
+                  and subtracted from your availability automatically, but a dedicated
+                  calendar is cleaner.
                 </div>
               )}
-
-              {/* Confirmation when a dedicated calendar is selected */}
               {!usingPrimaryFallback && (
                 <div className="gcal-write-cal-ok">
                   <IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
@@ -728,6 +750,7 @@ export default function GCalSync({ appData }) {
             {deductMins > 0 && ` · −${deductMins}m deduction`}
             {bufferMins > 0 && ` · ${bufferMins}m event buffer`}
             {efficiency < 100 && ` · ${efficiency}% efficiency`}
+            {usingPrimaryFallback && freeBusy && ` · own blocks subtracted`}
             <button className="gcal-settings-edit" onClick={() => setShowSettings(s => !s)}>edit</button>
           </div>
 
@@ -735,7 +758,7 @@ export default function GCalSync({ appData }) {
             <div className="gcal-empty">
               <button className="btn btn-primary" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                 <IconBarChart size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-                {loadingFB ? 'Loading…' : 'Load my availability'}
+                {loadingFB ? (subtractingBlocks ? 'Subtracting blocks…' : 'Loading…') : 'Load my availability'}
               </button>
               <p>Fetches only busy/free status — no event details are read.</p>
             </div>
@@ -744,7 +767,7 @@ export default function GCalSync({ appData }) {
               <div className="gcal-fb-refresh-row">
                 <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                   <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  {loadingFB ? 'Loading…' : 'Refresh'}
+                  {loadingFB ? (subtractingBlocks ? 'Subtracting blocks…' : 'Loading…') : 'Refresh'}
                 </button>
               </div>
               <div className="gcal-fb-grid">
