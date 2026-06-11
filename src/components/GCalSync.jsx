@@ -24,6 +24,9 @@ import {
   ensureCommitmentsCalendar,
   loadCommitmentsCalId,
   clearCommitmentsCalId,
+  loadWriteCalId,
+  saveWriteCalId,
+  clearWriteCalId,
 } from '../lib/gcalScheduler.js';
 import '../styles/gcal.css';
 
@@ -31,8 +34,7 @@ const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const LOOK_AHEAD_DAYS = 28;
 const DAY_NAMES       = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// ── Helpers (UI-only, not shared) ─────────────────────────────────────────────
-
+// ── Helpers (UI-only, not shared) ────────────────────────────────────────────────────
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
@@ -66,7 +68,6 @@ function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
   if ((nonWorkDays || []).includes(dowIndex)) return 0;
 
-  // Normalise windows
   const windows = (workWindows || [{ start: 8, end: 20 }])
     .filter(w => w.end > w.start)
     .map(w => ({
@@ -98,7 +99,6 @@ function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
     totalFreeMs += Math.max(0, winMs - busyMs);
   }
 
-  const totalWindowMins = windows.reduce((s, w) => s + (w.e - w.s), 0) / 60_000;
   const afterDeduct = Math.max(0, totalFreeMs / 60_000 - deductMins);
   return afterDeduct * (efficiency / 100);
 }
@@ -122,7 +122,7 @@ function windowSummary(workWindows) {
     .join(', ');
 }
 
-// ── SVG icons ───────────────────────────────────────────────────────────────────────────────────
+// ── SVG icons ─────────────────────────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -215,13 +215,9 @@ function IconPlus({ size = 12, style }) {
   );
 }
 
-// ── WorkWindowsEditor ────────────────────────────────────────────────────────────────
-/**
- * Editable list of work windows, each with a From/To hour selector.
- * Allows multiple non-overlapping time blocks (e.g. 8–12 and 13–17).
- */
+// ── WorkWindowsEditor ────────────────────────────────────────────────────────────────────────────────
 function WorkWindowsEditor({ windows, onChange }) {
-  const hourOptions = Array.from({ length: 25 }, (_, i) => i); // 0..24
+  const hourOptions = Array.from({ length: 25 }, (_, i) => i);
 
   const updateWindow = (idx, key, val) => {
     const next = windows.map((w, i) => i === idx ? { ...w, [key]: val } : w);
@@ -229,15 +225,14 @@ function WorkWindowsEditor({ windows, onChange }) {
   };
 
   const addWindow = () => {
-    // Default new window: one hour after the last window ends, or 13–17 if nothing
-    const last = windows[windows.length - 1];
+    const last  = windows[windows.length - 1];
     const start = last ? Math.min(last.end + 1, 23) : 13;
     const end   = Math.min(start + 4, 24);
     onChange([...windows, { start, end }]);
   };
 
   const removeWindow = (idx) => {
-    if (windows.length <= 1) return; // keep at least one window
+    if (windows.length <= 1) return;
     onChange(windows.filter((_, i) => i !== idx));
   };
 
@@ -280,7 +275,7 @@ function WorkWindowsEditor({ windows, onChange }) {
   );
 }
 
-// ── Component ───────────────────────────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
   const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange } = appData;
   const todayISO = toISO(new Date());
@@ -300,20 +295,23 @@ export default function GCalSync({ appData }) {
     });
   };
 
-  const [calendars, setCalendars] = useState([]);
-  const [selCals,   setSelCals]   = useState(loadSelectedCals);
+  const [calendars,   setCalendars]   = useState([]);
+  const [selCals,     setSelCals]     = useState(loadSelectedCals);
+  // writeCalId: the calendar work blocks are written to.
+  // Initialised from localStorage; falls back to 'primary'.
+  const [writeCalId,  setWriteCalId]  = useState(loadWriteCalId);
 
   const [freeBusy,    setFreeBusy]    = useState(null);
   const [loadingFB,   setLoadingFB]   = useState(false);
   const [blockStatus, setBlockStatus] = useState({});
   const [activePanel, setActivePanel] = useState('availability');
 
-  // ── Notify App of connection state changes ──────────────────────────────────
+  // ── Notify App of connection state changes ────────────────────────────────────
   useEffect(() => {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
 
-  // ── Load calendar list on connect ──────────────────────────────────────────
+  // ── Load calendar list on connect ─────────────────────────────────────────────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -325,6 +323,16 @@ export default function GCalSync({ appData }) {
           const all = new Set(cals.map(c => c.id));
           saveSelectedCals(all);
           return all;
+        });
+        // Sync writeCalId: if the stored value is no longer in the calendar
+        // list (e.g. the user deleted that calendar), reset to 'primary'.
+        setWriteCalId(prev => {
+          const ids = cals.map(c => c.id);
+          if (prev !== 'primary' && !ids.includes(prev)) {
+            saveWriteCalId('primary');
+            return 'primary';
+          }
+          return prev;
         });
       })
       .catch(() => {});
@@ -356,7 +364,7 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePanel, connected]);
 
-  // ── Auth handlers ────────────────────────────────────────────────────────────────
+  // ── Auth handlers ──────────────────────────────────────────────────────────────────
   const handleConnect = async () => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
@@ -380,16 +388,17 @@ export default function GCalSync({ appData }) {
   const handleDisconnect = () => {
     revokeToken();
     localStorage.removeItem(LS_CALS_KEY);
-    clearCommitmentsCalId();
+    clearWriteCalId();
     setConnected(false);
     setCalendars([]);
     setSelCals(new Set());
+    setWriteCalId('primary');
     setFreeBusy(null);
     setBlockStatus({});
     onFreeBusyClear?.();
   };
 
-  // ── Availability ────────────────────────────────────────────────────────────────
+  // ── Availability ──────────────────────────────────────────────────────────────────
   const handleFetchFreeBusy = useCallback(async () => {
     setLoadingFB(true); setError(null);
     try {
@@ -397,11 +406,10 @@ export default function GCalSync({ appData }) {
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
-      const commitmentsCalId = loadCommitmentsCalId();
       const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
-      const calIds    = commitmentsCalId
-        ? allCalIds.filter(id => id !== commitmentsCalId)
-        : allCalIds;
+      // Exclude the write calendar: its app-written events are handled via
+      // fetchCommitmentsBlockIntervals / subtractCommitmentsBlocks.
+      const calIds = allCalIds.filter(id => id !== writeCalId);
 
       if (!calIds.length) throw new Error('No calendars selected.');
 
@@ -425,9 +433,9 @@ export default function GCalSync({ appData }) {
     } finally {
       setLoadingFB(false);
     }
-  }, [calendars, selCals, settings, todayISO, onFreeBusyUpdate]);
+  }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate]);
 
-  // ── Block create ────────────────────────────────────────────────────────────────
+  // ── Block create ──────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
@@ -440,7 +448,7 @@ export default function GCalSync({ appData }) {
     }
   };
 
-  // ── Block delete ────────────────────────────────────────────────────────────────
+  // ── Block delete ──────────────────────────────────────────────────────────────────
   const handleDeleteBlock = async (task, iso) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'deleting' }));
@@ -458,7 +466,7 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Disconnected screen ─────────────────────────────────────────────────────────
+  // ── Disconnected screen ──────────────────────────────────────────────────────────────────
   if (!connected) {
     return (
       <div className="gcal-pane">
@@ -468,7 +476,7 @@ export default function GCalSync({ appData }) {
           <p>Connect your Google Calendar to see real free time each day and push work blocks directly to your calendar.</p>
           <button className="btn btn-primary gcal-connect-btn" onClick={handleConnect} disabled={connecting}>
             <IconLink size={15} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-            {connecting ? 'Connecting\u2026' : 'Connect Google Calendar'}
+            {connecting ? 'Connecting…' : 'Connect Google Calendar'}
           </button>
           {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
         </div>
@@ -492,7 +500,7 @@ export default function GCalSync({ appData }) {
     );
   }
 
-  // ── Connected screen ──────────────────────────────────────────────────────────────────
+  // ── Connected screen ────────────────────────────────────────────────────────────────────────────────────
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = totalWindowHours(settings);
 
@@ -503,6 +511,10 @@ export default function GCalSync({ appData }) {
       : [...current, dowIndex];
     updateSetting('nonWorkDays', next);
   };
+
+  // Is the write calendar the raw 'primary' fallback (i.e. user hasn't
+  // configured a dedicated one yet)?
+  const usingPrimaryFallback = writeCalId === 'primary';
 
   return (
     <div className="gcal-pane">
@@ -594,28 +606,95 @@ export default function GCalSync({ appData }) {
 
           </div>
 
+          {/* ── Write calendar picker ────────────────────────────────────────────────── */}
           {calendars.length > 0 && (
             <div className="gcal-setting-group" style={{ marginTop: 16 }}>
-              <div className="gcal-section-label">Calendars to include</div>
+              <div className="gcal-section-label">
+                Work blocks calendar
+                <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
+              </div>
+
+              {/* Recommended setup callout */}
+              <div className="gcal-write-cal-tip">
+                <strong>For best results:</strong> create a dedicated calendar in Google Calendar
+                (e.g. “Commitments Work Blocks”), then select it below. Work blocks will be written
+                only there, keeping your availability calculation clean.
+                {' '}
+                <a
+                  href="https://calendar.google.com/calendar/r/settings/createcalendar"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Create one now ↗
+                </a>
+              </div>
+
+              <select
+                className="gcal-write-cal-select"
+                value={writeCalId}
+                onChange={e => {
+                  const id = e.target.value;
+                  saveWriteCalId(id);
+                  setWriteCalId(id);
+                }}
+              >
+                <option value="primary">Primary calendar (fallback)</option>
+                {calendars
+                  .filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer')
+                  .map(cal => (
+                    <option key={cal.id} value={cal.id}>
+                      {cal.summary}
+                    </option>
+                  ))
+                }
+              </select>
+
+              {/* Advisory banner when falling back to primary */}
+              {usingPrimaryFallback && (
+                <div className="gcal-write-cal-warning">
+                  <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                  Writing to your primary calendar. A dedicated calendar gives more accurate
+                  availability — app-written blocks are identified by tag and subtracted,
+                  but a dedicated calendar is cleaner.
+                </div>
+              )}
+
+              {/* Confirmation when a dedicated calendar is selected */}
+              {!usingPrimaryFallback && (
+                <div className="gcal-write-cal-ok">
+                  <IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                  Work blocks will be written to this calendar and excluded from your
+                  availability calculation automatically.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Calendars to include (read for availability) ──────────────────── */}
+          {calendars.length > 0 && (
+            <div className="gcal-setting-group" style={{ marginTop: 16 }}>
+              <div className="gcal-section-label">Calendars to include
+                <span className="gcal-setting-hint"> (read for availability)</span>
+              </div>
               <div className="gcal-cal-list">
                 {calendars
-                  .filter(cal => cal.id !== loadCommitmentsCalId())
+                  .filter(cal => cal.id !== writeCalId)
                   .map(cal => (
-                  <label key={cal.id} className="gcal-cal-item">
-                    <input type="checkbox"
-                      checked={selCals.has(cal.id)}
-                      onChange={e => {
-                        setSelCals(prev => {
-                          const next = new Set(prev);
-                          e.target.checked ? next.add(cal.id) : next.delete(cal.id);
-                          saveSelectedCals(next);
-                          return next;
-                        });
-                      }} />
-                    <span className="gcal-cal-dot" style={{ background: cal.backgroundColor || '#888' }} />
-                    <span>{cal.summary}</span>
-                  </label>
-                ))}
+                    <label key={cal.id} className="gcal-cal-item">
+                      <input type="checkbox"
+                        checked={selCals.has(cal.id)}
+                        onChange={e => {
+                          setSelCals(prev => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(cal.id) : next.delete(cal.id);
+                            saveSelectedCals(next);
+                            return next;
+                          });
+                        }} />
+                      <span className="gcal-cal-dot" style={{ background: cal.backgroundColor || '#888' }} />
+                      <span>{cal.summary}</span>
+                    </label>
+                  ))}
               </div>
             </div>
           )}
@@ -645,10 +724,10 @@ export default function GCalSync({ appData }) {
         <div className="gcal-availability">
           <div className="gcal-settings-summary">
             {windowSummary(workWindows)}
-            {(nonWorkDays || []).length > 0 && ` \u00b7 ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
-            {deductMins > 0 && ` \u00b7 \u2212${deductMins}m deduction`}
-            {bufferMins > 0 && ` \u00b7 ${bufferMins}m event buffer`}
-            {efficiency < 100 && ` \u00b7 ${efficiency}% efficiency`}
+            {(nonWorkDays || []).length > 0 && ` · ${DAY_NAMES.filter((_, i) => nonWorkDays.includes(i)).join('/')} off`}
+            {deductMins > 0 && ` · −${deductMins}m deduction`}
+            {bufferMins > 0 && ` · ${bufferMins}m event buffer`}
+            {efficiency < 100 && ` · ${efficiency}% efficiency`}
             <button className="gcal-settings-edit" onClick={() => setShowSettings(s => !s)}>edit</button>
           </div>
 
@@ -656,7 +735,7 @@ export default function GCalSync({ appData }) {
             <div className="gcal-empty">
               <button className="btn btn-primary" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                 <IconBarChart size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-                {loadingFB ? 'Loading\u2026' : 'Load my availability'}
+                {loadingFB ? 'Loading…' : 'Load my availability'}
               </button>
               <p>Fetches only busy/free status — no event details are read.</p>
             </div>
@@ -665,7 +744,7 @@ export default function GCalSync({ appData }) {
               <div className="gcal-fb-refresh-row">
                 <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB}>
                   <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  {loadingFB ? 'Loading\u2026' : 'Refresh'}
+                  {loadingFB ? 'Loading…' : 'Refresh'}
                 </button>
               </div>
               <div className="gcal-fb-grid">
@@ -759,10 +838,10 @@ export default function GCalSync({ appData }) {
                           onClick={() => handleCreateBlock(task, iso, hrs)}
                           disabled={isPending || isDone || isDeleting}
                         >
-                          {isPending  ? '\u2026'        :
+                          {isPending  ? '…'        :
                            isDone     ? 'Added'      :
                            isError    ? 'Retry'      :
-                           isDeleting ? '\u2026'        :
+                           isDeleting ? '…'        :
                            '+ Add to GCal'}
                         </button>
                         {isDone && (
