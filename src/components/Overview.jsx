@@ -77,7 +77,15 @@ function statusFromProgress(prog, current) {
   return current === 'done' ? 'not started' : (current || 'not started');
 }
 
+/* ── Format a date ISO string as "Mon Jun 9" ────────────────────────────────── */
+function fmtDate(iso) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
+}
+
 /* ── Compute GCal weekly hours from the free/busy map ────────────────────────── */
+// Returns { hours, windowStart, windowEnd } for the current week (today → Sunday).
 function gcalWeeklyHours(gcalFreeBusy) {
   if (!gcalFreeBusy) return null;
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -88,7 +96,18 @@ function gcalWeeklyHours(gcalFreeBusy) {
   for (const [iso, freeMin] of Object.entries(gcalFreeBusy)) {
     if (iso >= todayISO && iso <= weekEndISO) total += freeMin / 60;
   }
-  return Math.round(total * 10) / 10;
+  return {
+    hours: Math.round(total * 10) / 10,
+    windowStart: todayISO,
+    windowEnd: weekEndISO,
+  };
+}
+
+/* ── Compute rolling-7-day window end (manual mode) ─────────────────────────── */
+function rollingWeekEnd() {
+  const d = new Date();
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().slice(0, 10);
 }
 
 const CAP_MODE_KEY = 'capacity_mode';
@@ -116,9 +135,17 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   };
 
   const manualWeeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
-  const gcalHours         = gcalWeeklyHours(gcalFreeBusy);
-  const weeklyHours = capacityMode === 'gcal' && gcalHours !== null
-    ? gcalHours
+  const gcalResult        = gcalWeeklyHours(gcalFreeBusy); // { hours, windowStart, windowEnd } or null
+
+  // In GCal mode: availability and the planning window both span today → end-of-week (Sunday).
+  // In manual mode: window spans today + 6 days (rolling 7 days).
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const weekEnd  = capacityMode === 'gcal'
+    ? (gcalResult?.windowEnd ?? (() => { const d = new Date(); d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7); return d.toISOString().slice(0, 10); })())
+    : rollingWeekEnd();
+
+  const weeklyHours = capacityMode === 'gcal' && gcalResult !== null
+    ? gcalResult.hours
     : manualWeeklyHours;
 
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
@@ -140,13 +167,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const doneCount    = allTasks.filter(t => t.status === 'done' && !t.recurring).length;
   const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
   const overdueCount = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) < 0).length;
-
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const weekEnd  = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7);
-    return d.toISOString().slice(0, 10);
-  })();
 
   const plannedThisWeek = allInc.reduce((s, t) => {
     if (!t.scheduled_days?.length) return s;
@@ -233,7 +253,12 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
 
-  const gcalNoData = capacityMode === 'gcal' && gcalHours === null;
+  const gcalNoData = capacityMode === 'gcal' && gcalResult === null;
+
+  // Human-readable window label shown beneath the capacity bar
+  const windowLabel = capacityMode === 'gcal'
+    ? `GCal free time ${fmtDate(todayISO)}–${fmtDate(weekEnd)} · tasks ranked by urgency · click to open`
+    : `Next 7 days (${fmtDate(todayISO)}–${fmtDate(weekEnd)}) · tasks ranked by urgency · click to open`;
 
   return (
     <div className="plan-layout">
@@ -285,7 +310,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
               {capacityMode === 'gcal' && !gcalNoData && (
                 <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                  {gcalHours}h/wk
+                  {gcalResult.hours}h free
                 </span>
               )}
             </div>
@@ -301,9 +326,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             </div>
           ) : (
             <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
-              {weeklyHours}h available
-              {capacityMode === 'gcal' ? ' (from Google Calendar)' : ''}
-              {' '}· tasks ranked by urgency · click to open
+              {weeklyHours}h available · {windowLabel}
             </div>
           )}
 
