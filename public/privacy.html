@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Commitments</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1a1a1a;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 2.5rem;
+    }
+    h2 {
+      font-size: 17px;
+      font-weight: 650;
+      margin-top: 2.25rem;
+      margin-bottom: 0.4rem;
+      color: #111;
+    }
+    p { margin: 0.5rem 0 0.75rem; color: #333; }
+    ul {
+      padding-left: 1.4rem;
+      margin: 0.4rem 0 0.75rem;
+      color: #333;
+    }
+    li { margin-bottom: 0.3rem; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .callout {
+      background: #f0f7ff;
+      border-left: 3px solid #2563eb;
+      border-radius: 4px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #1e40af;
+      margin: 1rem 0 1.25rem;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 2.5rem 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #111; color: #e5e7eb; }
+      h2 { color: #f3f4f6; }
+      p, ul, li { color: #d1d5db; }
+      .callout { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+      hr { border-color: #374151; }
+      .subtitle { color: #9ca3af; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Privacy Policy</h1>
+    <p class="subtitle">Commitments &nbsp;&middot;&nbsp; Last updated: June 11, 2026</p>
+
+    <p>
+      Commitments is a personal deadline and task-scheduling tool. This policy explains what
+      data the app collects, where it is stored, how your Google Calendar data is used, and
+      what rights you have over your information.
+    </p>
+
+    <div class="callout">
+      <strong>Short version:</strong> Your task data is stored in a private database tied to
+      your account. Your Google Calendar data is used only to calculate your availability and
+      write work blocks you explicitly request &mdash; it is never stored on our servers, shared,
+      or used for any other purpose.
+    </div>
+
+    <h2>1. Who operates this app</h2>
+    <p>
+      Commitments is a personal project operated by an individual developer. It is not a
+      commercial product. If you have questions or requests about your data, contact:
+      <a href="https://github.com/jbrownsberger">github.com/jbrownsberger</a>.
+    </p>
+
+    <h2>2. Account &amp; authentication data</h2>
+    <p>
+      Sign-in is handled by <strong>Supabase Auth</strong> (hosted on Supabase&rsquo;s
+      infrastructure in the <em>us-east-1</em> region). When you create an account the
+      following is stored:
+    </p>
+    <ul>
+      <li>Your email address (used only for authentication)</li>
+      <li>A hashed password (Supabase never stores passwords in plain text)</li>
+      <li>A randomly generated user UUID</li>
+      <li>Account creation and last sign-in timestamps</li>
+    </ul>
+    <p>
+      Supabase&rsquo;s own privacy policy applies to this data:
+      <a href="https://supabase.com/privacy" target="_blank" rel="noopener">supabase.com/privacy</a>.
+    </p>
+
+    <h2>3. Task &amp; scheduling data</h2>
+    <p>
+      All task data you create is stored in a private PostgreSQL database hosted on Supabase.
+      Row-Level Security (RLS) is enforced on every table, meaning each row is accessible
+      only by the authenticated user who created it. The data stored includes:
+    </p>
+    <ul>
+      <li><strong>Tasks</strong> &mdash; name, status, priority, due date, estimated hours,
+          progress, notes, recurrence settings, and per-day scheduled hours</li>
+      <li><strong>Substeps</strong> &mdash; checklist items belonging to a task (text, done state)</li>
+      <li><strong>Quick tasks</strong> &mdash; lightweight time-boxed to-dos with optional deadlines</li>
+      <li><strong>Categories</strong> &mdash; user-defined labels and colours for grouping tasks</li>
+      <li><strong>Scheduled days</strong> &mdash; the calendar dates on which tasks are planned</li>
+      <li><strong>User preferences</strong> &mdash; weekly hour target, default session length,
+          dark-mode preference</li>
+    </ul>
+    <p>This data is used solely to operate the app for you. It is never sold, shared with
+    third parties, or used for advertising.</p>
+
+    <h2>4. Google Calendar integration</h2>
+    <p>
+      The Google Calendar feature is entirely optional. If you choose to connect, the app
+      requests the following OAuth scope:
+    </p>
+    <ul>
+      <li><code>https://www.googleapis.com/auth/calendar</code> &mdash; read/write access
+          to your Google Calendar</li>
+    </ul>
+    <p>This scope is used for three specific purposes:</p>
+    <ul>
+      <li><strong>Reading availability</strong> &mdash; the app queries Google&rsquo;s
+          free/busy API to calculate how many free hours you have each day. Only
+          busy/free time intervals are read; event titles, descriptions, attendees,
+          and other event details are never accessed or stored.</li>
+      <li><strong>Writing work blocks</strong> &mdash; when you click &ldquo;Add to GCal&rdquo;,
+          the app creates a calendar event in the calendar you select. The event
+          contains only the task name, a scheduled time slot, and an internal tag
+          so the app can identify its own events.</li>
+      <li><strong>Deleting work blocks</strong> &mdash; when you remove a scheduled block,
+          the app deletes the corresponding event it previously created.</li>
+    </ul>
+    <div class="callout">
+      Google Calendar data is processed transiently in your browser only. No calendar
+      event content, titles, or attendee information is ever sent to or stored on
+      Commitments&rsquo; servers.
+    </div>
+    <p>
+      Your Google OAuth access token is cached in your browser&rsquo;s
+      <code>localStorage</code> for the duration of your session so you do not have to
+      re-authenticate on every page load. It is never transmitted to the app&rsquo;s
+      backend. You can revoke access at any time at
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.
+    </p>
+    <p>
+      The app&rsquo;s use of Google Calendar data complies with the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy"
+         target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+      including the Limited Use requirements.
+    </p>
+
+    <h2>5. Local storage</h2>
+    <p>The following settings are stored only in your browser&rsquo;s <code>localStorage</code>
+    and never sent to any server:</p>
+    <ul>
+      <li>Google Calendar settings (working windows, buffer time, efficiency, non-work days)</li>
+      <li>Selected calendar IDs for availability calculation</li>
+      <li>The ID of your chosen work-blocks calendar</li>
+      <li>Your Google OAuth access token (session only)</li>
+    </ul>
+    <p>You can clear all of this at any time by disconnecting Google Calendar in the app
+    or clearing your browser&rsquo;s site data.</p>
+
+    <h2>6. Cookies &amp; tracking</h2>
+    <p>
+      Commitments does not use cookies, analytics services, advertising trackers, or
+      any third-party tracking scripts. No data about your usage is shared with
+      advertising platforms.
+    </p>
+
+    <h2>7. Data retention &amp; deletion</h2>
+    <p>
+      Your account and all associated task data remain stored until you request deletion.
+      To delete your account and all data, contact the developer via GitHub. All records
+      tied to your user ID across every database table will be permanently removed within
+      30 days of your request.
+    </p>
+
+    <h2>8. Data security</h2>
+    <p>
+      All data in transit is encrypted via TLS. Data at rest is encrypted by Supabase.
+      Row-Level Security policies on the database ensure no user can read or modify
+      another user&rsquo;s data, even in the event of an application bug.
+    </p>
+
+    <h2>9. Children&rsquo;s privacy</h2>
+    <p>
+      Commitments is not directed at children under 13. The app does not knowingly
+      collect personal information from anyone under 13 years of age.
+    </p>
+
+    <h2>10. Changes to this policy</h2>
+    <p>
+      If this policy changes materially, the &ldquo;Last updated&rdquo; date at the top will
+      be revised. Continued use of the app after a change constitutes acceptance of the
+      updated policy.
+    </p>
+
+    <hr />
+    <p style="font-size: 13px; color: #888;">
+      Questions? Open an issue or discussion at
+      <a href="https://github.com/jbrownsberger/Commitments" target="_blank" rel="noopener">
+        github.com/jbrownsberger/Commitments
+      </a>.
+    </p>
+  </div>
+</body>
+</html>
