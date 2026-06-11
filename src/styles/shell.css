@@ -1,13 +1,15 @@
-/* ── CSS custom properties ────────────────────────────────────────────────── */
+/* ── CSS custom properties ───────────────────────────────────────────────── */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --color-text-primary:       #1a1a1a;
-  --color-text-secondary:     #666;
-  --color-text-tertiary:      #999;
-  --color-text-danger:        #c0392b;
-  --color-text-success:       #1a7a4a;
-  --color-text-warning:       #92610a;
-  --color-text-info:          #1a5ca8;
+  --color-accent:               #4f7df3;
+  --color-accent-hover:         #3a68d8;
+  --color-text-primary:         #1a1a1a;
+  --color-text-secondary:       #666;
+  --color-text-tertiary:        #999;
+  --color-text-danger:          #c0392b;
+  --color-text-success:         #1a7a4a;
+  --color-text-warning:         #92610a;
+  --color-text-info:            #1a5ca8;
   --color-background-primary:   #ffffff;
   --color-background-secondary: #f5f5f5;
   --color-background-danger:    #fdecea;
@@ -25,15 +27,17 @@
   --border-radius-lg: 10px;
 }
 
-/* ── Dark mode overrides ──────────────────────────────────────────────────── */
+/* ── Dark mode overrides ──────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --color-text-primary:       #e8e8e8;
-  --color-text-secondary:     #a0a0a0;
-  --color-text-tertiary:      #666;
-  --color-text-danger:        #f28b82;
-  --color-text-success:       #81c995;
-  --color-text-warning:       #fdd663;
-  --color-text-info:          #8ab4f8;
+  --color-accent:               #6b96f5;
+  --color-accent-hover:         #8aaef7;
+  --color-text-primary:         #e8e8e8;
+  --color-text-secondary:       #a0a0a0;
+  --color-text-tertiary:        #666;
+  --color-text-danger:          #f28b82;
+  --color-text-success:         #81c995;
+  --color-text-warning:         #fdd663;
+  --color-text-info:            #8ab4f8;
   --color-background-primary:   #1e1e1e;
   --color-background-secondary: #2a2a2a;
   --color-background-danger:    #3b1f1f;
@@ -69,7 +73,7 @@ body {
   padding: 0 1.5rem;
 }
 
-/* ── Toolbar ───────────────────────────────────────────────────────────── */
+/* ── Toolbar ─────────────────────────────────────────────────────────────────── */
 .toolbar {
   display: flex;
   justify-content: flex-end;
@@ -85,7 +89,84 @@ body {
   margin-right: auto;
 }
 
-/* ── Dark mode toggle button ─────────────────────────────────────────────── */
+/* ── User dropdown ───────────────────────────────────────────────────────────── */
+.user-dropdown {
+  position: relative;
+}
+.user-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  transition: background 0.15s;
+}
+.user-dropdown-trigger:hover { background: var(--color-background-secondary); }
+.user-dropdown-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+.user-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  z-index: 200;
+  overflow: hidden;
+  animation: dropdown-in 0.12s ease;
+}
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.user-dropdown-email {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  padding: 10px 14px 8px;
+  word-break: break-all;
+}
+.user-dropdown-divider {
+  height: 0.5px;
+  background: var(--color-border-tertiary);
+  margin: 2px 0;
+}
+.user-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.user-dropdown-item:hover:not(:disabled) { background: var(--color-background-secondary); }
+.user-dropdown-item:disabled { opacity: 0.4; cursor: default; }
+.user-dropdown-item--danger { color: var(--color-text-danger); }
+.user-dropdown-item--danger:hover { background: var(--color-background-danger); }
+
+/* ── Dark mode toggle button (kept for any legacy refs) ──────────────────── */
 .btn-theme-toggle {
   font-size: 14px;
   padding: 3px 8px;
@@ -100,7 +181,7 @@ body {
 }
 .btn-theme-toggle:hover { background: var(--color-background-secondary); }
 
-/* ── Import / Export bar ─────────────────────────────────────────────── */
+/* ── Import / Export bar ───────────────────────────────────────────────────────── */
 .import-export-bar {
   display: flex;
   align-items: center;
@@ -119,10 +200,10 @@ body {
   background: var(--color-background-danger);
 }
 
-/* ── App wrapper ──────────────────────────────────────────────────────────── */
+/* ── App wrapper ───────────────────────────────────────────────────────────────────────────── */
 .app { padding: 1.5rem 0; }
 
-/* ── Header ───────────────────────────────────────────────────────────── */
+/* ── Header ─────────────────────────────────────────────────────────────────── */
 .header {
   display: flex;
   justify-content: space-between;
@@ -134,7 +215,7 @@ body {
   font-weight: 500;
 }
 
-/* ── Buttons ────────────────────────────────────────────────────────────── */
+/* ── Buttons ─────────────────────────────────────────────────────────────────────────── */
 .btn {
   background: transparent;
   border: 0.5px solid var(--color-border-secondary);
@@ -147,38 +228,55 @@ body {
 }
 .btn:hover { background: var(--color-background-secondary); }
 .btn-primary {
-  background: var(--color-text-primary);
-  color: var(--color-background-primary);
-  border-color: var(--color-text-primary);
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
 }
-.btn-primary:hover { opacity: 0.85; }
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+  opacity: 1;
+}
 .btn-sm  { padding: 3px 10px; font-size: 12px; }
+.btn-icon { display: inline-flex; align-items: center; gap: 4px; }
 .btn-danger { border-color: var(--color-border-danger); color: var(--color-text-danger); }
 .btn-danger:hover { background: var(--color-background-danger); }
 .btn:disabled { opacity: 0.45; cursor: default; }
 
-/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+/* ── Tabs ───────────────────────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
   margin-bottom: 1.5rem;
 }
 .tab {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
   font-size: 13px;
+  font-family: var(--font-sans);
   cursor: pointer;
   color: var(--color-text-secondary);
+  border: none;
+  background: transparent;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+  transition: color 0.15s, background 0.15s;
+}
+.tab:hover:not(.active) {
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
 }
 .tab.active {
-  color: var(--color-text-primary);
-  border-bottom-color: var(--color-text-primary);
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
   font-weight: 500;
 }
 
-/* ── Plan layout (two-column: main | quick panel) ──────────────────────────── */
+/* ── Plan layout (two-column: main | quick panel) ──────────────────────────────── */
 .plan-layout {
   display: grid;
   grid-template-columns: 1fr 260px;
@@ -194,7 +292,7 @@ body {
   }
 }
 
-/* ── Quick panel ────────────────────────────────────────────────────────────── */
+/* ── Quick panel ──────────────────────────────────────────────────────────────────────────── */
 .quick-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-lg);
@@ -226,7 +324,7 @@ body {
   background: var(--color-background-primary);
   color: var(--color-text-primary);
 }
-.quick-add-input:focus { outline: none; border-color: var(--color-text-primary); }
+.quick-add-input:focus { outline: none; border-color: var(--color-accent); }
 
 .quick-task-item {
   display: flex;
@@ -263,7 +361,7 @@ body {
 }
 .quick-task-item:hover .quick-task-del { opacity: 1; }
 
-/* ── Shared form fields (used by modals) ──────────────────────────────────── */
+/* ── Shared form fields (used by modals) ─────────────────────────────────────────────── */
 .form-field {
   display: flex;
   flex-direction: column;
@@ -286,6 +384,12 @@ body {
   color: var(--color-text-primary);
   width: 100%;
 }
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
 /* Don't stretch checkboxes or radio buttons to full width */
 .form-field input[type="checkbox"],
 .form-field input[type="radio"] {
@@ -294,7 +398,7 @@ body {
 }
 .form-field textarea { resize: vertical; min-height: 70px; }
 
-/* ── Task status checks ───────────────────────────────────────────────── */
+/* ── Task status checks ──────────────────────────────────────────────────────────────────── */
 .task-check {
   width: 16px; height: 16px;
   border-radius: 50%;
@@ -304,10 +408,9 @@ body {
   font-size: 10px;
 }
 .task-check.done        { background: var(--color-background-success); border-color: var(--color-border-success); color: var(--color-text-success); }
-/* in-progress: solid blue fill, no glyph */
 .task-check.in-progress { background: var(--color-background-info); border-color: var(--color-border-info); }
 
-/* ── Progress bar ──────────────────────────────────────────────────────────── */
+/* ── Progress bar ────────────────────────────────────────────────────────────────────────────── */
 .progress-track {
   background: #e0e0e0;
   border-radius: 3px;
@@ -328,11 +431,11 @@ body {
   border: none;
   -webkit-appearance: none;
   appearance: none;
-  background: #4a90d9;
+  background: var(--color-accent);
   transition: width 0.25s ease;
 }
 
-/* ── Badges ───────────────────────────────────────────────────────────────── */
+/* ── Badges ───────────────────────────────────────────────────────────────────────────────────── */
 .badge {
   font-size: 11px;
   padding: 2px 8px;
@@ -345,7 +448,7 @@ body {
 [data-theme="dark"] .badge-high { background: #3b2a10; color: #fdd663; }
 .badge-critical { background: var(--color-background-danger);  color: var(--color-text-danger); }
 
-/* ── Color picker ──────────────────────────────────────────────────────────── */
+/* ── Color picker ───────────────────────────────────────────────────────────────────────────── */
 .color-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .color-opt {
   width: 24px; height: 24px;
@@ -355,7 +458,7 @@ body {
 }
 .color-opt.selected { border-color: var(--color-text-primary); }
 
-/* ── Notes ─────────────────────────────────────────────────────────────────── */
+/* ── Notes ─────────────────────────────────────────────────────────────────────────────────────── */
 .notes-text {
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -363,7 +466,7 @@ body {
   margin-top: 4px;
 }
 
-/* ── Empty state ──────────────────────────────────────────────────────────── */
+/* ── Empty state ────────────────────────────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
   padding: 2.5rem 1rem;
