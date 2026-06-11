@@ -23,8 +23,20 @@
 }
 
 .login-logo {
-  color: var(--color-text-info);
   margin-bottom: 1.25rem;
+}
+
+/* Plane logo image */
+.login-logo-img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  /* Invert to match dark mode automatically */
+  filter: none;
+  display: block;
+}
+[data-theme='dark'] .login-logo-img {
+  filter: invert(1);
 }
 
 .login-hero-title {
@@ -55,7 +67,7 @@
 
 .login-feature-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   font-size: 13.5px;
   color: var(--color-text-secondary);
@@ -63,11 +75,16 @@
 }
 
 .login-feature-icon {
-  font-size: 16px;
   flex-shrink: 0;
-  margin-top: 0px;
   width: 22px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-info, #3b82f6);
+}
+
+.login-feature-icon svg {
+  display: block;
 }
 
 /* ── Right card column ── */
