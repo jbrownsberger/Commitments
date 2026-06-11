@@ -2,30 +2,61 @@
  * gcalScheduler.js
  *
  * Shared Google Calendar scheduling logic used by GCalSync and Planner.
+ *
+ * SCOPE STRATEGY — sensitive tier only (no CASA security audit required):
+ *   calendar.readonly  — read calendar list, events, free/busy
+ *   calendar.events    — create / update / delete events this app created
+ *
+ * WRITE CALENDAR MODEL (two-tier):
+ *   Preferred: user manually creates a dedicated calendar (e.g. "Commitments
+ *   Work Blocks") in Google Calendar, then selects it here via the Phase 2
+ *   UI.  The free/busy query omits that calendar entirely — no tag-matching
+ *   needed because nothing else writes to it.
+ *
+ *   Fallback: user writes to primary (or any shared calendar).  App-written
+ *   events are identified by the private extended property
+ *   `commitments_task_id: "true"` and subtracted from busy intervals before
+ *   availability is calculated.
+ *
+ *   Phase 2 will add the picker UI.  Until then the write calendar defaults
+ *   to whatever was previously stored under LS_COMMITMENTS_CAL_KEY, or
+ *   'primary' if nothing is stored.
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+// Sensitive scopes only — no restricted `calendar` scope.
 const SCOPES = [
-  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
 
 export const CALENDAR_ID = 'primary';
 
-const LS_TOKEN_KEY    = 'gcal_access_token';
-const LS_EXPIRY_KEY   = 'gcal_token_expiry';
-export const LS_SETTINGS_KEY          = 'gcal_calc_settings';
-export const LS_CALS_KEY              = 'gcal_selected_cals';
-export const LS_PUSH_REGISTRY         = 'gcal_push_registry';
-export const LS_COMMITMENTS_CAL_KEY   = 'gcal_commitments_cal_id';
+const LS_TOKEN_KEY   = 'gcal_access_token';
+const LS_EXPIRY_KEY  = 'gcal_token_expiry';
+export const LS_SETTINGS_KEY = 'gcal_calc_settings';
+export const LS_CALS_KEY     = 'gcal_selected_cals';
+export const LS_PUSH_REGISTRY = 'gcal_push_registry';
 
-const MIN_CHUNK_HOURS  = 0.5;
+/**
+ * LS_WRITE_CAL_KEY — persists the calendar ID the user has chosen as the
+ * write target for Commitments work-block events.
+ *
+ * We intentionally reuse the same localStorage key that was previously used
+ * for LS_COMMITMENTS_CAL_KEY ('gcal_commitments_cal_id') so that existing
+ * users who already had a dedicated calendar selected don't lose that
+ * setting on upgrade.
+ */
+export const LS_WRITE_CAL_KEY       = 'gcal_commitments_cal_id';
+// Keep old export name alive for any code that imports it directly.
+export const LS_COMMITMENTS_CAL_KEY = LS_WRITE_CAL_KEY;
+
+const MIN_CHUNK_HOURS   = 0.5;
 const REFRESH_BEFORE_MS = 5 * 60_000;
 
 // ── Default settings ──────────────────────────────────────────────────────────
-// workWindows replaces the old workStart / workEnd single pair.
-// Each entry: { start: number (0-23), end: number (1-24) }
 export const DEFAULT_SETTINGS = {
   workWindows: [{ start: 8, end: 20 }],
   deductMins:  60,
@@ -67,29 +98,40 @@ export function saveSelectedCals(set) {
   localStorage.setItem(LS_CALS_KEY, JSON.stringify([...set]));
 }
 
-// ── Commitments calendar helpers ──────────────────────────────────────────────
-export function loadCommitmentsCalId() {
-  return localStorage.getItem(LS_COMMITMENTS_CAL_KEY) || null;
-}
-export function saveCommitmentsCalId(id) {
-  localStorage.setItem(LS_COMMITMENTS_CAL_KEY, id);
-}
-export function clearCommitmentsCalId() {
-  localStorage.removeItem(LS_COMMITMENTS_CAL_KEY);
+// ── Write-calendar helpers ────────────────────────────────────────────────────
+// These replace the auto-creation model (ensureCommitmentsCalendar) with a
+// user-selected write target.  The localStorage key is unchanged so existing
+// selections survive the upgrade.
+
+/** Returns the user-selected write calendar ID, or 'primary' as fallback. */
+export function loadWriteCalId() {
+  return localStorage.getItem(LS_WRITE_CAL_KEY) || 'primary';
 }
 
+/** Persists the user's chosen write calendar ID. */
+export function saveWriteCalId(id) {
+  if (id) localStorage.setItem(LS_WRITE_CAL_KEY, id);
+  else    localStorage.removeItem(LS_WRITE_CAL_KEY);
+}
+
+/** Clears the write calendar selection (reverts to 'primary' fallback). */
+export function clearWriteCalId() {
+  localStorage.removeItem(LS_WRITE_CAL_KEY);
+}
+
+// Legacy shims — all existing component code that calls these continues to
+// work without modification.
+export const loadCommitmentsCalId  = loadWriteCalId;
+export const saveCommitmentsCalId  = saveWriteCalId;
+export const clearCommitmentsCalId = clearWriteCalId;
+
+/**
+ * ensureCommitmentsCalendar — kept as a no-op shim so any component that
+ * imports and awaits it doesn't break.  Calendar creation now happens
+ * manually by the user; Phase 2 will remove this call from components.
+ */
 export async function ensureCommitmentsCalendar() {
-  const existing = loadCommitmentsCalId();
-  if (existing) return existing;
-  const list  = await fetchCalendarList();
-  const found = (list.items || []).find(c => c.summary === 'Commitments Work Blocks');
-  if (found) { saveCommitmentsCalId(found.id); return found.id; }
-  const created = await gcalFetch('/calendars', {
-    method: 'POST',
-    body: JSON.stringify({ summary: 'Commitments Work Blocks' }),
-  });
-  saveCommitmentsCalId(created.id);
-  return created.id;
+  return loadWriteCalId();
 }
 
 // ── Push registry ─────────────────────────────────────────────────────────────
@@ -230,7 +272,7 @@ export function stopSilentTokenRefresh() {
   if (_refreshTimer !== null) { clearTimeout(_refreshTimer); _refreshTimer = null; }
 }
 
-// ── Core API fetch ─────────────────────────────────────────────────────────────
+// ── Core API fetch ────────────────────────────────────────────────────────────
 export async function gcalFetch(path, opts = {}) {
   const token = await getAccessToken();
   const res = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
@@ -263,8 +305,16 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
   });
 }
 
+/**
+ * Fetches intervals of work blocks previously written by this app,
+ * identified by the `commitments_task_id` private extended property.
+ *
+ * These are used by subtractCommitmentsBlocks to prevent app-written events
+ * from being double-counted as "busy" when the write calendar is the same
+ * calendar being queried for availability (i.e. the fallback path).
+ */
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
-  const calId = loadCommitmentsCalId() || 'primary';
+  const calId = loadWriteCalId();
   const blocksByDay = {};
   let pageToken = null;
   do {
@@ -299,11 +349,16 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
 // ── Free slot enumeration ─────────────────────────────────────────────────────
 /**
  * Returns all free gap intervals across all configured work windows for isoDate.
- * workWindows is an array of { start, end } hour pairs (e.g. [{start:8,end:12},{start:13,end:17}]).
+ *
+ * KEY FIX (Phase 1): the write calendar is always excluded from the free/busy
+ * query.  On the preferred path (dedicated calendar) this is sufficient on its
+ * own — nothing else writes there so no subtraction is needed.  On the
+ * fallback path (primary or shared calendar) the app-written blocks are
+ * identified by commitments_task_id and subtracted by the caller via
+ * fetchCommitmentsBlockIntervals / subtractCommitmentsBlocks.
  */
 export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const { workWindows, bufferMins } = settings;
-  // Normalise: sort windows and build merged list of [winStartMs, winEndMs] pairs
   const windows = (workWindows || [{ start: settings.workStart ?? 8, end: settings.workEnd ?? 20 }])
     .filter(w => w.end > w.start)
     .sort((a, b) => a.start - b.start)
@@ -317,16 +372,17 @@ export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
 
-  const commitmentsCalId = loadCommitmentsCalId();
-  const fbCalIds = commitmentsCalId ? calIds.filter(id => id !== commitmentsCalId) : calIds;
+  // Always exclude the write calendar from the free/busy query.
+  const writeCalId = loadWriteCalId();
+  const fbCalIds   = calIds.filter(id => id !== writeCalId);
 
   const fbResp = await fetchFreeBusy(fbCalIds, timeMin, timeMax).catch(() => ({ calendars: {} }));
   let busy = [];
   for (const id of fbCalIds) busy.push(...(fbResp.calendars?.[id]?.busy || []));
 
-  const bufMs = bufferMins * 60_000;
+  const bufMs      = bufferMins * 60_000;
   const minChunkMs = MIN_CHUNK_HOURS * 3_600_000;
-  const gaps = [];
+  const gaps       = [];
 
   for (const win of windows) {
     const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, win.s) : win.s;
@@ -380,7 +436,7 @@ export async function createChunkedWorkBlocks(task, isoDate, durationHours, notB
   const s     = settings || loadGcalSettings();
   const ids   = calIds   || [...loadSelectedCals()];
   const tz    = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const calId = loadCommitmentsCalId() || 'primary';
+  const calId = loadWriteCalId();
 
   const gaps = await findFreeSlots(isoDate, notBeforeMs, s, ids);
   let remainingMs = durationHours * 3_600_000;
@@ -426,7 +482,7 @@ export async function createWorkBlock(task, isoDate, durationHours, settings, ca
 export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
   const s     = settings || loadGcalSettings();
   const ids   = calIds   || [...loadSelectedCals()];
-  const calId = loadCommitmentsCalId() || 'primary';
+  const calId = loadWriteCalId();
 
   const existing = getPushEntry(task.id, isoDate);
   if (existing) {
@@ -456,7 +512,7 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 }
 
 export async function deleteWorkBlock(isoDate) {
-  const calId   = loadCommitmentsCalId() || 'primary';
+  const calId   = loadWriteCalId();
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
   const params  = new URLSearchParams({ timeMin, timeMax, singleEvents: 'true', maxResults: '50' });
