@@ -34,7 +34,7 @@ const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const LOOK_AHEAD_DAYS = 28;
 const DAY_NAMES       = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// ── Helpers (UI-only, not shared) ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────────────
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
@@ -59,10 +59,6 @@ function remainingHours(task) {
   return Math.max(0, (parseFloat(task.estimated_hours) || 1) * (1 - prog / 100));
 }
 
-/**
- * Computes free minutes for a day, respecting multiple work windows.
- * workWindows: [{ start: number, end: number }, ...]
- */
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
@@ -122,7 +118,7 @@ function windowSummary(workWindows) {
     .join(', ');
 }
 
-// ── SVG icons ─────────────────────────────────────────────────────────────────────────────────────
+// ── SVG icons ─────────────────────────────────────────────────────────────────────────
 function IconCalendar({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -215,7 +211,7 @@ function IconPlus({ size = 12, style }) {
   );
 }
 
-// ── WorkWindowsEditor ────────────────────────────────────────────────────────────────────────────────
+// ── WorkWindowsEditor ─────────────────────────────────────────────────────────────────
 function WorkWindowsEditor({ windows, onChange }) {
   const hourOptions = Array.from({ length: 25 }, (_, i) => i);
 
@@ -275,7 +271,7 @@ function WorkWindowsEditor({ windows, onChange }) {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
   const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange } = appData;
   const todayISO = toISO(new Date());
@@ -299,20 +295,16 @@ export default function GCalSync({ appData }) {
   const [selCals,    setSelCals]    = useState(loadSelectedCals);
   const [writeCalId, setWriteCalId] = useState(loadWriteCalId);
 
-  const [freeBusy,    setFreeBusy]    = useState(null);
-  const [loadingFB,   setLoadingFB]   = useState(false);
-  // True only when the fallback subtraction fetch is running alongside the
-  // main free/busy request.  Used to show a subtle status note in the UI.
+  const [freeBusy,          setFreeBusy]          = useState(null);
+  const [loadingFB,         setLoadingFB]         = useState(false);
   const [subtractingBlocks, setSubtractingBlocks] = useState(false);
-  const [blockStatus, setBlockStatus] = useState({});
-  const [activePanel, setActivePanel] = useState('availability');
+  const [blockStatus,       setBlockStatus]       = useState({});
+  const [activePanel,       setActivePanel]       = useState('availability');
 
-  // ── Notify App of connection state changes ────────────────────────────────────
   useEffect(() => {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
 
-  // ── Load calendar list on connect ─────────────────────────────────────────────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -339,7 +331,6 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  // ── Pre-load block status when Work Blocks panel opens ────────────────────
   useEffect(() => {
     if (activePanel !== 'blocks' || !connected) return;
     const todayISO = toISO(new Date());
@@ -363,7 +354,7 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePanel, connected]);
 
-  // ── Auth handlers ──────────────────────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────────────────────────
   const handleConnect = async () => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
@@ -407,16 +398,9 @@ export default function GCalSync({ appData }) {
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
       const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
-      // Always exclude the write calendar from the free/busy query —
-      // it's either a dedicated calendar (preferred path, nothing else writes
-      // there) or primary (fallback path, where we subtract tagged blocks below).
-      const calIds = allCalIds.filter(id => id !== writeCalId);
-
+      const calIds    = allCalIds.filter(id => id !== writeCalId);
       if (!calIds.length) throw new Error('No calendars selected.');
 
-      // ── Fire both requests in parallel on the fallback path ────────────────
-      // On the preferred path (dedicated calendar) the write calendar is
-      // already excluded from the query, so no subtraction is needed.
       const isFallback = writeCalId === 'primary';
 
       const [fbResp, blocksByDay] = await Promise.all([
@@ -428,31 +412,17 @@ export default function GCalSync({ appData }) {
       ]);
       setSubtractingBlocks(false);
 
-      // Collate raw busy intervals per day.
       const busyByDay = {};
       for (const calId of calIds)
         for (const interval of (fbResp.calendars?.[calId]?.busy || []))
           (busyByDay[interval.start.slice(0, 10)] ??= []).push(interval);
 
-      // Subtract app-written blocks on the fallback path.
-      // blocksByDay maps iso → [{ startMs, endMs }, ...] (from gcalScheduler).
-      // subtractCommitmentsBlocks expects busy intervals in { start, end } ISO
-      // string form, so we convert the block intervals to match before passing.
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
-        const iso      = addDays(todayISO, i);
-        let   rawBusy  = busyByDay[iso] || [];
-
-        if (isFallback && blocksByDay[iso]?.length) {
-          // Convert { startMs, endMs } → { start, end } ISO strings for
-          // subtractCommitmentsBlocks, which works on the busy-interval format.
-          const blockIntervalsAsISO = blocksByDay[iso].map(b => ({
-            start: new Date(b.startMs).toISOString(),
-            end:   new Date(b.endMs  ).toISOString(),
-          }));
+        const iso     = addDays(todayISO, i);
+        let   rawBusy = busyByDay[iso] || [];
+        if (isFallback && blocksByDay[iso]?.length)
           rawBusy = subtractCommitmentsBlocks(rawBusy, blocksByDay[iso]);
-        }
-
         result[iso] = effectiveFreeMinutes(iso, rawBusy, settings);
       }
 
@@ -466,7 +436,7 @@ export default function GCalSync({ appData }) {
     }
   }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate]);
 
-  // ── Block create ──────────────────────────────────────────────────────────────────
+  // ── Block CRUD ────────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
@@ -479,7 +449,6 @@ export default function GCalSync({ appData }) {
     }
   };
 
-  // ── Block delete ──────────────────────────────────────────────────────────────────
   const handleDeleteBlock = async (task, iso) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'deleting' }));
@@ -497,7 +466,7 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // ── Disconnected screen ──────────────────────────────────────────────────────────────────
+  // ── Disconnected ──────────────────────────────────────────────────────────────────
   if (!connected) {
     return (
       <div className="gcal-pane">
@@ -531,7 +500,7 @@ export default function GCalSync({ appData }) {
     );
   }
 
-  // ── Connected screen ────────────────────────────────────────────────────────────────────────────────────
+  // ── Connected ─────────────────────────────────────────────────────────────────────
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = totalWindowHours(settings);
 
@@ -635,26 +604,33 @@ export default function GCalSync({ appData }) {
 
           </div>
 
-          {/* ── Write calendar picker ────────────────────────────────────────────────── */}
+          {/* ── Write calendar picker ─────────────────────────────────────────── */}
           {calendars.length > 0 && (
-            <div className="gcal-setting-group" style={{ marginTop: 16 }}>
+            <div className="gcal-write-cal-section">
               <div className="gcal-section-label">
                 Work blocks calendar
                 <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
               </div>
+
               <div className="gcal-write-cal-tip">
-                <strong>For best results:</strong> create a dedicated calendar in Google Calendar
-                (e.g. “Commitments Work Blocks”), then select it below. Work blocks will be written
-                only there, keeping your availability calculation clean.
-                {' '}
-                <a
-                  href="https://calendar.google.com/calendar/r/settings/createcalendar"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Create one now ↗
-                </a>
+                <span className="gcal-write-cal-tip-icon">💡</span>
+                <span>
+                  For the cleanest availability numbers, create a dedicated calendar
+                  in Google Calendar — e.g. <em>Commitments Work Blocks</em> — then
+                  select it below.{' '}
+                  <a
+                    href="https://calendar.google.com/calendar/r/settings/createcalendar"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Create one now ↗
+                  </a>
+                  <span className="gcal-write-cal-refresh-hint">
+                    After creating, refresh this page so the new calendar appears in the list.
+                  </span>
+                </span>
               </div>
+
               <select
                 className="gcal-write-cal-select"
                 value={writeCalId}
@@ -668,31 +644,32 @@ export default function GCalSync({ appData }) {
                 {calendars
                   .filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer')
                   .map(cal => (
-                    <option key={cal.id} value={cal.id}>
-                      {cal.summary}
-                    </option>
+                    <option key={cal.id} value={cal.id}>{cal.summary}</option>
                   ))
                 }
               </select>
-              {usingPrimaryFallback && (
-                <div className="gcal-write-cal-warning">
-                  <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  Writing to your primary calendar. App-written blocks are identified by tag
-                  and subtracted from your availability automatically, but a dedicated
-                  calendar is cleaner.
+
+              {usingPrimaryFallback ? (
+                <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
+                  <IconWarning size={13} />
+                  <span>
+                    Writing to your primary calendar. App-written blocks are identified
+                    by tag and subtracted automatically — but a dedicated calendar is cleaner.
+                  </span>
                 </div>
-              )}
-              {!usingPrimaryFallback && (
-                <div className="gcal-write-cal-ok">
-                  <IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                  Work blocks will be written to this calendar and excluded from your
-                  availability calculation automatically.
+              ) : (
+                <div className="gcal-write-cal-notice gcal-write-cal-notice--ok">
+                  <IconCheck size={13} />
+                  <span>
+                    Work blocks go to this calendar only, and it's excluded from your
+                    availability calculation automatically.
+                  </span>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Calendars to include (read for availability) ──────────────────── */}
+          {/* ── Calendars to include ──────────────────────────────────────────── */}
           {calendars.length > 0 && (
             <div className="gcal-setting-group" style={{ marginTop: 16 }}>
               <div className="gcal-section-label">Calendars to include
@@ -861,10 +838,10 @@ export default function GCalSync({ appData }) {
                           onClick={() => handleCreateBlock(task, iso, hrs)}
                           disabled={isPending || isDone || isDeleting}
                         >
-                          {isPending  ? '…'        :
-                           isDone     ? 'Added'      :
-                           isError    ? 'Retry'      :
-                           isDeleting ? '…'        :
+                          {isPending  ? '…'           :
+                           isDone     ? 'Added'        :
+                           isError    ? 'Retry'        :
+                           isDeleting ? '…'           :
                            '+ Add to GCal'}
                         </button>
                         {isDone && (

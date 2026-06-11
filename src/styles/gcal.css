@@ -421,3 +421,87 @@
   align-self: flex-start;
   margin-top: 2px;
 }
+
+/* ── Write-calendar picker section ───────────────────────────────────────────────────────── */
+.gcal-write-cal-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+}
+
+/* Tip callout */
+.gcal-write-cal-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-info, rgba(59,130,246,.06));
+  border: 0.5px solid var(--color-border-info, rgba(59,130,246,.2));
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  margin-bottom: 10px;
+}
+.gcal-write-cal-tip-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.gcal-write-cal-tip a {
+  color: var(--color-text-info);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.gcal-write-cal-tip a:hover { text-decoration: underline; }
+
+/* "Refresh after creating" hint — sits on its own line below the link */
+.gcal-write-cal-refresh-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Dropdown */
+.gcal-write-cal-select {
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.gcal-write-cal-select:focus {
+  outline: none;
+  border-color: var(--color-border-info, #3b82f6);
+  box-shadow: 0 0 0 2px var(--color-bg-info, rgba(59,130,246,.12));
+}
+
+/* Status notice (warning / ok) */
+.gcal-write-cal-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-md);
+  padding: 8px 11px;
+}
+.gcal-write-cal-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+.gcal-write-cal-notice--warn {
+  color: var(--color-text-warning);
+  background: var(--color-bg-warning);
+  border: 0.5px solid var(--color-border-warning, transparent);
+}
+.gcal-write-cal-notice--ok {
+  color: var(--color-text-success);
+  background: var(--color-bg-success);
+  border: 0.5px solid var(--color-border-success, transparent);
+}
