@@ -40,12 +40,18 @@
   gap: 1rem;
   align-items: start;
   min-width: 0;
+  /* Fixed height so .planner-weeks is bounded and its scrollbar stays visible */
+  height: calc(100vh - 180px);
+  min-height: 400px;
 }
 
 .planner-sidebar-wrap {
   display: flex;
   flex-direction: column;
   gap: 0;
+  /* Fill the column height so the sidebar can scroll independently */
+  height: 100%;
+  overflow: hidden;
 }
 
 .sidebar-toggle {
@@ -70,10 +76,10 @@
   border-radius: var(--radius-lg);
   background: var(--color-bg-primary);
   padding: 12px 14px;
-  position: sticky;
-  top: 1rem;
-  max-height: 80vh;
+  /* Fill remaining column height and scroll vertically */
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 .sidebar-title {
   font-size: 13px;
@@ -148,9 +154,33 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  overflow-x: auto;
+  /* Always-visible horizontal scrollbar — stays anchored at bottom of container */
+  overflow-x: scroll;
+  /* Vertical scroll within the bounded height */
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   min-width: 0;
+  /* Fill the grid cell height so the bar never falls off-screen */
+  height: 100%;
+  min-height: 0;
+  /* Force scrollbar to render even on macOS "hide scrollbars" setting */
+  scrollbar-width: auto;
+  padding-bottom: 4px;
+}
+.planner-weeks::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.planner-weeks::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+}
+.planner-weeks::-webkit-scrollbar-thumb {
+  background: var(--color-border-primary);
+  border-radius: 4px;
+}
+.planner-weeks::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
 }
 
 .planner-week {}
