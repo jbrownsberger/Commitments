@@ -99,17 +99,13 @@ body {
   transition: width 0.3s ease;
 }
 
-/* ── Range input — suppress all browser chrome ──────────────────────── */
-input[type="range"] {
-  outline: none !important;
-  box-shadow: none !important;
-  -webkit-appearance: none;
-  appearance: none;
-}
+/* ── Range input — only suppress outline/shadow, keep native track ────── */
 input[type="range"]:focus,
 input[type="range"]:focus-visible {
   outline: none !important;
   box-shadow: none !important;
 }
-input[type="range"]::-webkit-slider-thumb { outline: none; box-shadow: none; }
-input[type="range"]::-moz-range-thumb    { outline: none; box-shadow: none; }
+input[type="range"]::-webkit-slider-runnable-track { box-shadow: none; }
+input[type="range"]::-webkit-slider-thumb         { box-shadow: none; }
+input[type="range"]::-moz-range-track             { box-shadow: none; }
+input[type="range"]::-moz-range-thumb             { box-shadow: none; }
