@@ -15,7 +15,17 @@ export default function Modal({ title, children, onClose, wide }) {
         style={wide ? { maxWidth: 520 } : {}}
         onClick={e => e.stopPropagation()}
       >
-        {title && <h2 style={{ fontSize:16, fontWeight:500, marginBottom:16 }}>{title}</h2>}
+        {title && (
+          <div className="modal-header">
+            <h2 className="modal-title">{title}</h2>
+            <button
+              className="modal-close"
+              onClick={onClose}
+              aria-label="Close"
+              type="button"
+            >✕</button>
+          </div>
+        )}
         {children}
       </div>
     </div>
