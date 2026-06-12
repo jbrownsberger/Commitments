@@ -1,7 +1,7 @@
 /**
  * Shell — top-level layout. Manages the global add/edit task modal.
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { signOut } from '../lib/db.js';
 import Overview     from './Overview.jsx';
 import Categories   from './Categories.jsx';
@@ -11,7 +11,7 @@ import TaskModal    from './TaskModal.jsx';
 import ImportExport from './ImportExport.jsx';
 import '../styles/shell.css';
 
-// ── Tab definitions with inline SVG icons ────────────────────────────────────────
+// ── Tab definitions with inline SVG icons ────────────────────────────────────
 const TabIconOverview = () => (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
     xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -65,7 +65,7 @@ const TABS = [
   { id: 'gcal',       label: 'Google Calendar',  Icon: TabIconGCal        },
 ];
 
-// ── Toolbar icon set ──────────────────────────────────────────────────────────────────
+// ── Toolbar icon set ──────────────────────────────────────────────────────
 const IconUndo = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -119,7 +119,7 @@ const IconChevronDown = () => (
   </svg>
 );
 
-// ── User dropdown ────────────────────────────────────────────────────────────────────────
+// ── User dropdown ──────────────────────────────────────────────────────────────────
 function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo, onUndo, onRedo, appData }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -193,11 +193,48 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
   );
 }
 
+// ── Shell ────────────────────────────────────────────────────────────────────────
 export default function Shell({ appData, userId, userEmail, darkMode, onToggleDarkMode }) {
   const [tab,       setTab]       = useState('overview');
   const [editModal, setEditModal] = useState(null);
+  const tabsRef    = useRef(null);
+  const wrapperRef = useRef(null);
 
   const { categories, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+
+  // ── Scroll-fade logic ────────────────────────────────────────────────────
+  const updateFade = useCallback(() => {
+    const el = tabsRef.current;
+    const wrapper = wrapperRef.current;
+    if (!el || !wrapper) return;
+    const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
+    wrapper.classList.toggle('scrolled-end', atEnd);
+  }, []);
+
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    // Run once on mount to check if tabs fit without scrolling
+    updateFade();
+    el.addEventListener('scroll', updateFade, { passive: true });
+    // Also re-check on resize (e.g. rotating phone)
+    window.addEventListener('resize', updateFade, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', updateFade);
+      window.removeEventListener('resize', updateFade);
+    };
+  }, [updateFade]);
+
+  // Scroll the active tab into view when it changes
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const activeBtn = el.querySelector('.tab.active');
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
+    updateFade();
+  }, [tab, updateFade]);
 
   const openAdd = () => {
     if (categories.length === 0) return;
@@ -243,19 +280,21 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         </div>
 
         {/* ── Tabs ── */}
-        <div className="tabs" role="tablist">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`tab${tab === t.id ? ' active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >
-              <t.Icon />
-              <span>{t.label}</span>
-            </button>
-          ))}
+        <div className="tabs-wrapper" ref={wrapperRef}>
+          <div className="tabs" role="tablist" ref={tabsRef}>
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                className={`tab${tab === t.id ? ' active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                <t.Icon />
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Tab content ── */}
