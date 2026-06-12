@@ -1,18 +1,35 @@
-.planner { padding-bottom: 2rem; }
+.planner { padding-bottom: 5rem; }
 
+/* ── Floating bottom nav bar ───────────────────────────────────────────── */
+/* The bar lives fixed at the bottom of the viewport and slides up when    */
+/* the user moves their mouse within 80px of the bottom edge.              */
 .planner-controls {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(calc(100% + 1px));
+  z-index: 100;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
   gap: 8px;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  width: min(calc(100% - 3rem), 1080px);
+  padding: 10px 16px;
   background: var(--color-bg-primary);
-  padding: 8px 0;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.10);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+[data-theme="dark"] .planner-controls {
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+}
+/* Revealed state — added/removed by JS on the <div class="planner"> parent */
+.planner-controls--visible {
+  transform: translateX(-50%) translateY(0);
 }
 .planner-nav    { display: flex; gap: 6px; flex-wrap: wrap; }
 .planner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
