@@ -24,9 +24,9 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
         style={{
           width: 46, fontSize: 12, padding: '2px 6px',
           border: '0.5px solid var(--color-border-secondary)',
-          borderRadius: 'var(--border-radius-sm)',
+          borderRadius: 'var(--radius-sm)',
           fontFamily: 'var(--font-sans)',
-          background: 'var(--color-background-primary)',
+          background: 'var(--color-bg-primary)',
           color: 'var(--color-text-primary)',
         }}
       />
@@ -85,7 +85,6 @@ function fmtDate(iso) {
 }
 
 /* ── Compute GCal weekly hours from the free/busy map ────────────────────────── */
-// Returns { hours, windowStart, windowEnd } for the current week (today → Sunday).
 function gcalWeeklyHours(gcalFreeBusy) {
   if (!gcalFreeBusy) return null;
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -135,10 +134,8 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   };
 
   const manualWeeklyHours = preferences?.weekly_hours ?? preferences?.weeklyHours ?? 20;
-  const gcalResult        = gcalWeeklyHours(gcalFreeBusy); // { hours, windowStart, windowEnd } or null
+  const gcalResult        = gcalWeeklyHours(gcalFreeBusy);
 
-  // In GCal mode: availability and the planning window both span today → end-of-week (Sunday).
-  // In manual mode: window spans today + 6 days (rolling 7 days).
   const todayISO = new Date().toISOString().slice(0, 10);
   const weekEnd  = capacityMode === 'gcal'
     ? (gcalResult?.windowEnd ?? (() => { const d = new Date(); d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7); return d.toISOString().slice(0, 10); })())
@@ -170,20 +167,16 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const plannedThisWeek = allInc.reduce((s, t) => {
     if (!t.scheduled_days?.length) return s;
-
     const dh         = t.scheduled_day_hours || {};
     const allFuture  = t.scheduled_days.filter(d => d >= todayISO);
     if (!allFuture.length) return s;
-
     const inWindow   = allFuture.filter(d => d <= weekEnd);
     if (!inWindow.length) return s;
-
     const explicitTotal = allFuture.reduce((a, d) => a + (dh[d] || 0), 0);
     const allUnweighted = allFuture.filter(d => !dh[d]);
     const perUw = allUnweighted.length > 0
       ? Math.max(remainingHours(t) - explicitTotal, 0) / allUnweighted.length
       : 0;
-
     const windowSum = inWindow.reduce((a, d) => a + (dh[d] !== undefined ? dh[d] : perUw), 0);
     return s + windowSum;
   }, 0);
@@ -255,7 +248,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const gcalNoData = capacityMode === 'gcal' && gcalResult === null;
 
-  // Human-readable window label shown beneath the capacity bar
   const windowLabel = capacityMode === 'gcal'
     ? `GCal free time ${fmtDate(todayISO)}–${fmtDate(weekEnd)} · tasks ranked by urgency · click to open`
     : `Next 7 days (${fmtDate(todayISO)}–${fmtDate(weekEnd)}) · tasks ranked by urgency · click to open`;
@@ -453,7 +445,11 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
   const nextStep = (task.substeps || []).find(s => !s.done);
 
   return (
-    <div className="focus-card" onClick={onOpen}>
+    <div
+      className="focus-card"
+      style={{ '--focus-card-accent': color }}
+      onClick={onOpen}
+    >
       <div className="focus-card-header">
         <span
           className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
@@ -467,17 +463,14 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
       {nextStep && (
         <div className="focus-card-substep-row" onClick={e => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            style={{ flexShrink: 0, cursor: 'pointer', width: 13, height: 13, margin: 0 }}
-            checked={false}
+          <button
+            className="substep-pill"
             title={`Mark done: ${nextStep.text}`}
-            onChange={() => {}}
             onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
-          />
-          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-            Next: <em>{nextStep.text}</em>
-          </span>
+          >
+            <span className="substep-pill-check" aria-hidden="true" />
+            Next: {nextStep.text}
+          </button>
         </div>
       )}
 
