@@ -8,7 +8,10 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 8px 0 10px;
-  background: var(--color-bg-primary);
+  background: #fafafa;
+}
+[data-theme="dark"] .planner-controls {
+  background: #161616;
 }
 .planner-nav    { display: flex; gap: 6px; flex-wrap: wrap; }
 .planner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
