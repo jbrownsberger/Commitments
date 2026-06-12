@@ -119,6 +119,24 @@ const IconChevronDown = () => (
   </svg>
 );
 
+const IconDownload = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const IconUpload = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
 // ── User dropdown ──────────────────────────────────────────────────────────────────
 function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo, onUndo, onRedo, appData }) {
   const [open, setOpen] = useState(false);
@@ -180,6 +198,15 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
 
           <div className="user-dropdown-divider" />
 
+          {/* Import / Export — rendered inline inside the menu */}
+          <ImportExport
+            appData={{ ...appData, saveCategory: appData.saveCategory }}
+            menuMode
+            onAction={() => setOpen(false)}
+          />
+
+          <div className="user-dropdown-divider" />
+
           <button
             className="user-dropdown-item user-dropdown-item--danger"
             role="menuitem"
@@ -214,10 +241,8 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
   useEffect(() => {
     const el = tabsRef.current;
     if (!el) return;
-    // Run once on mount to check if tabs fit without scrolling
     updateFade();
     el.addEventListener('scroll', updateFade, { passive: true });
-    // Also re-check on resize (e.g. rotating phone)
     window.addEventListener('resize', updateFade, { passive: true });
     return () => {
       el.removeEventListener('scroll', updateFade);
@@ -225,7 +250,6 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     };
   }, [updateFade]);
 
-  // Scroll the active tab into view when it changes
   useEffect(() => {
     const el = tabsRef.current;
     if (!el) return;
@@ -252,31 +276,28 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
 
   return (
     <div id="root">
-      {/* ── Toolbar ── */}
-      <div className="toolbar">
-        <ImportExport appData={{ ...appData, saveCategory }} />
-        <UserDropdown
-          userEmail={userEmail}
-          darkMode={darkMode}
-          onToggleDarkMode={onToggleDarkMode}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onUndo={undo}
-          onRedo={redo}
-          appData={appData}
-        />
-      </div>
-
       <div className="app">
-        {/* ── Header ── */}
+        {/* ── Single compact header row ── */}
         <div className="header">
           <h1>Commitments</h1>
-          <button
-            className="btn btn-primary"
-            onClick={openAdd}
-            disabled={categories.length === 0}
-            title={categories.length === 0 ? 'Add a category first' : 'Add a new task'}
-          >+ Add task</button>
+          <div className="header-actions">
+            <button
+              className="btn btn-primary"
+              onClick={openAdd}
+              disabled={categories.length === 0}
+              title={categories.length === 0 ? 'Add a category first' : 'Add a new task'}
+            >+ New task</button>
+            <UserDropdown
+              userEmail={userEmail}
+              darkMode={darkMode}
+              onToggleDarkMode={onToggleDarkMode}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={undo}
+              onRedo={redo}
+              appData={{ ...appData, saveCategory }}
+            />
+          </div>
         </div>
 
         {/* ── Tabs ── */}

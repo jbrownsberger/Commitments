@@ -101,22 +101,6 @@ body {
   #root { padding: 0 1rem; }
 }
 
-/* ── Toolbar ──────────────────────────────────────────────────────────────────── */
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0 0;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-  margin-bottom: 0;
-}
-.toolbar-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  margin-right: auto;
-}
-
 /* ── User dropdown ─────────────────────────────────────────────────────────────── */
 .user-dropdown {
   position: relative;
@@ -194,53 +178,36 @@ body {
 .user-dropdown-item--danger { color: var(--color-text-danger); }
 .user-dropdown-item--danger:hover { background: var(--color-bg-danger); }
 
-/* ── Dark mode toggle button ───────────────────────────────────────────────────── */
-.btn-theme-toggle {
-  font-size: 14px;
-  padding: 3px 8px;
-  line-height: 1;
-  background: transparent;
-  border: 0.5px solid var(--color-border-secondary);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  transition: background 0.15s ease;
-}
-.btn-theme-toggle:hover { background: var(--color-bg-secondary); }
-
-/* ── Import / Export bar ──────────────────────────────────────────────────────── */
-.import-export-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+/* ── Import / Export (menu-mode flash message) ────────────────────────────── */
 .import-export-flash {
   font-size: 11px;
   color: var(--color-text-success);
-  padding: 2px 8px;
-  background: var(--color-bg-success);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
+  padding: 4px 14px 6px;
+  display: block;
 }
 .import-export-flash.error {
   color: var(--color-text-danger);
-  background: var(--color-bg-danger);
 }
 
 /* ── App wrapper ──────────────────────────────────────────────────────────────────── */
-.app { padding: 1.5rem 0; }
+.app { padding: 1rem 0; }
 
 /* ── Header ──────────────────────────────────────────────────────────────────── */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  padding: 0.75rem 0 0.75rem;
+  margin-bottom: 0.25rem;
 }
 .header h1 {
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────────── */
@@ -284,15 +251,14 @@ body {
   top: 0;
   right: 0;
   width: 40px;
-  height: calc(100% - 0.5px); /* stop at the bottom border */
+  height: calc(100% - 0.5px);
   pointer-events: none;
-  background: linear-gradient(to right, transparent, var(--color-bg-primary, #fff));
+  background: linear-gradient(to right, transparent, #fafafa);
   transition: opacity 0.2s;
 }
 [data-theme="dark"] .tabs-wrapper::after {
   background: linear-gradient(to right, transparent, #161616);
 }
-/* Hide the fade once fully scrolled to the end — toggled by JS class */
 .tabs-wrapper.scrolled-end::after {
   opacity: 0;
 }
@@ -301,14 +267,12 @@ body {
   display: flex;
   gap: 2px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
-  /* Horizontal scroll on overflow */
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  /* Hide scrollbar visually on all browsers */
-  scrollbar-width: none;       /* Firefox */
-  -ms-overflow-style: none;    /* IE/Edge */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+.tabs::-webkit-scrollbar { display: none; }
 
 .tab {
   display: inline-flex;
@@ -324,9 +288,7 @@ body {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  /* Added border-color to transition */
   transition: color 0.15s, background 0.15s, border-color 0.15s;
-  /* Prevent tabs from shrinking or wrapping */
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -340,7 +302,6 @@ body {
   font-weight: 500;
 }
 
-/* Tighter tab padding on small screens to fit more before scrolling */
 @media (max-width: 480px) {
   .tab {
     padding: 8px 10px;
