@@ -211,7 +211,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       </div>
 
       {/* ── Progress ── */}
-      <div style={{ marginBottom:20 }}>
+      <div style={{ marginBottom:20, outline:'none' }}>
         <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'var(--color-text-secondary)', marginBottom:6 }}>
           <span>Progress</span>
           <span>{prog}%</span>
@@ -246,84 +246,86 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
             <div
               key={i}
               style={{
-                display:'flex', alignItems:'center', gap:8,
+                display:'flex',
+                alignItems:'center',
+                gap:8,
                 padding:'6px 0',
                 borderBottom:'0.5px solid var(--color-border-tertiary)',
-                cursor:'default',
+                cursor:'grab',
               }}
               draggable
-              onDragStart={e => {
-                dragIdx.current = i;
-                e.currentTarget.style.opacity = '0.4';
-              }}
-              onDragEnd={e => { e.currentTarget.style.opacity = '1'; }}
+              onDragStart={() => { dragIdx.current = i; }}
               onDragOver={e => e.preventDefault()}
-              onDrop={e => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
+              onDrop={() => moveSubstep(dragIdx.current, i)}
             >
-              {/* drag handle */}
-              <span style={{ color:'var(--color-text-tertiary)', cursor:'grab', fontSize:14, userSelect:'none' }}>⠇</span>
-              {/* checkbox */}
               <input
                 type="checkbox"
-                checked={!!s.done}
+                checked={s.done}
                 onChange={() => toggleSubstep(i)}
-                style={{ width:16, height:16, cursor:'pointer', flexShrink:0 }}
+                style={{ cursor:'pointer', flexShrink:0 }}
               />
-              {/* text */}
-              <span style={{
-                flex:1, fontSize:14,
-                textDecoration: s.done ? 'line-through' : 'none',
-                color: s.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-              }}>{s.text}</span>
-              {/* weight */}
-              <span style={{ fontSize:12, color:'var(--color-text-tertiary)' }}>wt:</span>
-              <input
-                type="number" min={1} max={99}
-                value={s.weight ?? 1}
-                onChange={e => setWeight(i, e.target.value)}
-                style={{
-                  width:52, fontSize:13, padding:'2px 4px',
-                  border:'0.5px solid var(--color-border-secondary)',
-                  borderRadius:4, textAlign:'center',
-                }}
-                title="Weight (affects progress %)"
-              />
+              <span style={{ flex:1, fontSize:14, textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--color-text-secondary)' : 'inherit' }}>
+                {s.text || s.name}
+              </span>
+              <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
+                <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }} title="Weight (affects progress %)">wt:</span>
+                <input
+                  type="number" min={1} max={10}
+                  value={s.weight ?? 1}
+                  onChange={e => setWeight(i, e.target.value)}
+                  style={{ width:36, fontSize:12, textAlign:'center', border:'0.5px solid var(--color-border-secondary)', borderRadius:4, padding:'1px 4px' }}
+                />
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Notes ── */}
-      {local.notes && (
+      {/* ── Snooze ── */}
+      {(local.due_date ?? local.dueDate) && (
         <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Notes</div>
-          <div style={{ fontSize:13, color:'var(--color-text-secondary)', fontStyle:'italic' }}>{local.notes}</div>
+          <div style={{ fontSize:13, color:'var(--color-text-secondary)', marginBottom:6 }}>Snooze:</div>
+          <div style={{ display:'flex', gap:8 }}>
+            <button className="btn btn-sm" onClick={() => snooze(1)}>+1 day</button>
+            <button className="btn btn-sm" onClick={() => snooze(7)}>+1 week</button>
+          </div>
         </div>
       )}
 
-      {/* ── Snooze ── */}
-      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:20 }}>
-        <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>Snooze:</span>
-        {(local.due_date ?? local.dueDate) ? (
-          <>
-            <button className="btn btn-sm" onClick={() => snooze(1)}>+1 day</button>
-            <button className="btn btn-sm" onClick={() => snooze(7)}>+1 week</button>
-          </>
-        ) : (
-          <span style={{ fontSize:12, color:'var(--color-text-tertiary)' }}>No due date set</span>
-        )}
+      {/* ── Notes ── */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontSize:13, color:'var(--color-text-secondary)', marginBottom:6 }}>Notes</div>
+        <textarea
+          rows={3}
+          value={local.notes || ''}
+          onChange={e => setLocal(p => ({ ...p, notes: e.target.value }))}
+          onBlur={e => save({ notes: e.target.value })}
+          placeholder="Add notes…"
+          style={{
+            width:'100%', fontSize:13, resize:'vertical',
+            border:'0.5px solid var(--color-border-secondary)',
+            borderRadius:'var(--radius-md)', padding:'8px 10px',
+            background:'var(--color-bg-primary)', color:'var(--color-text-primary)',
+            fontFamily:'inherit',
+          }}
+        />
       </div>
 
       {/* ── Footer ── */}
-      <div className="modal-actions">
-        <button className="btn" onClick={onClose}>Close</button>
-        <button className="btn" onClick={() => { onEdit(local); onClose(); }}>Edit</button>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:'0.5px solid var(--color-border-tertiary)', paddingTop:12 }}>
         <button
-          className="btn btn-danger"
-          onClick={() => {
-            if (window.confirm(`Delete "${local.name}"?`)) { onDelete(local.id); onClose(); }
-          }}
-        >Delete</button>
+          className="btn"
+          style={{ color:'var(--color-text-danger)', fontSize:13 }}
+          onClick={() => { if (window.confirm('Delete this task?')) onDelete(task.id); }}
+        >
+          Delete
+        </button>
+        <div style={{ display:'flex', gap:8 }}>
+          {onEdit && (
+            <button className="btn" onClick={() => { onClose(); onEdit(task); }}>Edit</button>
+          )}
+          <button className="btn btn-primary" onClick={onClose}>Done</button>
+        </div>
       </div>
     </Modal>
   );
