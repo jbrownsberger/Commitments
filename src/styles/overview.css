@@ -45,6 +45,24 @@
   margin-bottom: 8px;
 }
 
+/* ── Committed-load progress bar ───────────────────────────────────────────── */
+.progress-track {
+  height: 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  border: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+[data-theme="dark"] .progress-track { background: #3a3a3a; }
+.progress-fill {
+  height: 100%;
+  border-radius: 0;
+  transition: width 0.3s ease;
+}
+
 /* ── Capacity mode toggle pill ─────────────────────────────────────────────────────────── */
 .capacity-mode-toggle {
   display: inline-flex;
@@ -233,7 +251,6 @@
 .focus-empty-icon {
   font-size: 32px;
   line-height: 1;
-  /* gentle float animation */
   animation: focus-float 3s ease-in-out infinite;
 }
 @keyframes focus-float {
