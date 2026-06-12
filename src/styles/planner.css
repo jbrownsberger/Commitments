@@ -1,22 +1,14 @@
 .planner { padding-bottom: 5rem; }
 
-/* ── Sticky top nav bar ─────────────────────────────────────────────────── */
+/* ── Week nav bar ─────────────────────────────────────────────────────────── */
 .planner-controls {
-  position: sticky;
-  top: 0;
-  z-index: 100;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 8px 14px;
+  padding: 8px 0 10px;
   background: var(--color-bg-primary);
-  border-bottom: 0.5px solid var(--color-border-secondary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-[data-theme="dark"] .planner-controls {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 .planner-nav    { display: flex; gap: 6px; flex-wrap: wrap; }
 .planner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
