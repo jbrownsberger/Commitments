@@ -28,7 +28,7 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Small inline SVG icons (no emoji) ─────────────────────────────────────────────
+// ── Small inline SVG icons (no emoji) ─────────────────────────────────────────────────────
 const IconCalendar = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
     xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -73,7 +73,7 @@ const IconBolt = () => (
   </svg>
 );
 
-// ── Feature list ────────────────────────────────────────────────────────────────────
+// ── Feature list ──────────────────────────────────────────────────────────────────────
 const FEATURES = [
   { Icon: IconCalendar, text: 'Track tasks with due dates, priorities, and progress' },
   { Icon: IconClock,    text: 'Schedule work across your calendar with a smart planner' },
@@ -81,7 +81,7 @@ const FEATURES = [
   { Icon: IconBolt,     text: 'Quick tasks for anything that only takes a few minutes' },
 ];
 
-// ── Login page ────────────────────────────────────────────────────────────────────
+// ── Login page ─────────────────────────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -216,7 +216,7 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ──────────────────────────────────────────────────────────────────
+// ── Authed shell ─────────────────────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
@@ -305,9 +305,16 @@ function AuthedApp({ userId, userEmail }) {
 
 function Splash({ text }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
-      height:'100vh', fontSize: 13, color: 'var(--color-text-secondary)' }}>
-      {text}
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 14,
+      height: '100vh',
+    }}>
+      <div className="splash-spinner" />
+      <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{text}</span>
     </div>
   );
 }

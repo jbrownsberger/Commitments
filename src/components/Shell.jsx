@@ -1,7 +1,7 @@
 /**
  * Shell — top-level layout. Manages the global add/edit task modal.
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { signOut } from '../lib/db.js';
 import Overview     from './Overview.jsx';
 import Categories   from './Categories.jsx';
@@ -11,14 +11,61 @@ import TaskModal    from './TaskModal.jsx';
 import ImportExport from './ImportExport.jsx';
 import '../styles/shell.css';
 
+// ── Tab definitions with inline SVG icons ────────────────────────────────────
+const TabIconOverview = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="1" y="1" width="6" height="6" rx="1.5"
+      stroke="currentColor" strokeWidth="1.4" fill="none"/>
+    <rect x="9" y="1" width="6" height="6" rx="1.5"
+      stroke="currentColor" strokeWidth="1.4" fill="none"/>
+    <rect x="1" y="9" width="6" height="6" rx="1.5"
+      stroke="currentColor" strokeWidth="1.4" fill="none"/>
+    <rect x="9" y="9" width="6" height="6" rx="1.5"
+      stroke="currentColor" strokeWidth="1.4" fill="none"/>
+  </svg>
+);
+
+const TabIconCategories = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="3" cy="4.5" r="1.2" fill="currentColor"/>
+    <path d="M6.5 4.5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <circle cx="3" cy="8" r="1.2" fill="currentColor"/>
+    <path d="M6.5 8h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <circle cx="3" cy="11.5" r="1.2" fill="currentColor"/>
+    <path d="M6.5 11.5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+const TabIconPlanner = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="1.5" y="2.5" width="13" height="11" rx="2"
+      stroke="currentColor" strokeWidth="1.4" fill="none"/>
+    <path d="M1.5 6h13" stroke="currentColor" strokeWidth="1.2"/>
+    <path d="M5 1.5v2M11 1.5v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M4.5 9h3M4.5 11.5h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+  </svg>
+);
+
+const TabIconGCal = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4"/>
+    <path d="M8 4.5V8l2.5 1.5" stroke="currentColor"
+      strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
 const TABS = [
-  { id: 'overview',   label: 'Overview & Queue' },
-  { id: 'categories', label: 'Categories'       },
-  { id: 'planner',    label: 'Planner'           },
-  { id: 'gcal',       label: 'Google Calendar'   },
+  { id: 'overview',   label: 'Overview',        Icon: TabIconOverview    },
+  { id: 'categories', label: 'Categories',       Icon: TabIconCategories  },
+  { id: 'planner',    label: 'Planner',          Icon: TabIconPlanner     },
+  { id: 'gcal',       label: 'Google Calendar',  Icon: TabIconGCal        },
 ];
 
-// ── Inline SVG icons ────────────────────────────────────────────────────────
+// ── Toolbar icon set ──────────────────────────────────────────────────────
 const IconUndo = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -57,11 +104,137 @@ const IconMoon = () => (
   </svg>
 );
 
+const IconUser = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+const IconChevronDown = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+
+// ── User dropdown ──────────────────────────────────────────────────────────────────
+function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo, onUndo, onRedo, appData }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="user-dropdown" ref={ref}>
+      <button
+        className="user-dropdown-trigger"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        title={userEmail}
+      >
+        <span className="user-dropdown-avatar"><IconUser /></span>
+        <IconChevronDown />
+      </button>
+
+      {open && (
+        <div className="user-dropdown-menu" role="menu">
+          <div className="user-dropdown-email">{userEmail}</div>
+          <div className="user-dropdown-divider" />
+
+          <button
+            className="user-dropdown-item"
+            role="menuitem"
+            onClick={() => { onToggleDarkMode(); }}
+          >
+            {darkMode ? <IconSun /> : <IconMoon />}
+            {darkMode ? 'Light mode' : 'Dark mode'}
+          </button>
+
+          <button
+            className="user-dropdown-item"
+            role="menuitem"
+            onClick={() => { onUndo(); }}
+            disabled={!canUndo}
+          >
+            <IconUndo /> Undo
+          </button>
+
+          <button
+            className="user-dropdown-item"
+            role="menuitem"
+            onClick={() => { onRedo(); }}
+            disabled={!canRedo}
+          >
+            <IconRedo /> Redo
+          </button>
+
+          <div className="user-dropdown-divider" />
+
+          <button
+            className="user-dropdown-item user-dropdown-item--danger"
+            role="menuitem"
+            onClick={() => signOut()}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Shell ────────────────────────────────────────────────────────────────────────
 export default function Shell({ appData, userId, userEmail, darkMode, onToggleDarkMode }) {
   const [tab,       setTab]       = useState('overview');
   const [editModal, setEditModal] = useState(null);
+  const tabsRef    = useRef(null);
+  const wrapperRef = useRef(null);
 
   const { categories, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+
+  // ── Scroll-fade logic ────────────────────────────────────────────────────
+  const updateFade = useCallback(() => {
+    const el = tabsRef.current;
+    const wrapper = wrapperRef.current;
+    if (!el || !wrapper) return;
+    const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
+    wrapper.classList.toggle('scrolled-end', atEnd);
+  }, []);
+
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    // Run once on mount to check if tabs fit without scrolling
+    updateFade();
+    el.addEventListener('scroll', updateFade, { passive: true });
+    // Also re-check on resize (e.g. rotating phone)
+    window.addEventListener('resize', updateFade, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', updateFade);
+      window.removeEventListener('resize', updateFade);
+    };
+  }, [updateFade]);
+
+  // Scroll the active tab into view when it changes
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const activeBtn = el.querySelector('.tab.active');
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
+    updateFade();
+  }, [tab, updateFade]);
 
   const openAdd = () => {
     if (categories.length === 0) return;
@@ -81,29 +254,17 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     <div id="root">
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        {userEmail && <span className="toolbar-label">{userEmail}</span>}
         <ImportExport appData={{ ...appData, saveCategory }} />
-        <button
-          className="btn btn-sm btn-icon"
-          onClick={undo}
-          disabled={!canUndo}
-          title="Undo"
-        ><IconUndo /> Undo</button>
-        <button
-          className="btn btn-sm btn-icon"
-          onClick={redo}
-          disabled={!canRedo}
-          title="Redo"
-        ><IconRedo /> Redo</button>
-        <button
-          className="btn-theme-toggle"
-          onClick={onToggleDarkMode}
-          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {darkMode ? <IconSun /> : <IconMoon />}
-        </button>
-        <button className="btn btn-sm" onClick={() => signOut()}>Sign out</button>
+        <UserDropdown
+          userEmail={userEmail}
+          darkMode={darkMode}
+          onToggleDarkMode={onToggleDarkMode}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          appData={appData}
+        />
       </div>
 
       <div className="app">
@@ -119,14 +280,21 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         </div>
 
         {/* ── Tabs ── */}
-        <div className="tabs">
-          {TABS.map(t => (
-            <div
-              key={t.id}
-              className={`tab${tab === t.id ? ' active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >{t.label}</div>
-          ))}
+        <div className="tabs-wrapper" ref={wrapperRef}>
+          <div className="tabs" role="tablist" ref={tabsRef}>
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                className={`tab${tab === t.id ? ' active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                <t.Icon />
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Tab content ── */}
