@@ -84,6 +84,7 @@
   border-bottom: 0.5px solid var(--color-border-tertiary);
   cursor: pointer;
 }
+.urgent-bar-row:focus-visible { outline: none; }
 .urgent-bar-row:last-child { border-bottom: none; }
 .urgent-bar-row:hover {
   background: var(--color-bg-secondary);
@@ -119,6 +120,7 @@
   background: var(--color-bg-primary);
   transition: background 0.12s, box-shadow 0.12s;
 }
+.focus-card:focus-visible { outline: none; }
 .focus-card:hover {
   background: var(--color-bg-secondary);
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -158,6 +160,7 @@
   border: 0.5px solid var(--color-border-info);
   transition: background 0.12s;
 }
+.substep-pill:focus-visible { outline: none; }
 .substep-pill:hover {
   background: #d0e4fc;
 }
@@ -277,6 +280,7 @@
   border-bottom: 0.5px solid var(--color-border-tertiary);
   cursor: pointer;
 }
+.today-plan-item:focus-visible { outline: none; }
 .today-plan-item:last-child { border-bottom: none; }
 .today-plan-dot {
   width: 8px;
