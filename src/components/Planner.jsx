@@ -10,8 +10,6 @@ import '../styles/planner.css';
 const SHOW_WEEKS = 4;
 const DAY_NAMES  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const LS_AUTOFILL_KEY = 'planner_autofill_settings';
-// How many px from the bottom edge triggers the nav bar
-const BOTTOM_TRIGGER_PX = 80;
 
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function fmtShort(iso) {
@@ -496,30 +494,6 @@ export default function Planner({ appData, userId, onEditTask }) {
   const [afSettings,     setAfSettings]     = useState(loadAutoFillSettings);
   const [showAfModal,    setShowAfModal]    = useState(false);
   const [gcalPushStatus, setGcalPushStatus] = useState(() => seedPushStatusFromRegistry(buildISOs(0)));
-  const [navVisible,     setNavVisible]     = useState(false);
-
-  // ── Bottom-hover reveal for the nav bar ──────────────────────────────────
-  // We track mousemove on the document; when the cursor enters the bottom
-  // BOTTOM_TRIGGER_PX strip of the viewport the bar slides up.
-  const navRef = useRef(null);
-  useEffect(() => {
-    let hideTimer = null;
-    const onMove = (e) => {
-      const fromBottom = window.innerHeight - e.clientY;
-      if (fromBottom <= BOTTOM_TRIGGER_PX) {
-        clearTimeout(hideTimer);
-        setNavVisible(true);
-      } else if (navRef.current && !navRef.current.matches(':hover')) {
-        // small delay so user can move mouse onto the bar without it vanishing
-        hideTimer = setTimeout(() => setNavVisible(false), 300);
-      }
-    };
-    document.addEventListener('mousemove', onMove, { passive: true });
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      clearTimeout(hideTimer);
-    };
-  }, []);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 700);
@@ -818,13 +792,8 @@ export default function Planner({ appData, userId, onEditTask }) {
         />
       ) : (
         <>
-          {/* ── Fixed bottom nav bar — reveals on hover near bottom edge ── */}
-          <div
-            ref={navRef}
-            className={`planner-controls${navVisible ? ' planner-controls--visible' : ''}`}
-            onMouseEnter={() => setNavVisible(true)}
-            onMouseLeave={() => setNavVisible(false)}
-          >
+          {/* ── Sticky top nav bar ── */}
+          <div className="planner-controls">
             <div className="planner-nav">
               <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
               <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
