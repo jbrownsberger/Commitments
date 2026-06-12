@@ -83,6 +83,12 @@ body {
   border: none;
   outline: none;
 }
+.progress-track:focus,
+.progress-track:focus-within,
+.progress-track:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 [data-theme="dark"] .progress-track {
   background: #3a3a3a;
 }
