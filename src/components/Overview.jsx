@@ -3,7 +3,7 @@ import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgen
 import QuickTasks from './QuickTasks.jsx';
 import '../styles/overview.css';
 
-/* ── Inline capacity editor ──────────────────────────────────────────────────── */
+/* ── Inline capacity editor ─────────────────────────────────────────────────── */
 function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   const [val, setVal] = useState(String(weeklyHours));
   const commit = () => {
@@ -37,7 +37,7 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   );
 }
 
-/* ── Gear SVG ──────────────────────────────────────────────────────────────────── */
+/* ── Gear SVG ────────────────────────────────────────────────────────────────────── */
 const GearIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -60,7 +60,7 @@ a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
-/* ── Helpers ───────────────────────────────────────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────────────────────────────────── */
 function hoursToday(task) {
   const todayISO = new Date().toISOString().slice(0, 10);
   if (!task.scheduled_days?.includes(todayISO)) return 0;
@@ -77,14 +77,12 @@ function statusFromProgress(prog, current) {
   return current === 'done' ? 'not started' : (current || 'not started');
 }
 
-/* ── Format a date ISO string as "Mon Jun 9" ────────────────────────────────── */
 function fmtDate(iso) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric',
   });
 }
 
-/* ── Compute GCal weekly hours from the free/busy map ────────────────────────── */
 function gcalWeeklyHours(gcalFreeBusy) {
   if (!gcalFreeBusy) return null;
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -102,7 +100,6 @@ function gcalWeeklyHours(gcalFreeBusy) {
   };
 }
 
-/* ── Compute rolling-7-day window end (manual mode) ─────────────────────────── */
 function rollingWeekEnd() {
   const d = new Date();
   d.setDate(d.getDate() + 6);
@@ -111,7 +108,7 @@ function rollingWeekEnd() {
 
 const CAP_MODE_KEY = 'capacity_mode';
 
-/* ── Overview ──────────────────────────────────────────────────────────────────── */
+/* ── Overview ────────────────────────────────────────────────────────────────────── */
 export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const {
     categories, tasks, preferences,
@@ -343,7 +340,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           )}
         </div>
 
-        {focusQueue.length > 0 && (
+        {focusQueue.length > 0 ? (
           <div>
             <div className="section-label">Suggested focus</div>
             {focusQueue.map(t => (
@@ -358,12 +355,16 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
               />
             ))}
           </div>
-        )}
-
-        {focusQueue.length === 0 && (
-          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', textAlign: 'center', padding: '2rem 0' }}>
-            No pending tasks.
-            {onAddTask && <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={onAddTask}>Add one</button>}
+        ) : (
+          <div className="focus-empty">
+            <div className="focus-empty-icon">✅</div>
+            <p className="focus-empty-title">You're all caught up!</p>
+            <p className="focus-empty-sub">No pending tasks right now. Add a new one whenever you're ready.</p>
+            {onAddTask && (
+              <button className="btn btn-sm btn-primary" onClick={onAddTask}>
+                + Add task
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-/* ── Overview layout ───────────────────────────────────────────────────────── */
+/* ── Overview layout ─────────────────────────────────────────────── */
 .right-col {
   display: flex;
   flex-direction: column;
@@ -45,7 +45,7 @@
   margin-bottom: 8px;
 }
 
-/* ── Capacity mode toggle pill ──────────────────────────────────────────────────────── */
+/* ── Capacity mode toggle pill ─────────────────────────────────────────────────────────── */
 .capacity-mode-toggle {
   display: inline-flex;
   border: 0.5px solid var(--color-border-secondary);
@@ -75,7 +75,7 @@
   color: var(--color-text-primary);
 }
 
-/* ── Urgent bar rows ──────────────────────────────────────────────────────────────── */
+/* ── Urgent bar rows ──────────────────────────────────────────────────────────────────── */
 .urgent-bar-row {
   display: flex;
   align-items: flex-start;
@@ -217,7 +217,44 @@
   padding: 1px 7px;
 }
 
-/* ── Today's plan panel ───────────────────────────────────────────────────── */
+/* ── Focus empty state ────────────────────────────────────────────────────────────── */
+.focus-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+.focus-empty-icon {
+  font-size: 32px;
+  line-height: 1;
+  /* gentle float animation */
+  animation: focus-float 3s ease-in-out infinite;
+}
+@keyframes focus-float {
+  0%, 100% { transform: translateY(0);    }
+  50%       { transform: translateY(-5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-empty-icon { animation: none; }
+}
+.focus-empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.focus-empty-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  max-width: 260px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Today's plan panel ─────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
