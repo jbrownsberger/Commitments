@@ -1,4 +1,4 @@
-/* ── Overview layout ─────────────────────────────────────────────────────────────────── */
+/* ── Overview layout ───────────────────────────────────────────────────────── */
 .right-col {
   display: flex;
   flex-direction: column;
@@ -16,11 +16,11 @@
   .overview-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Metric cards: elevated with shadow and a subtle hover lift */
+/* Metric cards */
 .overview-metric {
-  background: var(--color-background-primary);
+  background: var(--color-bg-primary);
   border: 0.5px solid var(--color-border-tertiary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
   text-align: center;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
@@ -45,13 +45,13 @@
   margin-bottom: 8px;
 }
 
-/* ── Capacity mode toggle pill ──────────────────────────────────────────────────────────────────── */
+/* ── Capacity mode toggle pill ──────────────────────────────────────────────────────── */
 .capacity-mode-toggle {
   display: inline-flex;
   border: 0.5px solid var(--color-border-secondary);
   border-radius: 20px;
   overflow: hidden;
-  background: var(--color-background-secondary);
+  background: var(--color-bg-secondary);
 }
 .capacity-mode-toggle button {
   padding: 2px 9px;
@@ -65,7 +65,7 @@
   line-height: 1.6;
 }
 .capacity-mode-toggle button.active {
-  background: var(--color-background-primary);
+  background: var(--color-bg-primary);
   color: var(--color-accent);
   font-weight: 500;
   border-radius: 20px;
@@ -75,7 +75,7 @@
   color: var(--color-text-primary);
 }
 
-/* ── Urgent bar rows ─────────────────────────────────────────────────────────────────────────────── */
+/* ── Urgent bar rows ──────────────────────────────────────────────────────────────── */
 .urgent-bar-row {
   display: flex;
   align-items: flex-start;
@@ -85,12 +85,18 @@
   cursor: pointer;
 }
 .urgent-bar-row:last-child { border-bottom: none; }
-.urgent-bar-row:hover { background: var(--color-background-secondary); margin: 0 -6px; padding-left: 6px; padding-right: 6px; border-radius: 6px; }
+.urgent-bar-row:hover {
+  background: var(--color-bg-secondary);
+  margin: 0 -6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: 6px;
+}
 .urgent-bar-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
 .urgent-bar-sub  { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 3px; }
 .urgent-bar-track {
   height: 4px;
-  background: var(--color-background-secondary);
+  background: var(--color-bg-secondary);
   border-radius: 2px;
   overflow: hidden;
   margin-top: 3px;
@@ -102,19 +108,19 @@
 }
 .urgent-bar-days { font-size: 11px; white-space: nowrap; padding-top: 2px; }
 
-/* ── Focus cards ────────────────────────────────────────────────────────────────────────────────────── */
+/* ── Focus cards ──────────────────────────────────────────────────────────────────── */
 .focus-card {
   border: 0.5px solid var(--color-border-tertiary);
   border-left: 3px solid var(--focus-card-accent, var(--color-border-tertiary));
-  border-radius: var(--border-radius-md);
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
-  background: var(--color-background-primary);
+  background: var(--color-bg-primary);
   transition: background 0.12s, box-shadow 0.12s;
 }
 .focus-card:hover {
-  background: var(--color-background-secondary);
+  background: var(--color-bg-secondary);
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
@@ -128,7 +134,7 @@
 .focus-card-cat   { font-size: 11px; color: var(--color-text-secondary); }
 .focus-card-score { font-size: 12px; font-weight: 600; min-width: 24px; text-align: right; }
 
-/* Next substep row — sits on its own line below the task name */
+/* Next substep row */
 .focus-card-substep-row {
   display: flex;
   align-items: center;
@@ -144,7 +150,7 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  background: var(--color-background-info);
+  background: var(--color-bg-info);
   color: var(--color-text-info);
   border-radius: 10px;
   padding: 2px 8px 2px 6px;
@@ -159,7 +165,8 @@
   background: #1f3558;
 }
 .substep-pill-check {
-  width: 11px; height: 11px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   border: 1.5px solid var(--color-border-info);
   flex-shrink: 0;
@@ -168,7 +175,7 @@
   justify-content: center;
 }
 
-/* Legacy single-line substep label (urgent bar still uses this) */
+/* Legacy single-line substep label */
 .focus-card-substep {
   font-size: 11px;
   color: var(--color-text-secondary);
@@ -189,15 +196,11 @@
   background: #e0e0e0;
   border-radius: 2px;
   overflow: hidden;
-  box-shadow: none;
-  outline: none;
-  border: none;
 }
 [data-theme="dark"] .focus-bar-track { background: #3a3a3a; }
 .focus-bar-fill {
   height: 100%;
   border-radius: 0;
-  box-shadow: none;
   transition: width 0.3s;
 }
 .focus-card-meta {
@@ -208,17 +211,17 @@
 }
 .focus-hrs-badge {
   font-size: 11px;
-  background: var(--color-background-info);
+  background: var(--color-bg-info);
   color: var(--color-text-info);
   border-radius: 10px;
   padding: 1px 7px;
 }
 
-/* ── Today's plan panel ───────────────────────────────────────────────────────────────────────────────── */
+/* ── Today's plan panel ───────────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
-  border-radius: var(--border-radius-lg);
-  background: var(--color-background-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-primary);
   padding: 14px 16px;
 }
 .today-plan-title {
@@ -239,7 +242,8 @@
 }
 .today-plan-item:last-child { border-bottom: none; }
 .today-plan-dot {
-  width: 8px; height: 8px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
