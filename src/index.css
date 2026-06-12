@@ -74,3 +74,21 @@ body {
   border-radius: 50%;
   animation: splash-spin 0.75s linear infinite;
 }
+
+/* ── Progress bar (used globally in TaskPanel, Overview, etc.) ───────── */
+.progress-track {
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  border: none;
+  outline: none;
+}
+[data-theme="dark"] .progress-track {
+  background: #3a3a3a;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 0;
+  transition: width 0.3s ease;
+}
