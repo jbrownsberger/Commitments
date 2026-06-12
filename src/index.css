@@ -98,3 +98,18 @@ body {
   border-radius: 0;
   transition: width 0.3s ease;
 }
+
+/* ── Range input — suppress all browser chrome ──────────────────────── */
+input[type="range"] {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="range"]:focus,
+input[type="range"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+input[type="range"]::-webkit-slider-thumb { outline: none; box-shadow: none; }
+input[type="range"]::-moz-range-thumb    { outline: none; box-shadow: none; }
