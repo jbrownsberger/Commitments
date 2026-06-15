@@ -107,8 +107,6 @@ function rollingWeekEnd() {
 }
 
 // Floor urgency score for recurring tasks with no explicit due date.
-// Keeps them reliably present in the queue without crowding out deadline tasks
-// (which typically score 50–200+).
 const RECURRING_FLOOR_SCORE = { daily: 30, weekday: 25, weekly: 15 };
 
 function recurringUrgency(task) {
@@ -204,7 +202,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     : capPct >= 75 ? '#BA7517'
     : 'var(--color-text-success)';
 
-  // Sort the focus queue: overdue → upcoming deadline → no-due (recurring use floor score)
+  // Sort the focus queue: overdue → upcoming deadline → no-due
   const overdue    = allInc.filter(t => t.due_date && daysUntil(t.due_date) < 0)
     .sort((a, b) => daysUntil(a.due_date) - daysUntil(b.due_date));
   const upcoming   = allInc.filter(t => t.due_date && daysUntil(t.due_date) >= 0)
@@ -459,7 +457,6 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
     : days === 0 ? 'today'
     : `${days}d left`;
 
-  // Urgency bar width as % of the highest score in the current queue
   const pct = Math.round((score / Math.max(maxScore, 1)) * 100);
 
   const hrsWeek = weekISOs.reduce((s, iso) => {
@@ -473,7 +470,14 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
   const nextSub = (task.substeps || []).find(s => !s.done);
 
   return (
-    <div className="focus-card" onClick={onOpen}>
+    <div className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`} onClick={onOpen}>
+
+      {/* Category color strip — left edge */}
+      <div
+        className="focus-card-cat-strip"
+        style={{ background: task.catColor || 'var(--color-border-tertiary)' }}
+        aria-hidden="true"
+      />
 
       {/* Body row: left bubbles + right content */}
       <div className="focus-card-body">
@@ -529,7 +533,11 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
           {/* Meta: due date, scheduled hours, priority */}
           {(daysStr || hrsWeek > 0 || (task.priority && task.priority !== 'med')) && (
             <div className="focus-card-meta">
-              {isOverdue && <span style={{ color: 'var(--color-text-danger)' }}>{daysStr}</span>}
+              {isOverdue && (
+                <span className="focus-card-overdue-badge">
+                  ⚠ {daysStr}
+                </span>
+              )}
               {!isOverdue && daysStr && <span>{daysStr}</span>}
               {hrsWeek > 0 && <span>{hrsWeek.toFixed(1)}h this week</span>}
               {task.priority && task.priority !== 'med' && (
@@ -538,13 +546,14 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
             </div>
           )}
 
-          {/* Next substep */}
+          {/* Next substep pill — no checkbox, just "next: name" */}
           {nextSub && (
             <div
               className="focus-card-substep"
               onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
+              title="Mark this substep done"
             >
-              ☐ {nextSub.text}
+              next: {nextSub.text}
             </div>
           )}
         </div>

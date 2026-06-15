@@ -105,23 +105,21 @@
 
 /* ── Focus cards ─────────────────────────────────────────────────────
  *
- *  Card anatomy (flex column):
+ *  Card anatomy (flex row at top level to allow color strip):
  *
- *  ┌────────────────────────────────────────────┐
- *  │  .focus-card-body  (flex row)            │
- *  │   ├─ .focus-card-left  (check + score)   │
- *  │   └─ .focus-card-content  (name …)       │
- *  ├────────────────────────────────────────────┤
- *  │  .focus-card-urgency-bar-track           │
- *  └────────────────────────────────────────────┘
+ *  ┌─strip─┬──────────────────────────────────────┐
+ *  │  3px  │  .focus-card-inner  (flex column)     │
+ *  │       │   ├─ .focus-card-body                 │
+ *  │       │   └─ .focus-card-urgency-bar-track    │
+ *  └───────┴──────────────────────────────────────┘
  *
- * ────────────────────────────────────────────────────────────────── */
+ * ──────────────────────────────────────────────────────────────────── */
 .focus-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-md);
-  margin-bottom: 6px;          /* tighter card gap */
+  margin-bottom: 6px;
   cursor: pointer;
   background: var(--color-bg-primary);
   overflow: hidden;
@@ -139,12 +137,45 @@
   box-shadow: 0 3px 10px rgba(0,0,0,0.45);
 }
 
-/* Body row: left bubbles + right content — tighter padding */
+/* Overdue card: red-tinted left border + very faint red wash */
+.focus-card--overdue {
+  border-color: rgba(161, 44, 123, 0.25);
+  background: rgba(161, 44, 123, 0.03);
+}
+[data-theme="dark"] .focus-card--overdue {
+  border-color: rgba(209, 99, 167, 0.30);
+  background: rgba(209, 99, 167, 0.05);
+}
+.focus-card--overdue:hover {
+  background: rgba(161, 44, 123, 0.06);
+}
+[data-theme="dark"] .focus-card--overdue:hover {
+  background: rgba(209, 99, 167, 0.09);
+}
+
+/* ── Category color strip — far left edge ── */
+.focus-card-cat-strip {
+  width: 3px;
+  flex-shrink: 0;
+  align-self: stretch;
+  /* background set inline from catColor */
+}
+
+/* Inner column: body + urgency bar — takes remaining width */
+.focus-card-inner {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Body row: left bubbles + right content */
 .focus-card-body {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  padding: 7px 10px 6px 8px;  /* was 10px 12px 8px 10px */
+  padding: 7px 10px 6px 8px;
+  flex: 1;
 }
 
 /* ── Left column: check bubble + score number ── */
@@ -152,16 +183,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;                    /* was 5px */
+  gap: 3px;
   flex-shrink: 0;
-  width: 24px;                 /* was 28px */
+  width: 24px;
   margin-right: 8px;
   padding-top: 1px;
 }
 
-/* Check / status bubble — self-contained, no shell.css dependency */
+/* Check / status bubble */
 .focus-card-check {
-  width: 18px;                 /* was 20px */
+  width: 18px;
   height: 18px;
   border-radius: 50%;
   border: 1.5px solid var(--color-border-secondary);
@@ -200,7 +231,7 @@
 
 /* Score number below the check bubble */
 .focus-card-score-bubble {
-  font-size: 9px;              /* was 10px */
+  font-size: 9px;
   font-weight: 600;
   line-height: 1;
   text-align: center;
@@ -213,7 +244,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;                    /* was 3px */
+  gap: 2px;
 }
 
 .focus-card-name {
@@ -228,13 +259,13 @@
   color: var(--color-text-tertiary);
 }
 
-/* Badge row: category chip + cadence chip */
+/* Badge row */
 .focus-card-badges {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-  margin-top: 1px;             /* was 2px */
+  margin-top: 1px;
 }
 .focus-card-cat {
   font-size: 10px;
@@ -244,7 +275,7 @@
   white-space: nowrap;
 }
 
-/* Meta row: due date, hours, priority */
+/* Meta row */
 .focus-card-meta {
   display: flex;
   align-items: center;
@@ -256,20 +287,37 @@
 }
 .focus-card-meta span { white-space: nowrap; }
 
-/* ── Next substep — clickable pill ── */
+/* Overdue badge inside meta row */
+.focus-card-overdue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-error, #a12c7b);
+  background: rgba(161, 44, 123, 0.10);
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+[data-theme="dark"] .focus-card-overdue-badge {
+  color: var(--color-error, #d163a7);
+  background: rgba(209, 99, 167, 0.15);
+}
+
+/* ── Next substep — clickable pill, no checkbox ── */
 .focus-card-substep {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   margin-top: 3px;
-  align-self: flex-start;      /* don't stretch full width */
+  align-self: flex-start;
   font-size: 11px;
   font-weight: 500;
   color: var(--color-text-secondary);
   background: var(--color-bg-secondary);
   border: 0.5px solid var(--color-border-secondary);
   border-radius: 20px;
-  padding: 2px 8px 2px 5px;
+  padding: 2px 8px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
   user-select: none;
@@ -278,19 +326,10 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.focus-card-substep::before {
-  content: '☐';
-  font-size: 11px;
-  flex-shrink: 0;
-  color: var(--color-text-tertiary);
-}
 .focus-card-substep:hover {
-  background: var(--color-bg-tertiary, var(--color-bg-secondary));
   border-color: var(--color-accent);
   color: var(--color-text-primary);
-}
-.focus-card-substep:hover::before {
-  color: var(--color-accent);
+  background: var(--color-bg-secondary);
 }
 .focus-card-substep:active {
   transform: scale(0.97);
@@ -305,7 +344,7 @@
 
 /* ── Urgency bar — pinned flush to card bottom ── */
 .focus-card-urgency-bar-track {
-  height: 3px;                 /* was 4px — subtler with compact cards */
+  height: 3px;
   width: 100%;
   background: var(--color-bg-secondary);
   flex-shrink: 0;
@@ -320,7 +359,7 @@
   min-width: 3px;
 }
 
-/* ── Focus empty state ─────────────────────────────────────────────── */
+/* ── Focus empty state ───────────────────────────────────────────────── */
 .focus-empty {
   display: flex;
   flex-direction: column;
@@ -356,7 +395,7 @@
   margin: 0;
 }
 
-/* ── Today's plan panel ──────────────────────────────────────────────── */
+/* ── Today's plan panel ─────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
