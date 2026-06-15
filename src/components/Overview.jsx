@@ -469,6 +469,21 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   const nextSub = (task.substeps || []).find(s => !s.done);
 
+  // Build a compact single-line sub-label: "Category · Xd overdue" or "Category · Xh left"
+  // plus a right-side pill for hours this week or hours remaining.
+  const subLeft = [
+    task.catName || (task.recurring ? '↻ ' + (task.recurring_cadence || 'recurring') : null),
+    isOverdue
+      ? daysStr
+      : (daysStr ? daysStr : null),
+  ].filter(Boolean).join(' · ');
+
+  const rightPill = hrsWeek > 0
+    ? `${hrsWeek.toFixed(1)}h this week`
+    : remainingHours(task) > 0
+      ? `${remainingHours(task).toFixed(1)}h left`
+      : null;
+
   return (
     <div className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`} onClick={onOpen}>
 
@@ -479,93 +494,85 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
         aria-hidden="true"
       />
 
-      {/* Body row: left bubbles + right content */}
-      <div className="focus-card-body">
+      {/* Inner column: body row + urgency bar flush to bottom */}
+      <div className="focus-card-inner">
 
-        {/* Left column: check bubble + urgency score number */}
-        <div className="focus-card-left">
-          <span
-            className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
-            onClick={e => { e.stopPropagation(); onCycle(task); }}
-            title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
-            role="button"
-            aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
-          >
-            {isDone ? '✓' : isInProg ? '◑' : ''}
-          </span>
-          {score > 0 && (
-            <span className="focus-card-score-bubble" style={{ color }}>
-              {score}
+        {/* Body row */}
+        <div className="focus-card-body">
+
+          {/* Left: check bubble */}
+          <div className="focus-card-left">
+            <span
+              className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
+              onClick={e => { e.stopPropagation(); onCycle(task); }}
+              title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
+              role="button"
+              aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
+            >
+              {isDone ? '✓' : isInProg ? '◑' : ''}
             </span>
-          )}
-        </div>
+            {score > 0 && (
+              <span className="focus-card-score-bubble" style={{ color }}>
+                {score}
+              </span>
+            )}
+          </div>
 
-        {/* Right content: name, badges, meta, next substep */}
-        <div className="focus-card-content">
-          <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
-
-          {/* Category + cadence badges */}
-          {(task.catName || (task.recurring && task.recurring_cadence)) && (
-            <div className="focus-card-badges">
-              {task.catName && (
-                <span
-                  className="focus-card-cat"
-                  style={{ background: task.catColor + '22', color: task.catColor }}
-                >
-                  {task.catName}
-                </span>
+          {/* Centre: name + sub-label row */}
+          <div className="focus-card-content">
+            <div className="focus-card-name-row">
+              <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
+              {rightPill && (
+                <span className="focus-card-hours-pill">{rightPill}</span>
               )}
-              {task.recurring && task.recurring_cadence && (
+            </div>
+
+            {/* Sub-label: category · timing */}
+            {subLeft && (
+              <div className={`focus-card-sub${isOverdue ? ' overdue' : ''}`}>
+                {isOverdue && <span className="focus-card-sub-warn">⚠ </span>}
+                {subLeft}
+              </div>
+            )}
+
+            {/* Recurring cadence badge (only if name row doesn't already show it) */}
+            {task.recurring && task.catName && task.recurring_cadence && (
+              <div style={{ marginTop: 2 }}>
                 <span
                   className="focus-card-cat"
                   style={{
-                    background: 'var(--color-background-info)',
-                    color: 'var(--color-text-info)',
+                    background: 'var(--color-background-info, rgba(0,100,148,0.10))',
+                    color: 'var(--color-text-info, #006494)',
                     fontSize: 10,
                   }}
                 >
                   ↻ {task.recurring_cadence}
                 </span>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Meta: due date, scheduled hours, priority */}
-          {(daysStr || hrsWeek > 0 || (task.priority && task.priority !== 'med')) && (
-            <div className="focus-card-meta">
-              {isOverdue && (
-                <span className="focus-card-overdue-badge">
-                  ⚠ {daysStr}
-                </span>
-              )}
-              {!isOverdue && daysStr && <span>{daysStr}</span>}
-              {hrsWeek > 0 && <span>{hrsWeek.toFixed(1)}h this week</span>}
-              {task.priority && task.priority !== 'med' && (
-                <span style={{ textTransform: 'capitalize' }}>{task.priority}</span>
-              )}
-            </div>
-          )}
-
-          {/* Next substep pill — no checkbox, just "next: name" */}
-          {nextSub && (
-            <div
-              className="focus-card-substep"
-              onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
-              title="Mark this substep done"
-            >
-              next: {nextSub.text}
-            </div>
-          )}
+            {/* Next substep pill */}
+            {nextSub && (
+              <div
+                className="focus-card-substep"
+                onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
+                title="Mark this substep done"
+              >
+                next: {nextSub.text}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Urgency bar pinned flush to card bottom */}
-      <div className="focus-card-urgency-bar-track">
-        <div
-          className="focus-card-urgency-bar"
-          style={{ width: `${pct}%`, background: color }}
-        />
-      </div>
+        {/* Urgency bar — pinned flush to card bottom */}
+        <div className="focus-card-urgency-bar-track">
+          <div
+            className="focus-card-urgency-bar"
+            style={{ width: `${pct}%`, background: color }}
+          />
+        </div>
+
+      </div>{/* /focus-card-inner */}
 
     </div>
   );
