@@ -1,4 +1,4 @@
-/* ── Overview layout ─────────────────────────────────────────────── */
+/* ── Overview layout ────────────────────────────────────────────────── */
 .plan-layout {
   display: grid;
   grid-template-columns: 1fr 280px;
@@ -56,7 +56,7 @@
   margin-bottom: 8px;
 }
 
-/* ── Capacity mode toggle pill ──────────────────────────────────────── */
+/* ── Capacity mode toggle pill ─────────────────────────────────────── */
 .capacity-mode-toggle {
   display: inline-flex;
   border: 0.5px solid var(--color-border-secondary);
@@ -86,7 +86,7 @@
   color: var(--color-text-primary);
 }
 
-/* ── Progress track (capacity bar) ─────────────────────────────────── */
+/* ── Progress track (capacity bar) ────────────────────────────────── */
 .progress-track {
   width: 100%;
   background: var(--color-bg-secondary);
@@ -103,17 +103,17 @@
   min-width: 3px;
 }
 
-/* ── Focus cards ─────────────────────────────────────────────────────
+/* ── Focus cards ──────────────────────────────────────────────────────────────────
  *
- *  Card anatomy (flex row at top level to allow color strip):
+ *  Card anatomy:
  *
- *  ┌─strip─┬──────────────────────────────────────┐
- *  │  3px  │  .focus-card-inner  (flex column)     │
- *  │       │   ├─ .focus-card-body                 │
- *  │       │   └─ .focus-card-urgency-bar-track    │
- *  └───────┴──────────────────────────────────────┘
+ *  ┌─strip─┬─────────────────────────────────────────┐
+ *  │  3px  │  .focus-card-inner  (flex column)       │
+ *  │       │   ├─ .focus-card-body (flex row)         │
+ *  │       │   └─ .focus-card-urgency-bar-track (3px) │
+ *  └───────┴─────────────────────────────────────────┘
  *
- * ──────────────────────────────────────────────────────────────────── */
+ * ─────────────────────────────────────────────────────────────────── */
 .focus-card {
   display: flex;
   flex-direction: row;
@@ -137,7 +137,7 @@
   box-shadow: 0 3px 10px rgba(0,0,0,0.45);
 }
 
-/* Overdue card: red-tinted left border + very faint red wash */
+/* Overdue card: faint red wash */
 .focus-card--overdue {
   border-color: rgba(161, 44, 123, 0.25);
   background: rgba(161, 44, 123, 0.03);
@@ -158,10 +158,9 @@
   width: 3px;
   flex-shrink: 0;
   align-self: stretch;
-  /* background set inline from catColor */
 }
 
-/* Inner column: body + urgency bar — takes remaining width */
+/* ── Inner column: body + urgency bar ── */
 .focus-card-inner {
   flex: 1;
   min-width: 0;
@@ -169,11 +168,11 @@
   flex-direction: column;
 }
 
-/* Body row: left bubbles + right content */
+/* ── Body row ── */
 .focus-card-body {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   padding: 7px 10px 6px 8px;
   flex: 1;
 }
@@ -217,7 +216,6 @@
   border-color: var(--color-accent);
   color: #fff;
 }
-/* In-progress: blue */
 .focus-card-check.in-progress {
   background: rgba(0, 100, 148, 0.10);
   border-color: #006494;
@@ -238,13 +236,21 @@
   min-width: 18px;
 }
 
-/* ── Right content ── */
+/* ── Right content column ── */
 .focus-card-content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+}
+
+/* Name row: task name (left) + hours pill (right) */
+.focus-card-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .focus-card-name {
@@ -252,14 +258,54 @@
   font-weight: 500;
   color: var(--color-text-primary);
   line-height: 1.3;
-  word-break: break-word;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .focus-card-name.done {
   text-decoration: line-through;
   color: var(--color-text-tertiary);
 }
 
-/* Badge row */
+/* Hours pill — right side of name row */
+.focus-card-hours-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+[data-theme="dark"] .focus-card-hours-pill {
+  background: rgba(255,255,255,0.06);
+}
+
+/* Sub-label: "Category · Xd overdue" */
+.focus-card-sub {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.focus-card-sub.overdue {
+  color: var(--color-error, #a12c7b);
+}
+[data-theme="dark"] .focus-card-sub.overdue {
+  color: var(--color-error, #d163a7);
+}
+.focus-card-sub-warn {
+  font-size: 10px;
+}
+
+/* Badge row (category/cadence chips, used when catName exists alongside cadence) */
 .focus-card-badges {
   display: flex;
   align-items: center;
@@ -275,37 +321,7 @@
   white-space: nowrap;
 }
 
-/* Meta row */
-.focus-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  margin-top: 0;
-}
-.focus-card-meta span { white-space: nowrap; }
-
-/* Overdue badge inside meta row */
-.focus-card-overdue-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-error, #a12c7b);
-  background: rgba(161, 44, 123, 0.10);
-  border-radius: 8px;
-  padding: 1px 6px;
-  white-space: nowrap;
-}
-[data-theme="dark"] .focus-card-overdue-badge {
-  color: var(--color-error, #d163a7);
-  background: rgba(209, 99, 167, 0.15);
-}
-
-/* ── Next substep — clickable pill, no checkbox ── */
+/* ── Next substep — clickable pill ── */
 .focus-card-substep {
   display: inline-flex;
   align-items: center;
@@ -395,7 +411,7 @@
   margin: 0;
 }
 
-/* ── Today's plan panel ─────────────────────────────────────────────── */
+/* ── Today's plan panel ───────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
@@ -429,7 +445,7 @@
 .today-plan-name.done { text-decoration: line-through; color: var(--color-text-secondary); }
 .today-plan-meta      { font-size: 11px; color: var(--color-text-tertiary); }
 
-/* ── Legacy / kept for other consumers ─────────────────────────────── */
+/* ── Legacy / kept for other consumers ───────────────────────────────── */
 .urgent-bar-row {
   display: flex;
   align-items: flex-start;
