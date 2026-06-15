@@ -1,4 +1,15 @@
 /* ── Overview layout ─────────────────────────────────────────────── */
+.plan-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .plan-layout { grid-template-columns: 1fr; }
+  .right-col { position: static; }
+}
+
 .right-col {
   display: flex;
   flex-direction: column;
@@ -16,7 +27,7 @@
   .overview-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Metric cards */
+/* ── Metric cards ─────────────────────────────────────────────────── */
 .overview-metric {
   background: var(--color-bg-primary);
   border: 0.5px solid var(--color-border-tertiary);
@@ -45,7 +56,7 @@
   margin-bottom: 8px;
 }
 
-/* ── Capacity mode toggle pill ─────────────────────────────────────────────────────────── */
+/* ── Capacity mode toggle pill ──────────────────────────────────────── */
 .capacity-mode-toggle {
   display: inline-flex;
   border: 0.5px solid var(--color-border-secondary);
@@ -75,52 +86,36 @@
   color: var(--color-text-primary);
 }
 
-/* ── Urgent bar rows ──────────────────────────────────────────────────────────────────── */
-.urgent-bar-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-  cursor: pointer;
-}
-.urgent-bar-row:last-child { border-bottom: none; }
-.urgent-bar-row:hover {
+/* ── Progress track (capacity bar) ─────────────────────────────────── */
+.progress-track {
+  width: 100%;
   background: var(--color-bg-secondary);
-  margin: 0 -6px;
-  padding-left: 6px;
-  padding-right: 6px;
-  border-radius: 6px;
-}
-.urgent-bar-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
-.urgent-bar-sub  { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 3px; }
-.urgent-bar-track {
-  height: 4px;
-  background: var(--color-bg-secondary);
-  border-radius: 2px;
+  border-radius: 4px;
   overflow: hidden;
-  margin-top: 3px;
 }
-.urgent-bar-fill {
+[data-theme="dark"] .progress-track {
+  background: rgba(255,255,255,0.07);
+}
+.progress-fill {
   height: 100%;
-  border-radius: 0;
-  transition: width 0.3s;
+  border-radius: 4px;
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 3px;
 }
-.urgent-bar-days { font-size: 11px; white-space: nowrap; padding-top: 2px; }
 
-/* ── Focus cards ──────────────────────────────────────────────────────────────────── */
-
-/*
- * Layout: the card is a flex column.
+/* ── Focus cards ─────────────────────────────────────────────────────
  *
- *  ┌─────────────────────────────────────────┐
- *  │  .focus-card-body  (flex row)           │
- *  │   ├─ .focus-card-left  (bubbles col)    │
- *  │   └─ .focus-card-content (text + meta) │
- *  ├─────────────────────────────────────────┤
- *  │  .focus-card-urgency-bar  (bottom bar)  │
- *  └─────────────────────────────────────────┘
- */
+ *  Card anatomy (flex column):
+ *
+ *  ┌──────────────────────────────────────────────┐
+ *  │  .focus-card-body  (flex row)                │
+ *  │   ├─ .focus-card-left  (check + score)       │
+ *  │   └─ .focus-card-content  (name, meta, etc.) │
+ *  ├──────────────────────────────────────────────┤
+ *  │  .focus-card-urgency-bar-track  (bottom bar) │
+ *  └──────────────────────────────────────────────┘
+ *
+ * ──────────────────────────────────────────────────────────────────── */
 .focus-card {
   display: flex;
   flex-direction: column;
@@ -129,31 +124,30 @@
   margin-bottom: 8px;
   cursor: pointer;
   background: var(--color-bg-primary);
-  overflow: hidden;            /* clips the urgency bar to the card's radius */
+  overflow: hidden;           /* clips urgency bar to card's bottom radius */
   transition: background 0.12s, box-shadow 0.12s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 .focus-card:hover {
   background: var(--color-bg-secondary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.09);
 }
 [data-theme="dark"] .focus-card {
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 [data-theme="dark"] .focus-card:hover {
-  box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.45);
 }
 
 /* Body row: left bubbles + right content */
 .focus-card-body {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
-  gap: 0;
+  align-items: flex-start;
   padding: 10px 12px 8px 10px;
 }
 
-/* Left column: status circle + check, stacked vertically */
+/* ── Left column: check bubble stacked above score number ── */
 .focus-card-left {
   display: flex;
   flex-direction: column;
@@ -161,12 +155,12 @@
   gap: 5px;
   flex-shrink: 0;
   width: 28px;
+  margin-right: 9px;
   padding-top: 1px;
-  margin-right: 8px;
 }
 
-/* Status/check bubble */
-.focus-card-left .task-check {
+/* Check / status bubble — fully self-contained; does NOT rely on shell.css .task-check */
+.focus-card-check {
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -177,36 +171,44 @@
   font-size: 11px;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, transform 0.1s;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
+  user-select: none;
 }
-.focus-card-left .task-check:hover {
+.focus-card-check:hover {
   border-color: var(--color-accent);
   background: var(--color-bg-secondary);
+  transform: scale(1.1);
 }
-.focus-card-left .task-check.done {
+.focus-card-check.done {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: #fff;
 }
-.focus-card-left .task-check.in-progress {
-  background: var(--color-bg-warning);
-  border-color: var(--color-text-warning);
-  color: var(--color-text-warning);
+.focus-card-check.in-progress {
+  /* Warm amber: works in both light and dark without needing bg-warning var */
+  background: rgba(186, 117, 23, 0.12);
+  border-color: #BA7517;
+  color: #BA7517;
+}
+[data-theme="dark"] .focus-card-check.in-progress {
+  background: rgba(253, 171, 67, 0.15);
+  border-color: #FDAB43;
+  color: #FDAB43;
 }
 
-/* Score badge bubble below the check */
+/* Score number below the check bubble */
 .focus-card-score-bubble {
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
-  color: var(--color-text-tertiary);
   text-align: center;
   min-width: 20px;
+  /* color is set inline by urgencyColor() */
 }
 
-/* Right content: name, badges, meta */
+/* ── Right content ── */
 .focus-card-content {
   flex: 1;
   min-width: 0;
@@ -255,14 +257,18 @@
 }
 .focus-card-meta span { white-space: nowrap; }
 
-/* Next substep */
+/* Next substep hint */
 .focus-card-substep {
   font-size: 11px;
   color: var(--color-text-secondary);
   margin-top: 3px;
+  cursor: pointer;
+}
+.focus-card-substep:hover {
+  color: var(--color-text-primary);
 }
 
-/* ── Urgency bar — rendered at the bottom of every focus card ── */
+/* ── Urgency bar — pinned flush to card bottom ── */
 .focus-card-urgency-bar-track {
   height: 4px;
   width: 100%;
@@ -270,85 +276,16 @@
   flex-shrink: 0;
 }
 [data-theme="dark"] .focus-card-urgency-bar-track {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.06);
 }
 .focus-card-urgency-bar {
   height: 100%;
-  border-radius: 0;           /* flush with the card's bottom corners */
+  border-radius: 0;           /* flush with card bottom corners */
   transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   min-width: 3px;             /* always show a sliver even at score 1 */
 }
 
-/* Legacy bar classes (kept for any other consumers) */
-.focus-card-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-.focus-bar-track {
-  flex: 1;
-  height: 4px;
-  background: #e0e0e0;
-  border-radius: 2px;
-  overflow: hidden;
-}
-[data-theme="dark"] .focus-bar-track { background: #3a3a3a; }
-.focus-bar-fill {
-  height: 100%;
-  border-radius: 0;
-  transition: width 0.3s;
-}
-.focus-hrs-badge {
-  font-size: 11px;
-  background: var(--color-bg-info);
-  color: var(--color-text-info);
-  border-radius: 10px;
-  padding: 1px 7px;
-}
-
-/* Substep pill badge */
-.focus-card-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 0;
-}
-.focus-card-substep-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  margin-left: 23px;
-  margin-bottom: 2px;
-}
-.substep-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  background: var(--color-bg-info);
-  color: var(--color-text-info);
-  border-radius: 10px;
-  padding: 2px 8px 2px 6px;
-  cursor: pointer;
-  border: 0.5px solid var(--color-border-info);
-  transition: background 0.12s;
-}
-.substep-pill:hover { background: #d0e4fc; }
-[data-theme="dark"] .substep-pill:hover { background: #1f3558; }
-.substep-pill-check {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-border-info);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ── Focus empty state ────────────────────────────────────────────────────────────── */
+/* ── Focus empty state ───────────────────────────────────────────────── */
 .focus-empty {
   display: flex;
   flex-direction: column;
@@ -384,7 +321,7 @@
   margin: 0;
 }
 
-/* ── Today's plan panel ─────────────────────────────────────────────── */
+/* ── Today's plan panel ──────────────────────────────────────────────── */
 .today-plan-panel {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
@@ -414,6 +351,35 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.today-plan-name { font-size: 13px; }
+.today-plan-name      { font-size: 13px; }
 .today-plan-name.done { text-decoration: line-through; color: var(--color-text-secondary); }
-.today-plan-meta { font-size: 11px; color: var(--color-text-tertiary); }
+.today-plan-meta      { font-size: 11px; color: var(--color-text-tertiary); }
+
+/* ── Legacy / kept for other consumers ──────────────────────────────── */
+.urgent-bar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+}
+.urgent-bar-row:last-child { border-bottom: none; }
+.urgent-bar-row:hover {
+  background: var(--color-bg-secondary);
+  margin: 0 -6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: 6px;
+}
+.urgent-bar-name  { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.urgent-bar-sub   { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 3px; }
+.urgent-bar-track {
+  height: 4px;
+  background: var(--color-bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.urgent-bar-fill  { height: 100%; border-radius: 0; transition: width 0.3s; }
+.urgent-bar-days  { font-size: 11px; white-space: nowrap; padding-top: 2px; }
