@@ -77,6 +77,50 @@ const PRIORITY_STYLES = {
 };
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
 
+// ── Recurring cadence helper ───────────────────────────────────────────────
+// Returns a human-readable label for the cadence, e.g. "daily", "weekdays", "weekly".
+const CADENCE_LABELS = { daily: 'daily', weekday: 'weekdays', weekly: 'weekly' };
+
+function RecurringMeta({ task }) {
+  if (!task.recurring || !task.recurring_cadence) return null;
+
+  const cadenceLabel = CADENCE_LABELS[task.recurring_cadence] ?? task.recurring_cadence;
+
+  let lastResetStr = null;
+  if (task.updated_at) {
+    try {
+      lastResetStr = new Date(task.updated_at).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric',
+      });
+    } catch (_) {
+      // updated_at present but unparseable — silently omit
+    }
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 12,
+      color: 'var(--color-text-info, var(--color-text-secondary))',
+      marginTop: 8,
+      padding: '5px 8px',
+      background: 'var(--color-background-info, rgba(59,130,246,0.06))',
+      borderRadius: 'var(--radius-sm, 4px)',
+      width: 'fit-content',
+    }}>
+      <span style={{ fontSize: 13 }}>↻</span>
+      <span>Repeats {cadenceLabel}</span>
+      {lastResetStr && (
+        <span style={{ color: 'var(--color-text-tertiary, var(--color-text-secondary))', marginLeft: 2 }}>
+          · last reset {lastResetStr}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
 export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit }) {
@@ -186,6 +230,8 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
               </span>
             )}
           </div>
+          {/* ── Recurring cadence pill ── */}
+          <RecurringMeta task={local} />
         </div>
         <button className="btn" style={{ whiteSpace:'nowrap', flexShrink:0 }} onClick={cycleStatus}>
           {statusBtnLabel}
