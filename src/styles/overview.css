@@ -109,81 +109,177 @@
 .urgent-bar-days { font-size: 11px; white-space: nowrap; padding-top: 2px; }
 
 /* ── Focus cards ──────────────────────────────────────────────────────────────────── */
+
+/*
+ * Layout: the card is a flex column.
+ *
+ *  ┌─────────────────────────────────────────┐
+ *  │  .focus-card-body  (flex row)           │
+ *  │   ├─ .focus-card-left  (bubbles col)    │
+ *  │   └─ .focus-card-content (text + meta) │
+ *  ├─────────────────────────────────────────┤
+ *  │  .focus-card-urgency-bar  (bottom bar)  │
+ *  └─────────────────────────────────────────┘
+ */
 .focus-card {
+  display: flex;
+  flex-direction: column;
   border: 0.5px solid var(--color-border-tertiary);
-  border-left: 3px solid var(--focus-card-accent, var(--color-border-tertiary));
   border-radius: var(--radius-md);
-  padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
   background: var(--color-bg-primary);
+  overflow: hidden;            /* clips the urgency bar to the card's radius */
   transition: background 0.12s, box-shadow 0.12s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 .focus-card:hover {
   background: var(--color-bg-secondary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .focus-card {
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+[data-theme="dark"] .focus-card:hover {
+  box-shadow: 0 3px 10px rgba(0,0,0,0.4);
 }
 
-.focus-card-header {
+/* Body row: left bubbles + right content */
+.focus-card-body {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 0;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 10px 12px 8px 10px;
 }
-.focus-card-name  { flex: 1; font-size: 13px; font-weight: 500; }
-.focus-card-cat   { font-size: 11px; color: var(--color-text-secondary); }
-.focus-card-score { font-size: 12px; font-weight: 600; min-width: 24px; text-align: right; }
 
-/* Next substep row */
-.focus-card-substep-row {
+/* Left column: status circle + check, stacked vertically */
+.focus-card-left {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  margin-left: 23px;
-  margin-bottom: 2px;
-}
-
-/* Substep pill badge */
-.substep-pill {
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
-  background: var(--color-bg-info);
-  color: var(--color-text-info);
-  border-radius: 10px;
-  padding: 2px 8px 2px 6px;
-  cursor: pointer;
-  border: 0.5px solid var(--color-border-info);
-  transition: background 0.12s;
-}
-.substep-pill:hover {
-  background: #d0e4fc;
-}
-[data-theme="dark"] .substep-pill:hover {
-  background: #1f3558;
-}
-.substep-pill-check {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-border-info);
   flex-shrink: 0;
+  width: 28px;
+  padding-top: 1px;
+  margin-right: 8px;
+}
+
+/* Status/check bubble */
+.focus-card-left .task-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+.focus-card-left .task-check:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg-secondary);
+}
+.focus-card-left .task-check.done {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+.focus-card-left .task-check.in-progress {
+  background: var(--color-bg-warning);
+  border-color: var(--color-text-warning);
+  color: var(--color-text-warning);
 }
 
-/* Legacy single-line substep label */
+/* Score badge bubble below the check */
+.focus-card-score-bubble {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  min-width: 20px;
+}
+
+/* Right content: name, badges, meta */
+.focus-card-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.focus-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.focus-card-name.done {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary);
+}
+
+/* Badge row: category chip + cadence chip */
+.focus-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.focus-card-cat {
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* Meta row: due date, hours, priority */
+.focus-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 1px;
+}
+.focus-card-meta span { white-space: nowrap; }
+
+/* Next substep */
 .focus-card-substep {
   font-size: 11px;
   color: var(--color-text-secondary);
   margin-top: 3px;
-  margin-bottom: 3px;
-  margin-left: 23px;
 }
 
+/* ── Urgency bar — rendered at the bottom of every focus card ── */
+.focus-card-urgency-bar-track {
+  height: 4px;
+  width: 100%;
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+[data-theme="dark"] .focus-card-urgency-bar-track {
+  background: rgba(255,255,255,0.05);
+}
+.focus-card-urgency-bar {
+  height: 100%;
+  border-radius: 0;           /* flush with the card's bottom corners */
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 3px;             /* always show a sliver even at score 1 */
+}
+
+/* Legacy bar classes (kept for any other consumers) */
 .focus-card-bar-row {
   display: flex;
   align-items: center;
@@ -203,18 +299,53 @@
   border-radius: 0;
   transition: width 0.3s;
 }
-.focus-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
 .focus-hrs-badge {
   font-size: 11px;
   background: var(--color-bg-info);
   color: var(--color-text-info);
   border-radius: 10px;
   padding: 1px 7px;
+}
+
+/* Substep pill badge */
+.focus-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 0;
+}
+.focus-card-substep-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  margin-left: 23px;
+  margin-bottom: 2px;
+}
+.substep-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  background: var(--color-bg-info);
+  color: var(--color-text-info);
+  border-radius: 10px;
+  padding: 2px 8px 2px 6px;
+  cursor: pointer;
+  border: 0.5px solid var(--color-border-info);
+  transition: background 0.12s;
+}
+.substep-pill:hover { background: #d0e4fc; }
+[data-theme="dark"] .substep-pill:hover { background: #1f3558; }
+.substep-pill-check {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-info);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Focus empty state ────────────────────────────────────────────────────────────── */
@@ -230,11 +361,10 @@
 .focus-empty-icon {
   font-size: 32px;
   line-height: 1;
-  /* gentle float animation */
   animation: focus-float 3s ease-in-out infinite;
 }
 @keyframes focus-float {
-  0%, 100% { transform: translateY(0);    }
+  0%, 100% { transform: translateY(0); }
   50%       { transform: translateY(-5px); }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -37,7 +37,7 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   );
 }
 
-/* ── Gear SVG ────────────────────────────────────────────────────────────────────── */
+/* ── Gear SVG ─────────────────────────────────────────────────────────────── */
 const GearIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -60,7 +60,7 @@ a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
-/* ── Helpers ────────────────────────────────────────────────────────────────────── */
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 function hoursToday(task) {
   const todayISO = new Date().toISOString().slice(0, 10);
   if (!task.scheduled_days?.includes(todayISO)) return 0;
@@ -106,20 +106,19 @@ function rollingWeekEnd() {
   return d.toISOString().slice(0, 10);
 }
 
-// Floor urgency score for recurring tasks that have no explicit due date.
+// Floor urgency score for recurring tasks with no explicit due date.
 // Keeps them reliably present in the queue without crowding out deadline tasks
 // (which typically score 50–200+).
 const RECURRING_FLOOR_SCORE = { daily: 30, weekday: 25, weekly: 15 };
 
 function recurringUrgency(task) {
-  // If a recurring task has a due date, treat it exactly like a normal task.
   if (task.due_date) return urgencyScore(task);
   return RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20;
 }
 
 const CAP_MODE_KEY = 'capacity_mode';
 
-/* ── Overview ────────────────────────────────────────────────────────────────────── */
+/* ── Overview ────────────────────────────────────────────────────────────── */
 export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const {
     categories, tasks, preferences,
@@ -167,12 +166,10 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const allTasks = tasks || [];
 
-  // Recurring tasks are now first-class citizens of the incomplete list.
-  // They receive a cadence-based floor score when they have no due date,
-  // so they appear in the queue without displacing genuinely urgent work.
+  // Recurring tasks are first-class citizens of the incomplete list.
   const allInc = allTasks.filter(t => t.status !== 'done').map(enrich);
 
-  // Stats: count all tasks (recurring included in totals).
+  // Stats
   const total        = allTasks.length;
   const doneCount    = allTasks.filter(t => t.status === 'done').length;
   const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
@@ -207,9 +204,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     : capPct >= 75 ? '#BA7517'
     : 'var(--color-text-success)';
 
-  // Sort the focus queue: overdue first, then upcoming deadline tasks by urgency,
-  // then no-due tasks — with recurring tasks using their floor score so they
-  // slot in naturally among no-deadline work.
+  // Sort the focus queue: overdue → upcoming deadline → no-due (recurring use floor score)
   const overdue    = allInc.filter(t => t.due_date && daysUntil(t.due_date) < 0)
     .sort((a, b) => daysUntil(a.due_date) - daysUntil(b.due_date));
   const upcoming   = allInc.filter(t => t.due_date && daysUntil(t.due_date) >= 0)
@@ -449,9 +444,8 @@ function Metric({ label, val, danger }) {
   );
 }
 
+/* ── FocusCard ───────────────────────────────────────────────────────────── */
 function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep }) {
-  // Use the floor score for recurring tasks without a due date so the urgency
-  // bar renders at a meaningful height rather than zero.
   const score     = task.recurring && !task.due_date
     ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
     : urgencyScore(task);
@@ -464,6 +458,8 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
     : days < 0  ? `${Math.abs(days)}d overdue`
     : days === 0 ? 'today'
     : `${days}d left`;
+
+  // Urgency bar: width as % of the highest score in the current queue
   const pct = Math.round((score / Math.max(maxScore, 1)) * 100);
 
   const hrsWeek = weekISOs.reduce((s, iso) => {
@@ -478,23 +474,58 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   return (
     <div className="focus-card" onClick={onOpen}>
-      <div className="focus-card-urgency-bar" style={{ width: `${pct}%`, background: color }} />
+
+      {/* ── Body row: left bubbles + right content ── */}
       <div className="focus-card-body">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
+
+        {/* Left column: check bubble + score */}
+        <div className="focus-card-left">
+          <span
+            className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
+            onClick={e => { e.stopPropagation(); onCycle(task); }}
+            title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
+          >
+            {isDone ? '✓' : isInProg ? '◑' : ''}
+          </span>
+          {score > 0 && (
+            <span className="focus-card-score-bubble" style={{ color }}>
+              {score}
+            </span>
+          )}
+        </div>
+
+        {/* Right content */}
+        <div className="focus-card-content">
+          <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
+
+          {/* Category + cadence badges */}
+          {(task.catName || (task.recurring && task.recurring_cadence)) && (
+            <div className="focus-card-badges">
               {task.catName && (
-                <span className="focus-card-cat" style={{ background: task.catColor + '22', color: task.catColor }}>
+                <span
+                  className="focus-card-cat"
+                  style={{ background: task.catColor + '22', color: task.catColor }}
+                >
                   {task.catName}
                 </span>
               )}
               {task.recurring && task.recurring_cadence && (
-                <span className="focus-card-cat" style={{ background: 'var(--color-background-info)', color: 'var(--color-text-info)', fontSize: 10 }}>
+                <span
+                  className="focus-card-cat"
+                  style={{
+                    background: 'var(--color-background-info)',
+                    color: 'var(--color-text-info)',
+                    fontSize: 10,
+                  }}
+                >
                   ↻ {task.recurring_cadence}
                 </span>
               )}
             </div>
+          )}
+
+          {/* Meta: due date, scheduled hours, priority */}
+          {(daysStr || hrsWeek > 0 || (task.priority && task.priority !== 'med')) && (
             <div className="focus-card-meta">
               {isOverdue && <span style={{ color: 'var(--color-text-danger)' }}>{daysStr}</span>}
               {!isOverdue && daysStr && <span>{daysStr}</span>}
@@ -503,24 +534,28 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
                 <span style={{ textTransform: 'capitalize' }}>{task.priority}</span>
               )}
             </div>
-            {nextSub && (
-              <div
-                className="focus-card-substep"
-                onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
-              >
-                ☐ {nextSub.text}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-            <span
-              className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
-              onClick={e => { e.stopPropagation(); onCycle(task); }}
-            >{isDone ? '✓' : isInProg ? '◑' : ''}</span>
-            <span className="focus-card-score" style={{ color }}>{score > 0 ? score : ''}</span>
-          </div>
+          )}
+
+          {/* Next substep */}
+          {nextSub && (
+            <div
+              className="focus-card-substep"
+              onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
+            >
+              ☐ {nextSub.text}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ── Urgency bar pinned to card bottom ── */}
+      <div className="focus-card-urgency-bar-track">
+        <div
+          className="focus-card-urgency-bar"
+          style={{ width: `${pct}%`, background: color }}
+        />
+      </div>
+
     </div>
   );
 }
