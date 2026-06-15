@@ -67,3 +67,151 @@
   border-top: 0.5px solid var(--color-border-tertiary);
   margin-top: 8px;
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Recurring task section
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.tm-recurring-wrap {
+  margin-top: 4px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding-top: 14px;
+}
+
+/* Master toggle row */
+.tm-recurring-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.tm-recurring-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-primary, #01696f);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tm-recurring-toggle label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Expanded body — slides in below toggle */
+.tm-recurring-body {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--color-bg-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Row: label + control */
+.tm-rec-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tm-rec-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  width: 54px;
+  flex-shrink: 0;
+}
+
+/* Segmented button group */
+.tm-seg {
+  display: flex;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg-primary);
+}
+.tm-seg-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-right: 0.5px solid var(--color-border-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.tm-seg-btn:last-child { border-right: none; }
+.tm-seg-btn:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+.tm-seg-btn.active {
+  background: var(--color-primary, #01696f);
+  color: #fff;
+  font-weight: 500;
+}
+
+/* Hint description text under mode selector */
+.tm-rec-hint {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: -4px 0 0;
+  max-width: 100%;
+  padding-left: 66px; /* align under the control, past the label */
+}
+
+/* Until / end section (expand mode only) */
+.tm-rec-until {
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding-top: 12px;
+}
+
+/* Radio row: radio + label + optional input inline */
+.tm-rec-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.tm-rec-radio-row input[type="radio"] {
+  accent-color: var(--color-primary, #01696f);
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Inline date input in radio row */
+.tm-rec-date-input {
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  height: 28px;
+}
+
+/* Inline count input in radio row */
+.tm-rec-count-input {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  width: 58px;
+  height: 28px;
+  text-align: center;
+}
