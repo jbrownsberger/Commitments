@@ -3,7 +3,7 @@ import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgen
 import QuickTasks from './QuickTasks.jsx';
 import '../styles/overview.css';
 
-/* ── Inline capacity editor ─────────────────────────────────────────────────── */
+/* ── Inline capacity editor ──────────────────────────────────────────────────── */
 function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   const [val, setVal] = useState(String(weeklyHours));
   const commit = () => {
@@ -37,7 +37,7 @@ function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   );
 }
 
-/* ── Gear SVG ─────────────────────────────────────────────────────────────── */
+/* ── Gear SVG ───────────────────────────────────────────────────────────────────── */
 const GearIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -60,7 +60,7 @@ a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
+/* ── Helpers ─────────────────────────────────────────────────────────────────── */
 function hoursToday(task) {
   const todayISO = new Date().toISOString().slice(0, 10);
   if (!task.scheduled_days?.includes(todayISO)) return 0;
@@ -118,7 +118,7 @@ function recurringUrgency(task) {
 
 const CAP_MODE_KEY = 'capacity_mode';
 
-/* ── Overview ────────────────────────────────────────────────────────────── */
+/* ── Overview ──────────────────────────────────────────────────────────────────── */
 export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const {
     categories, tasks, preferences,
@@ -444,7 +444,7 @@ function Metric({ label, val, danger }) {
   );
 }
 
-/* ── FocusCard ───────────────────────────────────────────────────────────── */
+/* ── FocusCard ──────────────────────────────────────────────────────────────────── */
 function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep }) {
   const score     = task.recurring && !task.due_date
     ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
@@ -459,7 +459,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
     : days === 0 ? 'today'
     : `${days}d left`;
 
-  // Urgency bar: width as % of the highest score in the current queue
+  // Urgency bar width as % of the highest score in the current queue
   const pct = Math.round((score / Math.max(maxScore, 1)) * 100);
 
   const hrsWeek = weekISOs.reduce((s, iso) => {
@@ -475,15 +475,17 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
   return (
     <div className="focus-card" onClick={onOpen}>
 
-      {/* ── Body row: left bubbles + right content ── */}
+      {/* Body row: left bubbles + right content */}
       <div className="focus-card-body">
 
-        {/* Left column: check bubble + score */}
+        {/* Left column: check bubble + urgency score number */}
         <div className="focus-card-left">
           <span
-            className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
+            className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
             onClick={e => { e.stopPropagation(); onCycle(task); }}
             title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
+            role="button"
+            aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
           >
             {isDone ? '✓' : isInProg ? '◑' : ''}
           </span>
@@ -494,7 +496,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
           )}
         </div>
 
-        {/* Right content */}
+        {/* Right content: name, badges, meta, next substep */}
         <div className="focus-card-content">
           <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
 
@@ -548,7 +550,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
         </div>
       </div>
 
-      {/* ── Urgency bar pinned to card bottom ── */}
+      {/* Urgency bar pinned flush to card bottom */}
       <div className="focus-card-urgency-bar-track">
         <div
           className="focus-card-urgency-bar"
