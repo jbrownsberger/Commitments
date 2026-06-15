@@ -9,7 +9,6 @@ const COLORS = [
 ];
 
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
-// UI status values use spaces; DB uses hyphens — conversion happens in db.js
 const STATUS_OPTS = [
   { val:'not started',  label:'Not started' },
   { val:'in progress',  label:'In progress' },
@@ -25,20 +24,18 @@ export default function Categories({ appData, userId }) {
   const { categories, tasks, saveCategory, removeCategory, saveTask, removeTask,
           saveSubstep, removeSubstep } = appData;
 
-  const [catModal,    setCatModal]    = useState(null);  // null | 'add' | {cat}
-  const [taskModal,   setTaskModal]   = useState(null);  // null | { catId, task? }
-  const [panelTask,   setPanelTask]   = useState(null);  // null | { task, cat }
+  const [catModal,    setCatModal]    = useState(null);
+  const [taskModal,   setTaskModal]   = useState(null);
+  const [panelTask,   setPanelTask]   = useState(null);
   const [openCats,    setOpenCats]    = useState({});
   const [openCompl,   setOpenCompl]   = useState({});
-  const [showRecurring, setShowRecurring] = useState(true);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+  // Recurring tasks now participate fully in their assigned category.
+  // The old !t.recurring exclusion is gone.
   const tasksFor = (catId) => (tasks || [])
-    .filter(t => t.category_id === catId && !t.recurring)
-    .sort((a,b) => (a.position||0) - (b.position||0));
-
-  const recurringTasks = (tasks || []).filter(t => t.recurring)
-    .sort((a,b) => (a.position||0) - (b.position||0));
+    .filter(t => t.category_id === catId)
+    .sort((a, b) => (a.position || 0) - (b.position || 0));
 
   const toggleCat   = (id) => setOpenCats(p  => ({ ...p, [id]: !p[id] }));
   const toggleCompl = (id) => setOpenCompl(p => ({ ...p, [id]: !p[id] }));
@@ -103,38 +100,6 @@ export default function Categories({ appData, userId }) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
-      {/* ── Daily / Recurring tasks section ── */}
-      {recurringTasks.length > 0 && (
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div
-            style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginBottom: showRecurring ? 10 : 0 }}
-            onClick={() => setShowRecurring(p => !p)}
-          >
-            <span style={{ fontSize:10, color:'var(--color-text-tertiary)', transition:'transform 0.2s', display:'inline-block', transform: showRecurring ? 'rotate(90deg)' : 'rotate(0)' }}>▶</span>
-            <span style={{ fontSize:13, fontWeight:500 }}>Daily &amp; recurring tasks</span>
-            <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>{recurringTasks.length}</span>
-          </div>
-          {showRecurring && (
-            <div className="task-list">
-              {recurringTasks.map(task => {
-                const cat = (categories || []).find(c => c.id === task.category_id);
-                return (
-                  <TaskRow
-                    key={task.id}
-                    task={norm(task)}
-                    cat={cat}
-                    onCycle={cycleStatus}
-                    onOpen={openPanel}
-                    badge={task.recurring_cadence || 'daily'}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Categories ── */}
       <div className="cat-list">
         <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
           <button className="btn btn-sm" onClick={() => setCatModal('add')}>+ Add category</button>
@@ -166,17 +131,22 @@ export default function Categories({ appData, userId }) {
 
               {isOpen && (
                 <div className="cat-body">
-                  {/* Incomplete tasks */}
                   <div className="task-list">
                     {incomplete.length === 0 && completed.length === 0 && (
                       <div style={{ fontSize:12, color:'var(--color-text-tertiary)', padding:'4px 0' }}>No tasks yet.</div>
                     )}
                     {incomplete.map(task => (
-                      <TaskRow key={task.id} task={task} cat={cat} onCycle={cycleStatus} onOpen={openPanel} />
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        cat={cat}
+                        onCycle={cycleStatus}
+                        onOpen={openPanel}
+                        badge={task.recurring ? (task.recurring_cadence || 'daily') : null}
+                      />
                     ))}
                   </div>
 
-                  {/* Completed tasks — collapsible */}
                   {completed.length > 0 && (
                     <div style={{ marginTop:8 }}>
                       <div
@@ -189,7 +159,14 @@ export default function Categories({ appData, userId }) {
                       {complOpen && (
                         <div className="task-list" style={{ marginTop:8, opacity:0.7 }}>
                           {completed.map(task => (
-                            <TaskRow key={task.id} task={task} cat={cat} onCycle={cycleStatus} onOpen={openPanel} />
+                            <TaskRow
+                              key={task.id}
+                              task={task}
+                              cat={cat}
+                              onCycle={cycleStatus}
+                              onOpen={openPanel}
+                              badge={task.recurring ? (task.recurring_cadence || 'daily') : null}
+                            />
                           ))}
                         </div>
                       )}
@@ -200,7 +177,7 @@ export default function Categories({ appData, userId }) {
                     <button className="btn btn-sm" onClick={() => setTaskModal({ catId: cat.id })}>+ Add task</button>
                     <button className="btn btn-sm" onClick={() => setCatModal(cat)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => {
-                      if (window.confirm(`Delete “${cat.name}” and all its tasks?`)) removeCategory(cat.id);
+                      if (window.confirm(`Delete "${cat.name}" and all its tasks?`)) removeCategory(cat.id);
                     }}>Delete</button>
                   </div>
                 </div>
@@ -303,10 +280,10 @@ export default function Categories({ appData, userId }) {
 // ── TaskRow ───────────────────────────────────────────────────────────────────
 
 function TaskRow({ task, cat, onCycle, onOpen, badge }) {
-  const prog    = taskProgress(task);
-  const isDone  = task.status === 'done';
+  const prog     = taskProgress(task);
+  const isDone   = task.status === 'done';
   const isInProg = task.status === 'in progress';
-  const days    = daysUntil(task.due_date);
+  const days     = daysUntil(task.due_date);
   const isOverdue = !isDone && task.due_date && days < 0;
   const daysStr = !task.due_date ? ''
     : days < 0  ? `${Math.abs(days)}d overdue`
@@ -322,7 +299,11 @@ function TaskRow({ task, cat, onCycle, onOpen, badge }) {
           title="Cycle status"
         >{isDone ? '✓' : isInProg ? '…' : ''}</span>
         <span className={`task-name${isDone ? ' done' : ''}`}>{task.name}</span>
-        {badge && <span className="badge" style={{ background:'var(--color-bg-info)', color:'var(--color-text-info)', fontSize:10 }}>{badge}</span>}
+        {badge && (
+          <span className="badge" style={{ background:'var(--color-bg-info)', color:'var(--color-text-info)', fontSize:10 }}>
+            {badge}
+          </span>
+        )}
         {task.priority && task.priority !== 'med' && (
           <span className={`badge badge-${task.priority}`}>
             {task.priority === 'critical' ? '!!' : task.priority}

@@ -106,6 +106,17 @@ function rollingWeekEnd() {
   return d.toISOString().slice(0, 10);
 }
 
+// Floor urgency score for recurring tasks that have no explicit due date.
+// Keeps them reliably present in the queue without crowding out deadline tasks
+// (which typically score 50–200+).
+const RECURRING_FLOOR_SCORE = { daily: 30, weekday: 25, weekly: 15 };
+
+function recurringUrgency(task) {
+  // If a recurring task has a due date, treat it exactly like a normal task.
+  if (task.due_date) return urgencyScore(task);
+  return RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20;
+}
+
 const CAP_MODE_KEY = 'capacity_mode';
 
 /* ── Overview ────────────────────────────────────────────────────────────────────── */
@@ -155,10 +166,15 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   });
 
   const allTasks = tasks || [];
-  const allInc   = allTasks.filter(t => t.status !== 'done' && !t.recurring).map(enrich);
 
-  const total        = allTasks.filter(t => !t.recurring).length;
-  const doneCount    = allTasks.filter(t => t.status === 'done' && !t.recurring).length;
+  // Recurring tasks are now first-class citizens of the incomplete list.
+  // They receive a cadence-based floor score when they have no due date,
+  // so they appear in the queue without displacing genuinely urgent work.
+  const allInc = allTasks.filter(t => t.status !== 'done').map(enrich);
+
+  // Stats: count all tasks (recurring included in totals).
+  const total        = allTasks.length;
+  const doneCount    = allTasks.filter(t => t.status === 'done').length;
   const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
   const overdueCount = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) < 0).length;
 
@@ -191,13 +207,24 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     : capPct >= 75 ? '#BA7517'
     : 'var(--color-text-success)';
 
+  // Sort the focus queue: overdue first, then upcoming deadline tasks by urgency,
+  // then no-due tasks — with recurring tasks using their floor score so they
+  // slot in naturally among no-deadline work.
   const overdue    = allInc.filter(t => t.due_date && daysUntil(t.due_date) < 0)
     .sort((a, b) => daysUntil(a.due_date) - daysUntil(b.due_date));
   const upcoming   = allInc.filter(t => t.due_date && daysUntil(t.due_date) >= 0)
     .sort((a, b) => urgencyScore(b) - urgencyScore(a));
-  const noDue      = allInc.filter(t => !t.due_date);
+  const noDue      = allInc
+    .filter(t => !t.due_date)
+    .sort((a, b) => {
+      const sa = t => t.recurring ? recurringUrgency(t) : urgencyScore(t);
+      return sa(b) - sa(a);
+    });
   const focusQueue = [...overdue, ...upcoming, ...noDue];
-  const maxFocusScore = Math.max(...focusQueue.map(urgencyScore), 1);
+  const maxFocusScore = Math.max(
+    ...focusQueue.map(t => t.recurring ? recurringUrgency(t) : urgencyScore(t)),
+    1
+  );
 
   const todayPlan = allTasks.map(enrich)
     .filter(t => t.status !== 'done' && t.scheduled_days?.includes(todayISO))
@@ -423,7 +450,11 @@ function Metric({ label, val, danger }) {
 }
 
 function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep }) {
-  const score     = urgencyScore(task);
+  // Use the floor score for recurring tasks without a due date so the urgency
+  // bar renders at a meaningful height rather than zero.
+  const score     = task.recurring && !task.due_date
+    ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
+    : urgencyScore(task);
   const color     = urgencyColor(score);
   const isDone    = task.status === 'done';
   const isInProg  = task.status === 'in progress';
@@ -458,7 +489,21 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
           onClick={e => { e.stopPropagation(); onCycle(task); }}
         >{isDone ? '✓' : isInProg ? '…' : ''}</span>
         <span className="focus-card-name">{task.name}</span>
-        <span className="focus-card-cat">{task.catName}</span>
+        <span className="focus-card-cat">
+          {task.catName}
+          {task.recurring && (
+            <span style={{
+              marginLeft: 4,
+              fontSize: 10,
+              background: 'var(--color-bg-info)',
+              color: 'var(--color-text-info)',
+              borderRadius: 4,
+              padding: '1px 5px',
+            }}>
+              {task.recurring_cadence || 'recurring'}
+            </span>
+          )}
+        </span>
         <span className="focus-card-score" style={{ color }}>{score > 0 ? score : ''}</span>
       </div>
 
