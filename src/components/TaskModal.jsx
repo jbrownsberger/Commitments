@@ -6,13 +6,11 @@
  * Recurring reset-mode scheduling:
  *   due_date is the anchor.  Two ways to set it:
  *     'specific' — user picks an exact date (date picker)
- *     'weekday'  — user picks a day of the week (Mon–Sun); the app computes
- *                  the next upcoming occurrence and stores it as due_date.
- *   For non-weekly cadences (daily, weekday, custom days) the day-of-week
- *   picker is still available but defaults to 'specific' since a day-of-week
- *   anchor only makes semantic sense for weekly patterns.
+ *     'weekday'  — user picks a day of the week (Mon–Sun); only available
+ *                  when cadence is exactly 'weekly'.  The app computes the
+ *                  next upcoming occurrence and stores it as due_date.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
 
 const PRIORITY_LABELS = { low: 'Low', med: 'Medium', high: 'High', critical: 'Critical' };
@@ -44,9 +42,6 @@ const DAYS_OF_WEEK = [
   { val: 0, label: 'Sun' },
 ];
 
-// Given a JS day-of-week integer (0=Sun…6=Sat), return the date string
-// (YYYY-MM-DD) of the next upcoming occurrence of that weekday (today if
-// today matches, otherwise the next future occurrence).
 function nextOccurrenceOfWeekday(dow) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -56,7 +51,6 @@ function nextOccurrenceOfWeekday(dow) {
   return d.toISOString().slice(0, 10);
 }
 
-// Parse a stored cadence string → { isCustom, preset, customN, customUnit }
 function parseCadence(cadence) {
   if (!cadence) return { isCustom: false, preset: 'daily', customN: 2, customUnit: 'days' };
   const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
@@ -72,7 +66,7 @@ function serialiseCadence(isCustom, preset, customN, customUnit) {
   return `every_${customN}_${customUnit.replace(/s$/, '')}s`;
 }
 
-// ── Recurring section ─────────────────────────────────────────────────────────
+// ── Recurring section ──────────────────────────────────────────────────────────
 function RecurringSection({ task }) {
   const parsed = parseCadence(task?.recurring_cadence);
 
@@ -83,29 +77,32 @@ function RecurringSection({ task }) {
   const [customN,     setCustomN]     = useState(parsed.customN);
   const [customUnit,  setCustomUnit]  = useState(parsed.customUnit);
 
-  // Due-anchor mode (reset type only)
-  // If the task already has a due_date, default to 'specific'.
-  // Otherwise default to 'weekday' for weekly cadence, 'specific' for others.
+  // "Day of week" mode is only valid for weekly cadence.
+  const isWeeklyOnly = !isCustom && preset === 'weekly';
+
   const initDueMode = task?.due_date ? 'specific'
     : (parsed.preset === 'weekly' && !parsed.isCustom) ? 'weekday' : 'specific';
-  const [dueMode,    setDueMode]    = useState(initDueMode);
-  const [dueDate,    setDueDate]    = useState(task?.due_date || '');
-  // For weekday picker: detect from existing due_date if possible
+  const [dueMode,     setDueMode]     = useState(initDueMode);
+  const [dueDate,     setDueDate]     = useState(task?.due_date || '');
   const initDow = task?.due_date
     ? new Date(task.due_date + 'T00:00:00').getDay()
     : 2; // default Tuesday
   const [selectedDow, setSelectedDow] = useState(initDow);
+
+  // When cadence changes away from weekly, force dueMode back to 'specific'
+  // so the hidden field always carries a valid date.
+  useEffect(() => {
+    if (!isWeeklyOnly && dueMode === 'weekday') {
+      setDueMode('specific');
+    }
+  }, [isWeeklyOnly, dueMode]);
 
   // Expand-only state
   const [untilMode,  setUntilMode]  = useState(task?.recurring_until ? 'date' : 'count');
   const [untilDate,  setUntilDate]  = useState(task?.recurring_until  || '');
   const [instCount,  setInstCount]  = useState(task?.recurring_instances || 10);
 
-  const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
-
-  // Compute the due_date value to actually submit
-  // For reset mode: either the picked specific date, or the next occurrence
-  // of the chosen weekday.  For expand mode: due_date is per-instance, not here.
+  const cadenceValue    = serialiseCadence(isCustom, preset, customN, customUnit);
   const computedDueDate = recType === 'reset'
     ? (dueMode === 'weekday' ? nextOccurrenceOfWeekday(selectedDow) : dueDate)
     : dueDate;
@@ -184,19 +181,24 @@ function RecurringSection({ task }) {
             <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
               <span className="tm-rec-label" style={{ paddingTop: 6 }}>Due</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-                <div className="tm-seg" role="group" aria-label="Due anchor">
-                  <button type="button"
-                    className={`tm-seg-btn${dueMode === 'specific' ? ' active' : ''}`}
-                    onClick={() => setDueMode('specific')}>
-                    Specific date
-                  </button>
-                  <button type="button"
-                    className={`tm-seg-btn${dueMode === 'weekday' ? ' active' : ''}`}
-                    onClick={() => setDueMode('weekday')}>
-                    Day of week
-                  </button>
-                </div>
 
+                {/* Toggle only shown for weekly cadence */}
+                {isWeeklyOnly && (
+                  <div className="tm-seg" role="group" aria-label="Due anchor">
+                    <button type="button"
+                      className={`tm-seg-btn${dueMode === 'specific' ? ' active' : ''}`}
+                      onClick={() => setDueMode('specific')}>
+                      Specific date
+                    </button>
+                    <button type="button"
+                      className={`tm-seg-btn${dueMode === 'weekday' ? ' active' : ''}`}
+                      onClick={() => setDueMode('weekday')}>
+                      Day of week
+                    </button>
+                  </div>
+                )}
+
+                {/* Specific date input — shown for all cadences when mode is 'specific' */}
                 {dueMode === 'specific' && (
                   <input type="date" value={dueDate}
                     onChange={e => setDueDate(e.target.value)}
@@ -207,7 +209,8 @@ function RecurringSection({ task }) {
                   />
                 )}
 
-                {dueMode === 'weekday' && (
+                {/* Day-of-week strip — only reachable when weekly + user picked it */}
+                {dueMode === 'weekday' && isWeeklyOnly && (
                   <div className="tm-seg" role="group" aria-label="Day of week">
                     {DAYS_OF_WEEK.map(d => (
                       <button key={d.val} type="button"
@@ -221,14 +224,13 @@ function RecurringSection({ task }) {
 
                 <p className="tm-rec-hint" style={{ marginTop: 0 }}>
                   {dueMode === 'weekday'
-                    ? `Resets each cycle on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}. Complete it early and it holds until that day; complete it late and it advances to the next ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}.`
+                    ? `Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}. Complete it early and it holds until that day; complete it late and it advances to the next ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}.`
                     : 'Resets each cycle on this date. Complete it early and it holds until the due date; complete it late and it advances to the next scheduled occurrence.'}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Hidden field carries the resolved due_date for reset mode */}
           <input type="hidden" name="recurring_due_date" value={computedDueDate} />
 
           {/* ── Expand-only: end condition ── */}
@@ -294,7 +296,7 @@ function RecurringSection({ task }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function TaskModal({ task, catId, categories = [], onSave, onClose }) {
   const isEdit = !!task;
   const [submitting, setSubmitting] = useState(false);
@@ -321,9 +323,7 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
     const recType     = fd.get('recurring_type') || 'reset';
     const rawUntil    = fd.get('recurring_until');
     const rawCount    = fd.get('recurring_instances');
-    // recurring_due_date is the resolved anchor date from RecurringSection
     const recurringDueDate = fd.get('recurring_due_date') || null;
-    // For non-recurring tasks, use the top-level due_date field as-is
     const topDueDate  = fd.get('due_date') || null;
 
     const payload = {
@@ -332,9 +332,6 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       name:                  fd.get('name').trim(),
       status:                fd.get('status'),
       priority:              fd.get('priority'),
-      // For recurring reset tasks, the due_date IS the schedule anchor;
-      // use the value computed by RecurringSection.  For all others, use
-      // the top-level date picker.
       due_date:              (isRecurring && recType === 'reset')
                                ? (recurringDueDate || topDueDate)
                                : topDueDate,
@@ -393,8 +390,6 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
           </select>
         </div>
 
-        {/* Due date shown for non-recurring tasks only; recurring tasks
-            manage their own due anchor inside RecurringSection */}
         <div className="form-field">
           <label>Due date</label>
           <input type="date" name="due_date" defaultValue={task?.due_date || ''} />
@@ -440,7 +435,7 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Saving\u2026' : isEdit ? 'Save changes' : 'Add task'}
+            {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Add task'}
           </button>
         </div>
       </form>
