@@ -429,12 +429,31 @@ export default function GCalSync({ appData }) {
       setFreeBusy(result);
       onFreeBusyUpdate?.(result);
     } catch (e) {
-      setError(e.message);
+      // If the token has expired, fall back to disconnected state so the user
+      // can re-authenticate rather than seeing a cryptic error.
+      const msg = e.message || '';
+      if (/401|unauthorized|invalid.*(token|credentials)|token.*expired/i.test(msg)) {
+        revokeToken();
+        setConnected(false);
+        setFreeBusy(null);
+        onFreeBusyClear?.();
+        setError('Your Google session expired. Please reconnect.');
+      } else {
+        setError(msg);
+      }
       setSubtractingBlocks(false);
     } finally {
       setLoadingFB(false);
     }
-  }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate]);
+  }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate, onFreeBusyClear]);
+
+  // Auto-load availability when the tab mounts (or re-mounts after tab switch)
+  // as long as we're connected and data hasn't been loaded yet this session.
+  useEffect(() => {
+    if (!connected || freeBusy !== null || loadingFB) return;
+    handleFetchFreeBusy();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
 
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
