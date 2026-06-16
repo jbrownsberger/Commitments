@@ -14,25 +14,17 @@ const STATUS_OPTS = [
   { val:'in progress',  label:'In progress' },
   { val:'done',         label:'Done' },
 ];
-const CADENCE_OPTS = [
-  { val:'daily',   label:'Daily'   },
-  { val:'weekday', label:'Weekdays'},
-  { val:'weekly',  label:'Weekly'  },
-];
 
-export default function Categories({ appData, userId }) {
+export default function Categories({ appData, userId, onAddTask, onEditTask }) {
   const { categories, tasks, saveCategory, removeCategory, saveTask, removeTask,
           saveSubstep, removeSubstep } = appData;
 
   const [catModal,    setCatModal]    = useState(null);
-  const [taskModal,   setTaskModal]   = useState(null);
   const [panelTask,   setPanelTask]   = useState(null);
   const [openCats,    setOpenCats]    = useState({});
   const [openCompl,   setOpenCompl]   = useState({});
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  // Recurring tasks now participate fully in their assigned category.
-  // The old !t.recurring exclusion is gone.
   const tasksFor = (catId) => (tasks || [])
     .filter(t => t.category_id === catId)
     .sort((a, b) => (a.position || 0) - (b.position || 0));
@@ -71,30 +63,6 @@ export default function Categories({ appData, userId }) {
       position: existing ? existing.position : (categories.length),
     });
     setCatModal(null);
-  };
-
-  // ── Task save ────────────────────────────────────────────────────────────
-  const handleSaveTask = async (e) => {
-    e.preventDefault();
-    const fd       = new FormData(e.target);
-    const existing = taskModal?.task || null;
-    const isRecurring = fd.get('recurring') === 'on';
-    await saveTask({
-      ...(existing || {}),
-      category_id:     taskModal.catId,
-      name:            fd.get('name').trim(),
-      status:          fd.get('status'),
-      priority:        fd.get('priority'),
-      due_date:        fd.get('due_date') || null,
-      estimated_hours: parseFloat(fd.get('estimated_hours')) || 1,
-      notes:           fd.get('notes') || null,
-      manual_progress: existing?.manual_progress ?? 0,
-      recurring:       isRecurring,
-      recurring_cadence: isRecurring ? (fd.get('cadence') || 'daily') : null,
-      substeps:        existing?.substeps ?? [],
-      position:        existing ? existing.position : tasksFor(taskModal.catId).length,
-    });
-    setTaskModal(null);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -174,7 +142,10 @@ export default function Categories({ appData, userId }) {
                   )}
 
                   <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
-                    <button className="btn btn-sm" onClick={() => setTaskModal({ catId: cat.id })}>+ Add task</button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => onAddTask && onAddTask(cat.id)}
+                    >+ Add task</button>
                     <button className="btn btn-sm" onClick={() => setCatModal(cat)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => {
                       if (window.confirm(`Delete "${cat.name}" and all its tasks?`)) removeCategory(cat.id);
@@ -207,57 +178,6 @@ export default function Categories({ appData, userId }) {
         </Modal>
       )}
 
-      {/* ── Task modal ── */}
-      {taskModal && (
-        <Modal title={taskModal.task ? 'Edit task' : 'Add task'} onClose={() => setTaskModal(null)}>
-          <form onSubmit={handleSaveTask}>
-            <div className="form-field">
-              <label>Name</label>
-              <input name="name" required defaultValue={taskModal.task?.name || ''} autoFocus />
-            </div>
-            <div className="form-field">
-              <label>Status</label>
-              <select name="status" defaultValue={taskModal.task?.status || 'not started'}>
-                {STATUS_OPTS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Priority</label>
-              <select name="priority" defaultValue={taskModal.task?.priority || 'med'}>
-                {Object.entries(PRIORITY_LABELS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Due date</label>
-              <input type="date" name="due_date" defaultValue={taskModal.task?.due_date || ''} />
-            </div>
-            <div className="form-field">
-              <label>Estimated hours</label>
-              <input type="number" name="estimated_hours" min={0.5} step={0.5} defaultValue={taskModal.task?.estimated_hours || 1} />
-            </div>
-            <div className="form-field">
-              <label>Notes</label>
-              <textarea name="notes" defaultValue={taskModal.task?.notes || ''} />
-            </div>
-            <div className="form-field" style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-              <input type="checkbox" name="recurring" id="recurring-cb"
-                defaultChecked={!!taskModal.task?.recurring} />
-              <label htmlFor="recurring-cb" style={{ color:'var(--color-text-primary)', fontSize:13 }}>Recurring / daily task</label>
-            </div>
-            <div className="form-field">
-              <label>Cadence (if recurring)</label>
-              <select name="cadence" defaultValue={taskModal.task?.recurring_cadence || 'daily'}>
-                {CADENCE_OPTS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
-              </select>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setTaskModal(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Save</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
       {/* ── Task detail panel ── */}
       {panelTask && (
         <TaskPanel
@@ -268,8 +188,7 @@ export default function Categories({ appData, userId }) {
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
           onEdit={(task) => {
             setPanelTask(null);
-            const cat = panelTask.cat;
-            setTaskModal({ catId: task.category_id, task });
+            onEditTask && onEditTask(task);
           }}
         />
       )}

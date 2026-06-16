@@ -260,9 +260,9 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     updateFade();
   }, [tab, updateFade]);
 
-  const openAdd = () => {
+  const openAdd = (catId) => {
     if (categories.length === 0) return;
-    setEditModal({ task: null, catId: categories[0]?.id ?? null });
+    setEditModal({ task: null, catId: catId ?? categories[0]?.id ?? null });
   };
 
   const openEdit = (task) => {
@@ -283,7 +283,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
           <div className="header-actions">
             <button
               className="btn btn-primary"
-              onClick={openAdd}
+              onClick={() => openAdd()}
               disabled={categories.length === 0}
               title={categories.length === 0 ? 'Add a category first' : 'Add a new task'}
             >+ New task</button>
@@ -321,7 +321,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         {/* ── Tab content ── */}
         <div className="tab-content">
           {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
-          {tab === 'categories' && <Categories appData={appData} userId={userId} onEditTask={openEdit} />}
+          {tab === 'categories' && <Categories appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
           {tab === 'planner'    && <Planner    appData={appData} userId={userId} onEditTask={openEdit} />}
           {tab === 'gcal'       && <GCalSync   appData={appData} userId={userId} />}
         </div>
