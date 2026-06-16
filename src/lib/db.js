@@ -10,15 +10,24 @@
  *
  * Recurring columns:
  *   recurring                — boolean
- *   recurring_cadence        — 'daily' | 'weekday' | 'weekly' | 'every_N_days' |
- *                              'every_N_weeks' | 'every_N_months'
+ *   recurring_cadence        — 'daily' | 'weekday' | 'weekly' |
+ *                              'every_N_days' | 'every_N_weeks' | 'every_N_months'
  *   recurring_type           — 'reset' | 'expand'
- *   recurring_last_reset_at  — timestamptz; anchor for next-due calculation
  *   recurring_until          — date string, end date for expand tasks
  *   recurring_instances      — integer, max occurrences for expand tasks
  *   is_recurring_template    — boolean, true on the master expand row
  *   recurring_template_id    — uuid FK back to the template row
  *   updated_at               — timestamptz, auto-set by trigger
+ *
+ * Reset scheduling:
+ *   due_date is the anchor for reset-mode tasks.  On each reset, due_date
+ *   advances by one cadence period from its *previous* value (not from today),
+ *   so the schedule never drifts even when tasks are completed late.
+ *
+ *   Behaviour:
+ *     - status becomes 'done' + now >= due_date  → reset & advance due_date
+ *     - status becomes 'done' + now < due_date   → stay done until due_date arrives
+ *     - status NOT done       + now >= due_date  → show as overdue, do NOT reset
  */
 import { supabase } from './supabase.js';
 
@@ -34,25 +43,20 @@ export function toUiStatus(s) {
 
 // ── Cadence helpers ───────────────────────────────────────────────────────────
 /**
- * Given a cadence string and an anchor Date, return the Date when the task
- * next becomes due for reset (i.e. anchor + one cadence period).
- *
- * Supported cadence values:
- *   'daily'           — every 1 day
- *   'weekday'         — next weekday on or after anchor + 1 day
- *   'weekly'          — every 7 days
- *   'every_N_days'    — every N days
- *   'every_N_weeks'   — every N*7 days
- *   'every_N_months'  — calendar months
+ * Advance `fromDate` by exactly one cadence period and return the new Date.
+ * Always advances from the *scheduled* date, not from today, so the
+ * schedule stays anchored and never drifts on late completions.
  */
-export function nextResetDate(cadence, anchor) {
-  const d = new Date(anchor);
+export function nextScheduledDate(cadence, fromDate) {
+  const d = new Date(fromDate);
+  d.setHours(0, 0, 0, 0);
+
   if (!cadence || cadence === 'daily') {
     d.setDate(d.getDate() + 1);
     return d;
   }
   if (cadence === 'weekday') {
-    // advance to next weekday (Mon–Fri)
+    // advance to the next Mon–Fri
     do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
     return d;
   }
@@ -60,17 +64,33 @@ export function nextResetDate(cadence, anchor) {
     d.setDate(d.getDate() + 7);
     return d;
   }
-  // 'every_N_days' / 'every_N_weeks' / 'every_N_months'
+  // custom: 'every_N_days' | 'every_N_weeks' | 'every_N_months'
   const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
   if (m) {
-    const n    = parseInt(m[1], 10);
-    const unit = m[2];
-    if (unit === 'day')   { d.setDate(d.getDate() + n); return d; }
-    if (unit === 'week')  { d.setDate(d.getDate() + n * 7); return d; }
-    if (unit === 'month') { d.setMonth(d.getMonth() + n); return d; }
+    const n = parseInt(m[1], 10);
+    if (m[2] === 'day')   { d.setDate(d.getDate() + n);   return d; }
+    if (m[2] === 'week')  { d.setDate(d.getDate() + n*7); return d; }
+    if (m[2] === 'month') { d.setMonth(d.getMonth() + n); return d; }
   }
-  // fallback: daily
+  // fallback
   d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/**
+ * Given a cadence and a fromDate, keep advancing until the result is
+ * strictly in the future (> today).  Handles the case where a task is
+ * completed very late and the next scheduled date is already in the past.
+ */
+export function nextFutureScheduledDate(cadence, fromDate) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let d = new Date(fromDate);
+  d.setHours(0, 0, 0, 0);
+  // Advance at least once, then keep going until we land in the future
+  do {
+    d = nextScheduledDate(cadence, d);
+  } while (d <= today);
   return d;
 }
 
@@ -89,20 +109,14 @@ export const onAuthChange = (cb) =>
 // ── Preferences ───────────────────────────────────────────────────────────────
 export async function fetchPreferences(userId) {
   const { data, error } = await supabase
-    .from('user_preferences')
-    .select('*')
-    .eq('user_id', userId)
-    .maybeSingle();
+    .from('user_preferences').select('*').eq('user_id', userId).maybeSingle();
   if (error) throw error;
   return data || {};
 }
 export async function savePreferences(prefs) {
   const { user_id, ...rest } = prefs;
   const { data, error } = await supabase
-    .from('user_preferences')
-    .upsert({ user_id, ...rest })
-    .select()
-    .single();
+    .from('user_preferences').upsert({ user_id, ...rest }).select().single();
   if (error) throw error;
   return data;
 }
@@ -110,10 +124,7 @@ export async function savePreferences(prefs) {
 // ── Categories ────────────────────────────────────────────────────────────────
 export async function fetchCategories(userId) {
   const { data, error } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', userId)
-    .order('position');
+    .from('categories').select('*').eq('user_id', userId).order('position');
   if (error) throw error;
   return data || [];
 }
@@ -146,15 +157,14 @@ function dbTaskToApp(t) {
     ).sort(),
     scheduled_day_hours: t.scheduled_day_hours || {},
     substeps:            (t.substeps || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
-    recurring:                 rest.recurring                 ?? false,
-    recurring_type:            rest.recurring_type            ?? null,
-    recurring_cadence:         rest.recurring_cadence         ?? null,
-    recurring_last_reset_at:   rest.recurring_last_reset_at   ?? null,
-    recurring_until:           rest.recurring_until           ?? null,
-    recurring_instances:       rest.recurring_instances       ?? null,
-    is_recurring_template:     rest.is_recurring_template     ?? false,
-    recurring_template_id:     rest.recurring_template_id     ?? null,
-    updated_at:                rest.updated_at                ?? null,
+    recurring:               rest.recurring               ?? false,
+    recurring_type:          rest.recurring_type          ?? null,
+    recurring_cadence:       rest.recurring_cadence       ?? null,
+    recurring_until:         rest.recurring_until         ?? null,
+    recurring_instances:     rest.recurring_instances     ?? null,
+    is_recurring_template:   rest.is_recurring_template   ?? false,
+    recurring_template_id:   rest.recurring_template_id   ?? null,
+    updated_at:              rest.updated_at              ?? null,
   };
 }
 
@@ -181,14 +191,13 @@ export async function saveTask(task) {
     ...rest,
     status:   toDbStatus(rest.status),
     progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
-    recurring:                rest.recurring                ?? false,
-    recurring_type:           rest.recurring_type           ?? null,
-    recurring_cadence:        rest.recurring_cadence        ?? null,
-    recurring_last_reset_at:  rest.recurring_last_reset_at  ?? null,
-    recurring_until:          rest.recurring_until          ?? null,
-    recurring_instances:      rest.recurring_instances      ?? null,
-    is_recurring_template:    rest.is_recurring_template    ?? false,
-    recurring_template_id:    rest.recurring_template_id    ?? null,
+    recurring:             rest.recurring             ?? false,
+    recurring_type:        rest.recurring_type        ?? null,
+    recurring_cadence:     rest.recurring_cadence     ?? null,
+    recurring_until:       rest.recurring_until       ?? null,
+    recurring_instances:   rest.recurring_instances   ?? null,
+    is_recurring_template: rest.is_recurring_template ?? false,
+    recurring_template_id: rest.recurring_template_id ?? null,
   };
 
   const isNew = !row.id;
@@ -212,93 +221,76 @@ export async function removeTask(id) {
 /**
  * resetStaleRecurringTasks(tasks, userId)
  *
- * Called on app load.  For each 'reset'-mode recurring task with status 'done',
- * computes the next-due date from the anchor (recurring_last_reset_at, falling
- * back to updated_at) and resets the task if now >= nextDue.
+ * Called once on app load.  For each reset-mode recurring task:
  *
- * "Whichever is later" semantics: the anchor is set to the moment of completion,
- * so a task completed late in the day won't reset until one full cadence period
- * has elapsed from that moment — not merely from midnight.
+ *   Case A — status is 'done' AND now >= due_date:
+ *     Reset to 'not-started', advance due_date to the next future scheduled
+ *     date from the *previous* due_date (not from today), so the schedule
+ *     never drifts even on late completions.
+ *
+ *   Case B — status is 'done' AND now < due_date:
+ *     Leave as-is.  Task was completed early; wait for due_date to arrive.
+ *
+ *   Case C — status is NOT 'done' AND now >= due_date:
+ *     Leave as-is.  Task is overdue.  Do not reset until user completes it.
+ *
+ *   Case D — status is NOT 'done' AND now < due_date:
+ *     Nothing to do.
  */
 export async function resetStaleRecurringTasks(tasks, userId) {
-  const now = new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const toReset = tasks.filter(t => {
     if (!t.recurring || t.recurring_type !== 'reset') return false;
-    if (t.status !== 'done') return false;
-
-    // Use recurring_last_reset_at if available; fall back to updated_at;
-    // if neither exists, reset immediately.
-    const anchorStr = t.recurring_last_reset_at || t.updated_at;
-    if (!anchorStr) return true;
-
-    const anchor  = new Date(anchorStr);
-    const nextDue = nextResetDate(t.recurring_cadence, anchor);
-    return now >= nextDue;
+    if (t.status !== 'done') return false;            // Cases C & D — leave alone
+    if (!t.due_date) return false;                    // no anchor → skip (shouldn't happen post-migration)
+    const due = new Date(t.due_date);
+    due.setHours(0, 0, 0, 0);
+    return today >= due;                              // Case A only
   });
 
   if (toReset.length === 0) return [];
 
   const updated = await Promise.all(
-    toReset.map(t =>
-      saveTask({
+    toReset.map(t => {
+      // Advance from the scheduled due_date (not today) so the pattern stays fixed
+      const nextDue = nextFutureScheduledDate(t.recurring_cadence, t.due_date);
+      return saveTask({
         ...t,
-        status:                  'not-started',
-        manual_progress:         0,
-        recurring_last_reset_at: new Date().toISOString(),
-      })
-    )
+        status:          'not-started',
+        manual_progress: 0,
+        due_date:        nextDue.toISOString().slice(0, 10),
+      });
+    })
   );
 
   return updated;
 }
 
 // ── Recurring: expand (spawn instances) ──────────────────────────────────────
-/**
- * expandRecurringTemplate(template, userId)
- *
- * For 'expand'-mode tasks.  Generates individual instances through
- * recurring_until or recurring_instances and inserts them all.
- */
 export async function expandRecurringTemplate(template, userId) {
   const cadence  = template.recurring_cadence || 'daily';
   const until    = template.recurring_until    ? new Date(template.recurring_until) : null;
   const maxCount = template.recurring_instances ?? 10;
 
   const dates = [];
-  const cursor = new Date();
+  let cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
 
   while (true) {
-    const dow      = cursor.getDay();
-    let eligible   = true;
+    const dow = cursor.getDay();
+    const eligible =
+      cadence === 'weekday' ? (dow >= 1 && dow <= 5) : true;
 
-    if (cadence === 'weekday') {
-      eligible = dow >= 1 && dow <= 5;
-    } else if (cadence === 'weekly') {
-      eligible = dow === new Date().getDay();
-    } else {
-      // custom cadence: push every occurrence by one full period
-      eligible = true;
-    }
-
-    if (eligible) {
-      dates.push(cursor.toISOString().slice(0, 10));
-    }
-
+    if (eligible) dates.push(cursor.toISOString().slice(0, 10));
     if (until  && cursor >= until)           break;
     if (!until && dates.length >= maxCount)  break;
     if (dates.length >= 365)                 break;
 
-    // Advance by the cadence period
-    const next = nextResetDate(cadence, cursor);
-    // For daily/weekday/weekly nextResetDate gives the right +1-step;
-    // but for weekday we already handle eligibility above so just +1 day.
-    if (cadence === 'daily' || cadence === 'weekday') {
-      cursor.setDate(cursor.getDate() + 1);
-    } else {
-      cursor.setTime(next.getTime());
-    }
+    cursor = cadence === 'daily' || cadence === 'weekday'
+      ? (() => { const d = new Date(cursor); d.setDate(d.getDate() + 1); return d; })()
+      : nextScheduledDate(cadence, cursor);
   }
 
   if (dates.length === 0) return [];
@@ -308,16 +300,15 @@ export async function expandRecurringTemplate(template, userId) {
     category_id:           template.category_id,
     name:                  template.name,
     status:                'not-started',
-    priority:              template.priority  || 'med',
+    priority:              template.priority     || 'med',
     estimated_hours:       template.estimated_hours || 1,
-    notes:                 template.notes || null,
+    notes:                 template.notes        || null,
     progress:              0,
     position:              (template.position ?? 0) + i + 1,
     due_date,
     recurring:             false,
     recurring_type:        null,
     recurring_cadence:     null,
-    recurring_last_reset_at: null,
     recurring_until:       null,
     recurring_instances:   null,
     is_recurring_template: false,
@@ -332,10 +323,7 @@ export async function expandRecurringTemplate(template, userId) {
 // ── Substeps ──────────────────────────────────────────────────────────────────
 export async function fetchSubsteps(userId) {
   const { data, error } = await supabase
-    .from('substeps')
-    .select('*')
-    .eq('user_id', userId)
-    .order('position');
+    .from('substeps').select('*').eq('user_id', userId).order('position');
   if (error) throw error;
   return data || [];
 }
@@ -364,10 +352,7 @@ function dbQtToApp(qt) {
 }
 export async function fetchQuickTasks(userId) {
   const { data, error } = await supabase
-    .from('quick_tasks')
-    .select('*')
-    .eq('user_id', userId)
-    .order('position');
+    .from('quick_tasks').select('*').eq('user_id', userId).order('position');
   if (error) throw error;
   return (data || []).map(dbQtToApp);
 }
@@ -402,11 +387,8 @@ export async function setScheduledDays(taskId, userId, dates) {
 }
 export async function getScheduledDaysForRange(userId, from, to) {
   const { data, error } = await supabase
-    .from('scheduled_days')
-    .select('task_id, day_date')
-    .eq('user_id', userId)
-    .gte('day_date', from)
-    .lte('day_date', to);
+    .from('scheduled_days').select('task_id, day_date')
+    .eq('user_id', userId).gte('day_date', from).lte('day_date', to);
   if (error) throw error;
   return data;
 }
