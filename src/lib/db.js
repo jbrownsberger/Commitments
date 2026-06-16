@@ -8,48 +8,85 @@
  *   DB column  `progress`           ↔  app field `manual_progress`
  *   DB column  `timeframe_minutes`  ↔  app field `timeframeMinutes`
  *
- * Recurring columns (all nullable, added in 20260615_recurring_fields.sql):
- *   recurring                — boolean, already existed
- *   recurring_cadence        — 'daily' | 'weekday' | 'weekly', already existed
- *   recurring_type           — 'reset' | 'expand'  (NEW)
- *   recurring_until          — date string, end date for expand tasks  (NEW)
- *   recurring_instances      — integer, max occurrences for expand tasks  (NEW)
- *   is_recurring_template    — boolean, true on the master expand row  (NEW)
- *   recurring_template_id    — uuid FK back to the template row  (NEW)
- *   updated_at               — timestamptz, auto-set by trigger  (NEW)
+ * Recurring columns:
+ *   recurring                — boolean
+ *   recurring_cadence        — 'daily' | 'weekday' | 'weekly' | 'every_N_days' |
+ *                              'every_N_weeks' | 'every_N_months'
+ *   recurring_type           — 'reset' | 'expand'
+ *   recurring_last_reset_at  — timestamptz; anchor for next-due calculation
+ *   recurring_until          — date string, end date for expand tasks
+ *   recurring_instances      — integer, max occurrences for expand tasks
+ *   is_recurring_template    — boolean, true on the master expand row
+ *   recurring_template_id    — uuid FK back to the template row
+ *   updated_at               — timestamptz, auto-set by trigger
  */
 import { supabase } from './supabase.js';
 
 // ── Status helpers ────────────────────────────────────────────────────────────
-// DB uses hyphens; UI may use spaces. Normalise before writing, humanise after reading.
 export function toDbStatus(s) {
   if (!s) return 'not-started';
-  return s.replace(' ', '-');   // 'not started' → 'not-started'
+  return s.replace(' ', '-');
 }
 export function toUiStatus(s) {
   if (!s) return 'not started';
-  return s.replace('-', ' ');   // 'not-started' → 'not started'
+  return s.replace('-', ' ');
+}
+
+// ── Cadence helpers ───────────────────────────────────────────────────────────
+/**
+ * Given a cadence string and an anchor Date, return the Date when the task
+ * next becomes due for reset (i.e. anchor + one cadence period).
+ *
+ * Supported cadence values:
+ *   'daily'           — every 1 day
+ *   'weekday'         — next weekday on or after anchor + 1 day
+ *   'weekly'          — every 7 days
+ *   'every_N_days'    — every N days
+ *   'every_N_weeks'   — every N*7 days
+ *   'every_N_months'  — calendar months
+ */
+export function nextResetDate(cadence, anchor) {
+  const d = new Date(anchor);
+  if (!cadence || cadence === 'daily') {
+    d.setDate(d.getDate() + 1);
+    return d;
+  }
+  if (cadence === 'weekday') {
+    // advance to next weekday (Mon–Fri)
+    do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
+    return d;
+  }
+  if (cadence === 'weekly') {
+    d.setDate(d.getDate() + 7);
+    return d;
+  }
+  // 'every_N_days' / 'every_N_weeks' / 'every_N_months'
+  const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
+  if (m) {
+    const n    = parseInt(m[1], 10);
+    const unit = m[2];
+    if (unit === 'day')   { d.setDate(d.getDate() + n); return d; }
+    if (unit === 'week')  { d.setDate(d.getDate() + n * 7); return d; }
+    if (unit === 'month') { d.setMonth(d.getMonth() + n); return d; }
+  }
+  // fallback: daily
+  d.setDate(d.getDate() + 1);
+  return d;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-
 export const signInWithMagicLink = (email) =>
   supabase.auth.signInWithOtp({ email });
-
 export const signInWithPassword = (email, password) =>
   supabase.auth.signInWithPassword({ email, password });
-
 export const signUpWithPassword = (email, password) =>
   supabase.auth.signUp({ email, password });
-
 export const signOut = () => supabase.auth.signOut();
-
 export const getSession   = () => supabase.auth.getSession();
 export const onAuthChange = (cb) =>
   supabase.auth.onAuthStateChange((_event, session) => cb(session));
 
 // ── Preferences ───────────────────────────────────────────────────────────────
-
 export async function fetchPreferences(userId) {
   const { data, error } = await supabase
     .from('user_preferences')
@@ -59,7 +96,6 @@ export async function fetchPreferences(userId) {
   if (error) throw error;
   return data || {};
 }
-
 export async function savePreferences(prefs) {
   const { user_id, ...rest } = prefs;
   const { data, error } = await supabase
@@ -72,7 +108,6 @@ export async function savePreferences(prefs) {
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────
-
 export async function fetchCategories(userId) {
   const { data, error } = await supabase
     .from('categories')
@@ -82,7 +117,6 @@ export async function fetchCategories(userId) {
   if (error) throw error;
   return data || [];
 }
-
 export async function saveCategory(cat) {
   const isNew = !cat.id;
   let data, error;
@@ -95,18 +129,12 @@ export async function saveCategory(cat) {
   if (error) throw error;
   return data;
 }
-
 export async function removeCategory(id) {
   const { error } = await supabase.from('categories').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
-
-/**
- * Columns to strip/rename when converting a DB row to the app shape.
- * Any field in this list is handled explicitly below rather than spread through.
- */
 function dbTaskToApp(t) {
   const { progress, scheduled_days, ...rest } = t;
   return {
@@ -118,15 +146,15 @@ function dbTaskToApp(t) {
     ).sort(),
     scheduled_day_hours: t.scheduled_day_hours || {},
     substeps:            (t.substeps || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
-    // Recurring fields — pass through as-is (null is fine for non-recurring tasks)
-    recurring:               rest.recurring               ?? false,
-    recurring_type:          rest.recurring_type          ?? null,
-    recurring_cadence:       rest.recurring_cadence       ?? null,
-    recurring_until:         rest.recurring_until         ?? null,
-    recurring_instances:     rest.recurring_instances     ?? null,
-    is_recurring_template:   rest.is_recurring_template   ?? false,
-    recurring_template_id:   rest.recurring_template_id   ?? null,
-    updated_at:              rest.updated_at              ?? null,
+    recurring:                 rest.recurring                 ?? false,
+    recurring_type:            rest.recurring_type            ?? null,
+    recurring_cadence:         rest.recurring_cadence         ?? null,
+    recurring_last_reset_at:   rest.recurring_last_reset_at   ?? null,
+    recurring_until:           rest.recurring_until           ?? null,
+    recurring_instances:       rest.recurring_instances       ?? null,
+    is_recurring_template:     rest.is_recurring_template     ?? false,
+    recurring_template_id:     rest.recurring_template_id     ?? null,
+    updated_at:                rest.updated_at                ?? null,
   };
 }
 
@@ -140,21 +168,12 @@ export async function fetchTasks(userId) {
   return (data || []).map(t => ({ ...dbTaskToApp(t), substeps: [] }));
 }
 
-/**
- * Persist one task (insert or update).
- *
- * Strips UI-only / computed fields before writing so Supabase never sees
- * a column that doesn't exist in the schema.
- */
 export async function saveTask(task) {
   const {
-    // UI-only / join fields — never written to DB
     substeps, scheduled_days,
     catName, catColor, catId,
-    // field aliases — normalised below
     manual_progress, manualProgress,
     dueDate, estimatedHours,
-    // pass everything else straight through
     ...rest
   } = task;
 
@@ -162,15 +181,14 @@ export async function saveTask(task) {
     ...rest,
     status:   toDbStatus(rest.status),
     progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
-    // Coerce nullish recurring fields to explicit null so Supabase
-    // doesn't try to write undefined (which it ignores, leaving stale values).
-    recurring:             rest.recurring             ?? false,
-    recurring_type:        rest.recurring_type        ?? null,
-    recurring_cadence:     rest.recurring_cadence     ?? null,
-    recurring_until:       rest.recurring_until       ?? null,
-    recurring_instances:   rest.recurring_instances   ?? null,
-    is_recurring_template: rest.is_recurring_template ?? false,
-    recurring_template_id: rest.recurring_template_id ?? null,
+    recurring:                rest.recurring                ?? false,
+    recurring_type:           rest.recurring_type           ?? null,
+    recurring_cadence:        rest.recurring_cadence        ?? null,
+    recurring_last_reset_at:  rest.recurring_last_reset_at  ?? null,
+    recurring_until:          rest.recurring_until          ?? null,
+    recurring_instances:      rest.recurring_instances      ?? null,
+    is_recurring_template:    rest.is_recurring_template    ?? false,
+    recurring_template_id:    rest.recurring_template_id    ?? null,
   };
 
   const isNew = !row.id;
@@ -194,46 +212,41 @@ export async function removeTask(id) {
 /**
  * resetStaleRecurringTasks(tasks, userId)
  *
- * Called once on app load (in useAppData).  Scans all 'reset'-mode recurring
- * tasks whose status is 'done' and checks whether the cadence window has rolled
- * over since they were last completed.  If so, resets them to 'not-started'.
+ * Called on app load.  For each 'reset'-mode recurring task with status 'done',
+ * computes the next-due date from the anchor (recurring_last_reset_at, falling
+ * back to updated_at) and resets the task if now >= nextDue.
  *
- * Returns the updated task objects so the caller can merge them into state.
- *
- * Cadence logic:
- *   daily   — resets if updated_at is before today (local date)
- *   weekday — resets if updated_at is before today AND today is Mon–Fri
- *   weekly  — resets if updated_at is more than 7 calendar days ago
+ * "Whichever is later" semantics: the anchor is set to the moment of completion,
+ * so a task completed late in the day won't reset until one full cadence period
+ * has elapsed from that moment — not merely from midnight.
  */
 export async function resetStaleRecurringTasks(tasks, userId) {
-  const today      = new Date();
-  const todayStr   = today.toISOString().slice(0, 10);   // 'YYYY-MM-DD'
-  const dayOfWeek  = today.getDay();                     // 0=Sun … 6=Sat
-  const isWeekday  = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const now = new Date();
 
   const toReset = tasks.filter(t => {
     if (!t.recurring || t.recurring_type !== 'reset') return false;
     if (t.status !== 'done') return false;
-    if (!t.updated_at) return true; // no timestamp → safe to reset
 
-    const lastDone    = t.updated_at.slice(0, 10);       // 'YYYY-MM-DD'
-    const lastDoneDay = new Date(lastDone);
-    const daysDiff    = Math.floor((today - lastDoneDay) / 86_400_000);
+    // Use recurring_last_reset_at if available; fall back to updated_at;
+    // if neither exists, reset immediately.
+    const anchorStr = t.recurring_last_reset_at || t.updated_at;
+    if (!anchorStr) return true;
 
-    switch (t.recurring_cadence) {
-      case 'daily':   return lastDone < todayStr;
-      case 'weekday': return lastDone < todayStr && isWeekday;
-      case 'weekly':  return daysDiff >= 7;
-      default:        return lastDone < todayStr;
-    }
+    const anchor  = new Date(anchorStr);
+    const nextDue = nextResetDate(t.recurring_cadence, anchor);
+    return now >= nextDue;
   });
 
   if (toReset.length === 0) return [];
 
-  // Batch update in Supabase — one round-trip per task (small N in practice)
   const updated = await Promise.all(
     toReset.map(t =>
-      saveTask({ ...t, status: 'not-started', manual_progress: 0 })
+      saveTask({
+        ...t,
+        status:                  'not-started',
+        manual_progress:         0,
+        recurring_last_reset_at: new Date().toISOString(),
+      })
     )
   );
 
@@ -244,16 +257,8 @@ export async function resetStaleRecurringTasks(tasks, userId) {
 /**
  * expandRecurringTemplate(template, userId)
  *
- * For 'expand'-mode recurring tasks.  Given a saved template row, generates
- * individual task instances through recurring_until or recurring_instances,
- * inserts them all, and returns the new rows.
- *
- * Each instance:
- *   - is a full copy of the template minus the recurring fields
- *   - has recurring_template_id pointing at the template
- *   - gets a due_date set to its occurrence date
- *   - is_recurring_template = false
- *   - recurring = false (instances are plain tasks)
+ * For 'expand'-mode tasks.  Generates individual instances through
+ * recurring_until or recurring_instances and inserts them all.
  */
 export async function expandRecurringTemplate(template, userId) {
   const cadence  = template.recurring_cadence || 'daily';
@@ -261,26 +266,39 @@ export async function expandRecurringTemplate(template, userId) {
   const maxCount = template.recurring_instances ?? 10;
 
   const dates = [];
-  const cursor = new Date();           // start from today
+  const cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
 
   while (true) {
-    const dow = cursor.getDay();
-    const eligible =
-      cadence === 'daily'   ? true :
-      cadence === 'weekday' ? (dow >= 1 && dow <= 5) :
-      cadence === 'weekly'  ? (dow === (new Date().getDay())) :
-      true;
+    const dow      = cursor.getDay();
+    let eligible   = true;
+
+    if (cadence === 'weekday') {
+      eligible = dow >= 1 && dow <= 5;
+    } else if (cadence === 'weekly') {
+      eligible = dow === new Date().getDay();
+    } else {
+      // custom cadence: push every occurrence by one full period
+      eligible = true;
+    }
 
     if (eligible) {
       dates.push(cursor.toISOString().slice(0, 10));
     }
 
-    if (until  && cursor >= until)              break;
-    if (!until && dates.length >= maxCount)     break;
-    if (dates.length >= 365)                    break;  // hard safety cap
+    if (until  && cursor >= until)           break;
+    if (!until && dates.length >= maxCount)  break;
+    if (dates.length >= 365)                 break;
 
-    cursor.setDate(cursor.getDate() + 1);
+    // Advance by the cadence period
+    const next = nextResetDate(cadence, cursor);
+    // For daily/weekday/weekly nextResetDate gives the right +1-step;
+    // but for weekday we already handle eligibility above so just +1 day.
+    if (cadence === 'daily' || cadence === 'weekday') {
+      cursor.setDate(cursor.getDate() + 1);
+    } else {
+      cursor.setTime(next.getTime());
+    }
   }
 
   if (dates.length === 0) return [];
@@ -299,23 +317,19 @@ export async function expandRecurringTemplate(template, userId) {
     recurring:             false,
     recurring_type:        null,
     recurring_cadence:     null,
+    recurring_last_reset_at: null,
     recurring_until:       null,
     recurring_instances:   null,
     is_recurring_template: false,
     recurring_template_id: template.id,
   }));
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .insert(rows)
-    .select();
+  const { data, error } = await supabase.from('tasks').insert(rows).select();
   if (error) throw error;
-
   return (data || []).map(t => dbTaskToApp({ ...t, scheduled_days: [] }));
 }
 
 // ── Substeps ──────────────────────────────────────────────────────────────────
-
 export async function fetchSubsteps(userId) {
   const { data, error } = await supabase
     .from('substeps')
@@ -325,9 +339,7 @@ export async function fetchSubsteps(userId) {
   if (error) throw error;
   return data || [];
 }
-
 export async function saveSubstep(substep) {
-  // Strip 'weight' — not a DB column
   const { weight, ...rest } = substep;
   const isNew = !rest.id;
   let data, error;
@@ -340,19 +352,16 @@ export async function saveSubstep(substep) {
   if (error) throw error;
   return data;
 }
-
 export async function removeSubstep(id) {
   const { error } = await supabase.from('substeps').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ── Quick Tasks ───────────────────────────────────────────────────────────────
-
 function dbQtToApp(qt) {
   const { timeframe_minutes, ...rest } = qt;
   return { ...rest, timeframeMinutes: timeframe_minutes ?? 15 };
 }
-
 export async function fetchQuickTasks(userId) {
   const { data, error } = await supabase
     .from('quick_tasks')
@@ -362,7 +371,6 @@ export async function fetchQuickTasks(userId) {
   if (error) throw error;
   return (data || []).map(dbQtToApp);
 }
-
 export async function saveQuickTask(qt) {
   const { timeframeMinutes, ...rest } = qt;
   const row = { ...rest, timeframe_minutes: timeframeMinutes ?? 15 };
@@ -377,26 +385,21 @@ export async function saveQuickTask(qt) {
   if (error) throw error;
   return dbQtToApp(data);
 }
-
 export async function removeQuickTask(id) {
   const { error } = await supabase.from('quick_tasks').delete().eq('id', id);
   if (error) throw error;
 }
 
 // ── Scheduled Days ────────────────────────────────────────────────────────────
-
 export async function setScheduledDays(taskId, userId, dates) {
   const { error: delErr } = await supabase
-    .from('scheduled_days')
-    .delete()
-    .eq('task_id', taskId);
+    .from('scheduled_days').delete().eq('task_id', taskId);
   if (delErr) throw delErr;
   if (!dates || dates.length === 0) return;
   const rows = dates.map(day_date => ({ task_id: taskId, user_id: userId, day_date }));
   const { error: insErr } = await supabase.from('scheduled_days').insert(rows);
   if (insErr) throw insErr;
 }
-
 export async function getScheduledDaysForRange(userId, from, to) {
   const { data, error } = await supabase
     .from('scheduled_days')
@@ -409,7 +412,6 @@ export async function getScheduledDaysForRange(userId, from, to) {
 }
 
 // ── ICS Export ────────────────────────────────────────────────────────────────
-
 export function generateICS(tasks, categories) {
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const lines = [
@@ -449,7 +451,6 @@ export function generateICS(tasks, categories) {
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
-
 export function downloadICS(tasks, categories) {
   const ics  = generateICS(tasks, categories);
   const blob = new Blob([ics], { type: 'text/calendar' });
