@@ -52,6 +52,13 @@ function hoursOnDay(task, iso, todayISO) {
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
 }
 
+// Expand templates are meta-rows that spawn instances — exclude them from the
+// planner.  Regular recurring tasks (reset mode) are real tasks and should
+// appear just like any other active task.
+function isExpandTemplate(t) {
+  return t.is_recurring_template === true;
+}
+
 function IconCalendar({ size = 14, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none"
@@ -224,8 +231,9 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
     }
   }
 
+  // Exclude expand templates (meta-rows); include recurring reset tasks.
   const unscheduled = tasks
-    .filter(t => t.status !== 'done' && !t.recurring &&
+    .filter(t => t.status !== 'done' && !isExpandTemplate(t) &&
       (!t.scheduled_days || !t.scheduled_days.some(d => d >= todayISO)))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
@@ -538,11 +546,13 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }
 
+  // Bucket tasks into sidebar sections.
+  // Expand templates are excluded entirely; recurring reset tasks are included.
   const trueUnscheduled  = [];
   const scheduledEarlier = [];
   const scheduledLater   = [];
   for (const t of allActive) {
-    if (t.recurring) continue;
+    if (isExpandTemplate(t)) continue;          // skip expand meta-rows
     const days = t.scheduled_days || [];
     const inWindow = days.some(d => allISOs.includes(d));
     if (inWindow) continue;
