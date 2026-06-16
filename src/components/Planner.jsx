@@ -10,6 +10,7 @@ import '../styles/planner.css';
 const SHOW_WEEKS = 4;
 const DAY_NAMES  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const LS_AUTOFILL_KEY = 'planner_autofill_settings';
+const CAP_MODE_KEY    = 'capacity_mode';
 
 function toISO(d) { return d.toISOString().slice(0, 10); }
 function fmtShort(iso) {
@@ -57,6 +58,27 @@ function hoursOnDay(task, iso, todayISO) {
 // appear just like any other active task.
 function isExpandTemplate(t) {
   return t.is_recurring_template === true;
+}
+
+/**
+ * Build a per-ISO-day availability map (hours free).
+ * When capacityMode is 'gcal' and gcalFreeBusy has data for a day, use that.
+ * Otherwise fall back to weeklyHours / 7.
+ */
+function buildDayAvailMap(weeklyHours, gcalFreeBusy, capacityMode, horizonDays = SHOW_WEEKS * 7 + 30) {
+  const fallback = weeklyHours / 7;
+  const map = {};
+  const cur = new Date(); cur.setHours(0, 0, 0, 0);
+  for (let i = 0; i < horizonDays; i++) {
+    const iso = toISO(cur);
+    if (capacityMode === 'gcal' && gcalFreeBusy && gcalFreeBusy[iso] !== undefined) {
+      map[iso] = gcalFreeBusy[iso] / 60;
+    } else {
+      map[iso] = fallback;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return map;
 }
 
 function IconCalendar({ size = 14, style }) {
@@ -340,7 +362,7 @@ function DayPickerModal({ task, allISOs, onPick, onClose }) {
 
 function AgendaView({
   allISOs, todayISO, weekOffset, setWeekOffset,
-  scheduledOnDay, dueOnDay, dayLoad, dayAvail,
+  scheduledOnDay, dueOnDay, dayLoad, dayAvailMap,
   catMap, hoursOnDayFn,
   trueUnscheduled, scheduledEarlier, scheduledLater,
   sortByDue,
@@ -421,7 +443,8 @@ function AgendaView({
         const isToday  = iso === todayISO;
         const isPast   = iso < todayISO;
         const load     = dayLoad[iso] || 0;
-        const over     = load > dayAvail + 0.05;
+        const avail    = dayAvailMap[iso] ?? (dayAvailMap['__fallback__'] || 0);
+        const over     = load > avail + 0.05;
         const dayTasks = scheduledOnDay[iso] || [];
         const dues     = dueOnDay[iso] || [];
         const pushSt   = gcalPushStatus[iso];
@@ -488,8 +511,15 @@ export default function Planner({ appData, userId, onEditTask }) {
     categories, tasks, preferences, saveTask, removeTask, setTaskSchedule,
     gcalFreeBusy, gcalConnected, gcalSettings, gcalSelCals,
   } = appData;
-  const weeklyHours  = preferences?.weekly_hours  ?? 20;
-  const dayAvail     = weeklyHours / 7;
+  const weeklyHours  = preferences?.weekly_hours ?? 20;
+
+  // Read the same capacity mode key that Overview writes, so the overload
+  // threshold stays in sync with whatever the user toggled there.
+  const capacityMode = localStorage.getItem(CAP_MODE_KEY) || 'manual';
+
+  // Per-day availability map: uses gcal free-time when mode is 'gcal',
+  // otherwise falls back to weeklyHours / 7 uniformly.
+  const dayAvailMap = buildDayAvailMap(weeklyHours, gcalFreeBusy || null, capacityMode);
 
   const [weekOffset,     setWeekOffset]     = useState(0);
   const [openPopover,    setOpenPopover]    = useState(null);
@@ -784,7 +814,7 @@ export default function Planner({ appData, userId, onEditTask }) {
           scheduledOnDay={scheduledOnDay}
           dueOnDay={dueOnDay}
           dayLoad={dayLoad}
-          dayAvail={dayAvail}
+          dayAvailMap={dayAvailMap}
           catMap={catMap}
           hoursOnDayFn={hoursOnDay}
           trueUnscheduled={trueUnscheduled}
@@ -930,7 +960,8 @@ export default function Planner({ appData, userId, onEditTask }) {
                       })}
                       {weekISOs.map(iso => {
                         const load   = dayLoad[iso] || 0;
-                        const over   = load > dayAvail + 0.05;
+                        const avail  = dayAvailMap[iso] ?? (weeklyHours / 7);
+                        const over   = load > avail + 0.05;
                         const isPast = iso < todayISO;
                         return (
                           <div
