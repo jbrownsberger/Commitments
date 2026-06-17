@@ -423,8 +423,8 @@ function AgendaView({
                 onClick={() => onOpenPanel(task)}>
                 <div className="agenda-unsch-name">{task.name}</div>
                 <div className="agenda-unsch-meta">
-                  {rem.toFixed(1)}h remaining
-                  {task.due_date ? ` \u00b7 due ${fmtShort(task.due_date)}` : ''}
+                  <span>{rem.toFixed(1)}h remaining</span>
+                  {task.due_date && <span>due {fmtShort(task.due_date)}</span>}
                 </div>
                 <button className="agenda-schedule-btn"
                   onClick={e => { e.stopPropagation(); onSchedule(task); }}
@@ -1063,7 +1063,7 @@ function PlannerTaskCard({
   onTogglePopover, onSetHours, onClearHours, onHrsInputChange,
 }) {
   const color = cat?.color || '#888';
-  const due   = task.due_date ? <> &middot; due {fmtShort(task.due_date)}</> : null;
+  const due   = task.due_date ? <> due {fmtShort(task.due_date)}</> : null;
   return (
     <div
       className="planner-task-card"
@@ -1121,10 +1121,13 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart,
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onClick={onClick}
-      title="Tap to view \u00b7 Drag/touch-drag to schedule"
+      title="Tap to view / Drag to schedule"
     >
       <div className="sidebar-card-name">{task.name}</div>
-      <div className="sidebar-card-meta">{rem.toFixed(1)}h remaining \u00b7 {due}</div>
+      <div className="sidebar-card-meta">
+        <span>{rem.toFixed(1)}h remaining</span>
+        <span>{due}</span>
+      </div>
       {visible.length > 0 && (
         <div className="sidebar-days">
           {visible.map(d => (
