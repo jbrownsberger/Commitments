@@ -1126,6 +1126,7 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart,
       <div className="sidebar-card-name">{task.name}</div>
       <div className="sidebar-card-meta">
         <span>{rem.toFixed(1)}h remaining</span>
+        <span> · </span>
         <span>{due}</span>
       </div>
       {visible.length > 0 && (
