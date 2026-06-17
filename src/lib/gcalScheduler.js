@@ -3,6 +3,21 @@
  *
  * Shared Google Calendar scheduling logic used by GCalSync and Planner.
  *
+ * AUTH MODEL (v2 — server-side OAuth code flow):
+ *   The old GIS implicit token flow (initTokenClient) is replaced with a
+ *   proper authorization code flow.  Tokens are stored server-side in
+ *   Supabase (gcal_tokens table) by the gcal-auth edge function.
+ *
+ *   connectGcal()      — redirects user to Google OAuth consent screen
+ *   getAccessToken()   — calls gcal-token edge function; returns a fresh
+ *                        access token, transparently refreshing via the
+ *                        stored refresh token when needed
+ *   disconnectGcal()   — calls gcal-revoke edge function, deletes DB row
+ *   isGcalConnected()  — async check against gcal-token; returns boolean
+ *
+ *   startSilentTokenRefresh / stopSilentTokenRefresh are removed entirely;
+ *   the edge function handles token freshness on every call.
+ *
  * SCOPE STRATEGY — sensitive tier only (no CASA security audit required):
  *   calendar.readonly  — read calendar list, events, free/busy
  *   calendar.events    — create / update / delete events this app created
@@ -10,21 +25,19 @@
  * WRITE CALENDAR MODEL (two-tier):
  *   Preferred: user manually creates a dedicated calendar (e.g. "Commitments
  *   Work Blocks") in Google Calendar, then selects it here via the Phase 2
- *   UI.  The free/busy query omits that calendar entirely — no tag-matching
- *   needed because nothing else writes to it.
+ *   UI.  The free/busy query omits that calendar entirely.
  *
  *   Fallback: user writes to primary (or any shared calendar).  App-written
  *   events are identified by the private extended property
  *   `commitments_task_id: "true"` and subtracted from busy intervals before
  *   availability is calculated.
- *
- *   Phase 2 will add the picker UI.  Until then the write calendar defaults
- *   to whatever was previously stored under LS_COMMITMENTS_CAL_KEY, or
- *   'primary' if nothing is stored.
  */
+
+import { supabase } from './supabase.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
 // Sensitive scopes only — no restricted `calendar` scope.
 const SCOPES = [
@@ -32,12 +45,14 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
 
+// Redirect URI must match what is registered in Google Cloud Console and
+// set as GCAL_REDIRECT_URI in Supabase edge function secrets.
+const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/gcal-auth`;
+
 export const CALENDAR_ID = 'primary';
 
-const LS_TOKEN_KEY   = 'gcal_access_token';
-const LS_EXPIRY_KEY  = 'gcal_token_expiry';
-export const LS_SETTINGS_KEY = 'gcal_calc_settings';
-export const LS_CALS_KEY     = 'gcal_selected_cals';
+export const LS_SETTINGS_KEY  = 'gcal_calc_settings';
+export const LS_CALS_KEY      = 'gcal_selected_cals';
 export const LS_PUSH_REGISTRY = 'gcal_push_registry';
 
 /**
@@ -50,11 +65,9 @@ export const LS_PUSH_REGISTRY = 'gcal_push_registry';
  * setting on upgrade.
  */
 export const LS_WRITE_CAL_KEY       = 'gcal_commitments_cal_id';
-// Keep old export name alive for any code that imports it directly.
 export const LS_COMMITMENTS_CAL_KEY = LS_WRITE_CAL_KEY;
 
-const MIN_CHUNK_HOURS   = 0.5;
-const REFRESH_BEFORE_MS = 5 * 60_000;
+const MIN_CHUNK_HOURS = 0.5;
 
 // ── Default settings ──────────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS = {
@@ -99,10 +112,6 @@ export function saveSelectedCals(set) {
 }
 
 // ── Write-calendar helpers ────────────────────────────────────────────────────
-// These replace the auto-creation model (ensureCommitmentsCalendar) with a
-// user-selected write target.  The localStorage key is unchanged so existing
-// selections survive the upgrade.
-
 /** Returns the user-selected write calendar ID, or 'primary' as fallback. */
 export function loadWriteCalId() {
   return localStorage.getItem(LS_WRITE_CAL_KEY) || 'primary';
@@ -119,16 +128,14 @@ export function clearWriteCalId() {
   localStorage.removeItem(LS_WRITE_CAL_KEY);
 }
 
-// Legacy shims — all existing component code that calls these continues to
-// work without modification.
+// Legacy shims
 export const loadCommitmentsCalId  = loadWriteCalId;
 export const saveCommitmentsCalId  = saveWriteCalId;
 export const clearCommitmentsCalId = clearWriteCalId;
 
 /**
  * ensureCommitmentsCalendar — kept as a no-op shim so any component that
- * imports and awaits it doesn't break.  Calendar creation now happens
- * manually by the user; Phase 2 will remove this call from components.
+ * imports and awaits it doesn't break.
  */
 export async function ensureCommitmentsCalendar() {
   return loadWriteCalId();
@@ -176,105 +183,147 @@ export function seedPushStatusFromRegistry(isoList) {
   return status;
 }
 
-// ── Token management ──────────────────────────────────────────────────────────
-let _tokenClient = null;
-let _accessToken = localStorage.getItem(LS_TOKEN_KEY) || null;
-let _tokenExpiry = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
-let _refreshTimer = null;
+// ── Auth — server-side OAuth code flow ───────────────────────────────────────
 
-function persistToken(token, expiresIn) {
-  _accessToken = token;
-  _tokenExpiry = Date.now() + (expiresIn ?? 3600) * 1000;
-  localStorage.setItem(LS_TOKEN_KEY, token);
-  localStorage.setItem(LS_EXPIRY_KEY, String(_tokenExpiry));
+/**
+ * Returns the current Supabase session access token (JWT), used to
+ * authenticate calls to our own edge functions.
+ */
+async function _getSupabaseJwt() {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token || null;
 }
-export function clearToken() {
-  _accessToken = null;
-  _tokenExpiry = 0;
-  _tokenClient = null;
-  stopSilentTokenRefresh();
-  localStorage.removeItem(LS_TOKEN_KEY);
-  localStorage.removeItem(LS_EXPIRY_KEY);
+
+/**
+ * Redirects the user to Google's OAuth consent screen.
+ * The gcal-auth edge function will handle the callback, store tokens,
+ * and redirect back to the app.
+ *
+ * Call this when the user clicks "Connect Google Calendar".
+ */
+export function connectGcal() {
+  const params = new URLSearchParams({
+    client_id:     CLIENT_ID,
+    redirect_uri:  REDIRECT_URI,
+    response_type: 'code',
+    scope:         SCOPES,
+    access_type:   'offline',
+    prompt:        'consent',   // always request refresh token
+  });
+  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
+
+/**
+ * Fetches a valid Google Calendar access token from the gcal-token edge
+ * function.  The edge function transparently refreshes the token if it is
+ * about to expire, so callers never need to think about expiry.
+ *
+ * Returns null if the user has not connected GCal (no row in gcal_tokens).
+ * Throws on network or server errors.
+ */
+export async function getAccessToken() {
+  const jwt = await _getSupabaseJwt();
+  if (!jwt) throw new Error('Not authenticated with Supabase');
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/gcal-token`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${jwt}`,
+      'Content-Type':  'application/json',
+    },
+  });
+
+  if (res.status === 404) return null;  // no token row — user not connected
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `gcal-token error ${res.status}`);
+  }
+
+  const { access_token } = await res.json();
+  return access_token;
+}
+
+/**
+ * Returns true if the user has a valid GCal connection (refresh token stored
+ * server-side), false otherwise.  Async — replaces hasValidCachedToken().
+ */
+export async function isGcalConnected() {
+  try {
+    const token = await getAccessToken();
+    return !!token;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Synchronous best-effort check using the legacy localStorage token.
+ * Used only for the *initial* render before the async check resolves,
+ * so the UI doesn't flash "disconnected" on every page load.
+ * Remove once all call-sites have been migrated to isGcalConnected().
+ *
+ * @deprecated — use isGcalConnected() instead
+ */
 export function hasValidCachedToken() {
-  return !!_accessToken && Date.now() < _tokenExpiry - 30_000;
+  // Legacy keys kept for the transition period
+  const token  = localStorage.getItem('gcal_access_token');
+  const expiry  = parseInt(localStorage.getItem('gcal_token_expiry') || '0', 10);
+  return !!token && Date.now() < expiry - 30_000;
 }
 
-function loadGsiScript() {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
+/**
+ * Revokes the stored GCal tokens (server-side) and disconnects the user.
+ */
+export async function disconnectGcal() {
+  const jwt = await _getSupabaseJwt();
+  if (!jwt) return;
+
+  await fetch(`${SUPABASE_URL}/functions/v1/gcal-revoke`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${jwt}`,
+      'Content-Type':  'application/json',
+    },
+  }).catch(() => {});  // best-effort; clear local state regardless
+
+  // Clean up any legacy localStorage token remnants
+  localStorage.removeItem('gcal_access_token');
+  localStorage.removeItem('gcal_token_expiry');
 }
-export async function getAccessToken(forceConsent = false) {
-  if (!forceConsent && hasValidCachedToken()) return _accessToken;
-  return new Promise(async (resolve, reject) => {
-    await loadGsiScript();
-    if (!_tokenClient) {
-      _tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        callback: (resp) => {
-          if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
-          persistToken(resp.access_token, resp.expires_in);
-          resolve(resp.access_token);
-        },
-      });
-    }
-    _tokenClient.requestAccessToken({ prompt: forceConsent ? 'consent' : '' });
-  });
+
+/**
+ * clearToken — legacy shim.  New code should call disconnectGcal().
+ * Kept so any component that calls clearToken() still compiles.
+ */
+export function clearToken() {
+  localStorage.removeItem('gcal_access_token');
+  localStorage.removeItem('gcal_token_expiry');
 }
-export function revokeToken() {
-  if (_accessToken && window.google?.accounts?.oauth2)
-    window.google.accounts.oauth2.revoke(_accessToken);
-  clearToken();
+
+/**
+ * revokeToken — legacy shim for components that call revokeToken().
+ * Delegates to disconnectGcal().
+ */
+export async function revokeToken() {
+  await disconnectGcal();
 }
-export function startSilentTokenRefresh(onRefresh) {
-  stopSilentTokenRefresh();
-  if (!hasValidCachedToken()) return;
-  const msUntilExpiry  = _tokenExpiry - Date.now();
-  const msUntilRefresh = Math.max(msUntilExpiry - REFRESH_BEFORE_MS, 0);
-  _refreshTimer = setTimeout(async () => {
-    try {
-      await loadGsiScript();
-      if (!_tokenClient) {
-        await new Promise((resolve, reject) => {
-          _tokenClient = window.google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID, scope: SCOPES,
-            callback: (resp) => {
-              if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
-              persistToken(resp.access_token, resp.expires_in); resolve();
-            },
-          });
-          _tokenClient.requestAccessToken({ prompt: '' });
-        });
-      } else {
-        await new Promise((resolve, reject) => {
-          const prev = _tokenClient.callback;
-          _tokenClient.callback = (resp) => {
-            _tokenClient.callback = prev;
-            if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
-            persistToken(resp.access_token, resp.expires_in); resolve();
-          };
-          _tokenClient.requestAccessToken({ prompt: '' });
-        });
-      }
-      onRefresh?.(true);
-      startSilentTokenRefresh(onRefresh);
-    } catch { onRefresh?.(false); }
-  }, msUntilRefresh);
-}
-export function stopSilentTokenRefresh() {
-  if (_refreshTimer !== null) { clearTimeout(_refreshTimer); _refreshTimer = null; }
-}
+
+/**
+ * startSilentTokenRefresh — no-op shim.  Token freshness is now handled
+ * entirely by the gcal-token edge function on every getAccessToken() call.
+ */
+export function startSilentTokenRefresh(_onRefresh) {}
+
+/**
+ * stopSilentTokenRefresh — no-op shim.
+ */
+export function stopSilentTokenRefresh() {}
 
 // ── Core API fetch ────────────────────────────────────────────────────────────
 export async function gcalFetch(path, opts = {}) {
   const token = await getAccessToken();
+  if (!token) throw new Error('Google Calendar not connected');
+
   const res = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
     ...opts,
     headers: {
@@ -308,10 +357,6 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
 /**
  * Fetches intervals of work blocks previously written by this app,
  * identified by the `commitments_task_id` private extended property.
- *
- * These are used by subtractCommitmentsBlocks to prevent app-written events
- * from being double-counted as "busy" when the write calendar is the same
- * calendar being queried for availability (i.e. the fallback path).
  */
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   const calId = loadWriteCalId();
@@ -347,16 +392,6 @@ export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
 }
 
 // ── Free slot enumeration ─────────────────────────────────────────────────────
-/**
- * Returns all free gap intervals across all configured work windows for isoDate.
- *
- * KEY FIX (Phase 1): the write calendar is always excluded from the free/busy
- * query.  On the preferred path (dedicated calendar) this is sufficient on its
- * own — nothing else writes there so no subtraction is needed.  On the
- * fallback path (primary or shared calendar) the app-written blocks are
- * identified by commitments_task_id and subtracted by the caller via
- * fetchCommitmentsBlockIntervals / subtractCommitmentsBlocks.
- */
 export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const { workWindows, bufferMins } = settings;
   const windows = (workWindows || [{ start: settings.workStart ?? 8, end: settings.workEnd ?? 20 }])
@@ -372,7 +407,6 @@ export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
   const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
 
-  // Always exclude the write calendar from the free/busy query.
   const writeCalId = loadWriteCalId();
   const fbCalIds   = calIds.filter(id => id !== writeCalId);
 
@@ -422,7 +456,6 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
   const gaps = await findFreeSlots(isoDate, notBeforeMs, settings, calIds);
   for (const gap of gaps)
     if (gap.endMs - gap.startMs >= neededMs) return new Date(gap.startMs);
-  // Fallback: start of first window
   const windows = (settings.workWindows || [{ start: settings.workStart ?? 8, end: settings.workEnd ?? 20 }])
     .filter(w => w.end > w.start).sort((a, b) => a.start - b.start);
   const firstStart = windows.length

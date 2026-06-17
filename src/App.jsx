@@ -5,11 +5,9 @@ import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
 import { loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
 import {
-  hasValidCachedToken,
+  isGcalConnected,
   loadGcalSettings,
   loadSelectedCals,
-  startSilentTokenRefresh,
-  stopSilentTokenRefresh,
 } from './lib/gcalScheduler.js';
 
 export default function App() {
@@ -195,9 +193,9 @@ function LoginPage() {
 
           <p className="login-hint">
             {mode === 'magic'
-              ? 'We’ll email you a one-click sign-in link. No password needed.'
+              ? 'We'll email you a one-click sign-in link. No password needed.'
               : mode === 'signup'
-              ? 'You’ll receive a confirmation email before you can sign in.'
+              ? 'You'll receive a confirmation email before you can sign in.'
               : null}
           </p>
         </div>
@@ -250,26 +248,16 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
-  const [gcalConnected, setGcalConnected] = useState(() => hasValidCachedToken());
+  // Initialise as false; async check resolves on mount.
+  // No silent refresh timer needed — gcal-token edge function handles freshness.
+  const [gcalConnected, setGcalConnected] = useState(false);
 
   useEffect(() => {
-    if (hasValidCachedToken()) {
-      startSilentTokenRefresh((isConnected) => {
-        setGcalConnected(isConnected);
-      });
-    }
-    return () => stopSilentTokenRefresh();
+    isGcalConnected().then(setGcalConnected);
   }, []);
 
   const onConnectionChange = useCallback((isConnected) => {
     setGcalConnected(isConnected);
-    if (isConnected) {
-      startSilentTokenRefresh((stillConnected) => {
-        setGcalConnected(stillConnected);
-      });
-    } else {
-      stopSilentTokenRefresh();
-    }
   }, []);
 
   const gcalSettings = loadGcalSettings();
