@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './lib/supabase.js';
 import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
@@ -27,7 +27,7 @@ export default function App() {
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
-// ── Small inline SVG icons (no emoji) ─────────────────────────────────────────────────────
+// ── Small inline SVG icons (no emoji) ────────────────────────────────────────────────────────
 const IconCalendar = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
     xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -72,7 +72,7 @@ const IconBolt = () => (
   </svg>
 );
 
-// ── Feature list ──────────────────────────────────────────────────────────────────────
+// ── Feature list ─────────────────────────────────────────────────────────────────────────
 const FEATURES = [
   { Icon: IconCalendar, text: 'Track tasks with due dates, priorities, and progress' },
   { Icon: IconClock,    text: 'Schedule work across your calendar with a smart planner' },
@@ -80,7 +80,7 @@ const FEATURES = [
   { Icon: IconBolt,     text: 'Quick tasks for anything that only takes a few minutes' },
 ];
 
-// ── Login page ─────────────────────────────────────────────────────────────────────────────────
+// ── Login page ───────────────────────────────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
@@ -215,7 +215,7 @@ function LoginPage() {
   );
 }
 
-// ── Authed shell ─────────────────────────────────────────────────────────────────────────────────
+// ── Authed shell ───────────────────────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
 
@@ -249,26 +249,28 @@ function AuthedApp({ userId, userEmail }) {
     setGcalFreeBusy(null);
   };
 
-  // Initialise as false; async check resolves on mount.
-  // No silent refresh timer needed — gcal-token edge function handles freshness.
   const [gcalConnected, setGcalConnected] = useState(false);
 
+  // Check connection status once on mount (session is guaranteed to exist
+  // since AuthedApp only renders when session is non-null).
   useEffect(() => {
     isGcalConnected().then(setGcalConnected);
   }, []);
 
-  // ── Handle OAuth callback query params ──────────────────────────────────────
-  // gcal-auth edge function redirects back to the app with:
-  //   ?gcal_connected=1          — token saved successfully
-  //   ?gcal_error=no_refresh_token — Google didn't issue a refresh token;
-  //                                  re-trigger with forceConsent=true
-  //   ?gcal_error=<other>        — something else went wrong; show a message
+  // ── Handle OAuth callback query params ───────────────────────────────────────
+  // This effect is inside AuthedApp, which only mounts once `session` is
+  // confirmed non-null in the parent. By the time this runs, the Supabase
+  // JWT is available, so getAccessToken() inside isGcalConnected() will
+  // succeed instead of racing against session initialisation.
+  const callbackHandled = useRef(false);
   useEffect(() => {
+    if (callbackHandled.current) return;
     const params = new URLSearchParams(window.location.search);
     const gcalConnectedParam = params.get('gcal_connected');
     const gcalErrorParam     = params.get('gcal_error');
 
     if (!gcalConnectedParam && !gcalErrorParam) return;
+    callbackHandled.current = true;
 
     // Strip the query params from the URL so a page refresh doesn't re-process them.
     const cleanUrl = window.location.pathname + window.location.hash;
@@ -281,16 +283,12 @@ function AuthedApp({ userId, userEmail }) {
     }
 
     if (gcalErrorParam === 'no_refresh_token') {
-      // Google omitted the refresh token because the user already granted
-      // access in a previous session and we didn't force the consent screen.
-      // Re-launch the OAuth flow with prompt=consent to obtain a fresh
-      // refresh token and store it properly.
-      connectGcal(true /* forceConsent */).catch(console.error);
+      // Should no longer happen since connectGcal always uses prompt=consent,
+      // but handle gracefully just in case.
+      connectGcal().catch(console.error);
       return;
     }
 
-    // Any other gcal_error — log it; the UI will remain in the disconnected
-    // state and the user can retry manually via the GCal settings panel.
     console.warn('Google Calendar connection error:', gcalErrorParam);
   }, []);
 
