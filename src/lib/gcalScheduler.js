@@ -199,16 +199,22 @@ async function _getSupabaseJwt() {
  * The gcal-auth edge function will handle the callback, store tokens,
  * and redirect back to the app.
  *
+ * @param {boolean} forceConsent - Pass true only when connecting for the
+ *   first time or when the user explicitly requests re-authorisation.
+ *   Defaults to false, which uses prompt='select_account' so Google skips
+ *   the consent screen for an already-authorised account and silently
+ *   reuses the existing refresh token — preventing the hourly re-auth loop.
+ *
  * Call this when the user clicks "Connect Google Calendar".
  */
-export function connectGcal() {
+export function connectGcal(forceConsent = false) {
   const params = new URLSearchParams({
     client_id:     CLIENT_ID,
     redirect_uri:  REDIRECT_URI,
     response_type: 'code',
     scope:         SCOPES,
     access_type:   'offline',
-    prompt:        'consent',   // always request refresh token
+    prompt:        forceConsent ? 'consent' : 'select_account',
   });
   window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
