@@ -203,16 +203,13 @@ async function _getSupabaseJwt() {
  * DB row to upsert without requiring the user to be authenticated to the
  * edge function directly (the OAuth redirect comes from Google, not the app).
  *
- * @param {boolean} forceConsent - Pass true only when connecting for the
- *   first time or when the user explicitly requests re-authorisation, or
- *   when gcal-auth redirects back with ?gcal_error=no_refresh_token.
- *   Defaults to false, which uses prompt='select_account' so Google skips
- *   the consent screen for an already-authorised account and silently
- *   reuses the existing refresh token — preventing the hourly re-auth loop.
+ * Always uses prompt='consent' so that Google issues a refresh_token on
+ * every authorisation.  Without this, Google omits the refresh_token after
+ * the first grant, which causes the hourly re-auth loop.
  *
  * Call this when the user clicks "Connect Google Calendar".
  */
-export async function connectGcal(forceConsent = false) {
+export async function connectGcal() {
   const { data } = await supabase.auth.getSession();
   const userId = data?.session?.user?.id;
   if (!userId) throw new Error('Must be signed in to connect Google Calendar');
@@ -223,8 +220,8 @@ export async function connectGcal(forceConsent = false) {
     response_type: 'code',
     scope:         SCOPES,
     access_type:   'offline',
+    prompt:        'consent',
     state:         userId,
-    prompt:        forceConsent ? 'consent' : 'select_account',
   });
   window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
