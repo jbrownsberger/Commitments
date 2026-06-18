@@ -5,6 +5,7 @@ import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
 import { loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
 import {
+  connectGcal,
   isGcalConnected,
   loadGcalSettings,
   loadSelectedCals,
@@ -21,7 +22,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <Splash text="Loading…" />;
+  if (session === undefined) return <Splash text="Loading\u2026" />;
   if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
@@ -185,7 +186,7 @@ function LoginPage() {
               className="btn btn-primary login-submit"
               disabled={loading}
             >
-              {loading            ? 'Please wait…'   :
+              {loading            ? 'Please wait\u2026'   :
                mode === 'magic'    ? 'Send magic link' :
                mode === 'password' ? 'Sign in'         : 'Create account'}
             </button>
@@ -193,9 +194,9 @@ function LoginPage() {
 
           <p className="login-hint">
             {mode === 'magic'
-              ? 'We'll email you a one-click sign-in link. No password needed.'
+              ? 'We\u2019ll email you a one-click sign-in link. No password needed.'
               : mode === 'signup'
-              ? 'You'll receive a confirmation email before you can sign in.'
+              ? 'You\u2019ll receive a confirmation email before you can sign in.'
               : null}
           </p>
         </div>
@@ -256,6 +257,43 @@ function AuthedApp({ userId, userEmail }) {
     isGcalConnected().then(setGcalConnected);
   }, []);
 
+  // ── Handle OAuth callback query params ──────────────────────────────────────
+  // gcal-auth edge function redirects back to the app with:
+  //   ?gcal_connected=1          — token saved successfully
+  //   ?gcal_error=no_refresh_token — Google didn't issue a refresh token;
+  //                                  re-trigger with forceConsent=true
+  //   ?gcal_error=<other>        — something else went wrong; show a message
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gcalConnectedParam = params.get('gcal_connected');
+    const gcalErrorParam     = params.get('gcal_error');
+
+    if (!gcalConnectedParam && !gcalErrorParam) return;
+
+    // Strip the query params from the URL so a page refresh doesn't re-process them.
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+
+    if (gcalConnectedParam === '1') {
+      // Token was saved server-side — re-check connection status.
+      isGcalConnected().then(setGcalConnected);
+      return;
+    }
+
+    if (gcalErrorParam === 'no_refresh_token') {
+      // Google omitted the refresh token because the user already granted
+      // access in a previous session and we didn't force the consent screen.
+      // Re-launch the OAuth flow with prompt=consent to obtain a fresh
+      // refresh token and store it properly.
+      connectGcal(true /* forceConsent */).catch(console.error);
+      return;
+    }
+
+    // Any other gcal_error — log it; the UI will remain in the disconnected
+    // state and the user can retry manually via the GCal settings panel.
+    console.warn('Google Calendar connection error:', gcalErrorParam);
+  }, []);
+
   const onConnectionChange = useCallback((isConnected) => {
     setGcalConnected(isConnected);
   }, []);
@@ -263,7 +301,7 @@ function AuthedApp({ userId, userEmail }) {
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
-  if (appData.loading) return <Splash text="Loading your data…" />;
+  if (appData.loading) return <Splash text="Loading your data\u2026" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
       color: 'var(--color-text-danger)', fontSize: 13 }}>
