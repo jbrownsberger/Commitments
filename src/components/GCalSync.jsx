@@ -317,6 +317,9 @@ export default function GCalSync({ appData }) {
   const [blockStatus,       setBlockStatus]       = useState({});
   const [activePanel,       setActivePanel]       = useState('availability');
 
+  // Sort mode for the Work Blocks panel: 'task' (default) or 'date'
+  const [blockSort, setBlockSort] = useState('task');
+
   useEffect(() => {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
@@ -499,6 +502,18 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
+  // Flat chronological list of { iso, task } pairs for the "by date" sort view
+  const scheduledByDate = React.useMemo(() => {
+    const rows = [];
+    for (const task of scheduled) {
+      for (const iso of task.futureDays) {
+        rows.push({ iso, task });
+      }
+    }
+    rows.sort((a, b) => a.iso.localeCompare(b.iso));
+    return rows;
+  }, [scheduled]);
+
   // ── Compute planned hours per day from scheduled tasks ────────────────────────────
   // Used to render the blue committed-load bar and red overload bar.
   const plannedHoursByDay = React.useMemo(() => {
@@ -563,6 +578,77 @@ export default function GCalSync({ appData }) {
   };
 
   const usingPrimaryFallback = writeCalId === 'primary';
+
+  // ── Date-grouped data for the 'by date' sort view ─────────────────────────────────
+  // Produces an array of [isoDate, task[]] pairs, sorted chronologically.
+  const scheduledByDateGrouped = React.useMemo(() => {
+    const map = {};
+    for (const { iso, task } of scheduledByDate) {
+      (map[iso] ??= []).push(task);
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [scheduledByDate]);
+
+  // ── Shared day-row renderer (used by both sort views) ─────────────────────────────
+  const renderDayRow = (task, iso) => {
+    const key    = `${task.id}-${iso}`;
+    const status = blockStatus[key];
+    const hrs    = remainingHours(task);
+    return (
+      <div key={`${task.id}-${iso}`} className="gcal-day-row">
+        <span className="gcal-day-label">{fmtShort(iso)}</span>
+        <span className="gcal-day-hrs">{hrs.toFixed(1)}h</span>
+        {status === 'done' ? (
+          <button className="gcal-delete-btn"
+            onClick={() => handleDeleteBlock(task, iso)}>
+            <IconTrash size={12} />
+            Remove
+          </button>
+        ) : status === 'pending' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Adding…</span>
+        ) : status === 'deleting' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Removing…</span>
+        ) : status === 'error' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Error</span>
+        ) : (
+          <button className="gcal-push-btn"
+            onClick={() => handleCreateBlock(task, iso, hrs)}>
+            Add {hrs.toFixed(1)}h block
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderTaskRowForDate = (task, iso) => {
+    const key    = `${task.id}-${iso}`;
+    const status = blockStatus[key];
+    const hrs    = remainingHours(task);
+    return (
+      <div key={`${task.id}-${iso}`} className="gcal-day-row">
+        <span className="gcal-task-name-inline">{task.name}</span>
+        <span className="gcal-day-hrs">{hrs.toFixed(1)}h</span>
+        {status === 'done' ? (
+          <button className="gcal-delete-btn"
+            onClick={() => handleDeleteBlock(task, iso)}>
+            <IconTrash size={12} />
+            Remove
+          </button>
+        ) : status === 'pending' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Adding…</span>
+        ) : status === 'deleting' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Removing…</span>
+        ) : status === 'error' ? (
+          <span style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Error</span>
+        ) : (
+          <button className="gcal-push-btn"
+            onClick={() => handleCreateBlock(task, iso, hrs)}>
+            Add {hrs.toFixed(1)}h block
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="gcal-pane">
@@ -856,44 +942,48 @@ export default function GCalSync({ appData }) {
               <p>No tasks have been scheduled yet. Use the Planner tab to assign tasks to days.</p>
             </div>
           ) : (
-            <div className="gcal-blocks-list">
-              {scheduled.map(task => (
-                <div key={task.id} className="gcal-task-block">
-                  <div className="gcal-task-name">{task.name}</div>
-                  <div className="gcal-task-days">
-                    {task.futureDays.map(iso => {
-                      const key    = `${task.id}-${iso}`;
-                      const status = blockStatus[key];
-                      const hrs    = remainingHours(task);
-                      return (
-                        <div key={iso} className="gcal-day-row">
-                          <span className="gcal-day-label">{fmtShort(iso)}</span>
-                          <span className="gcal-day-hrs">{hrs.toFixed(1)}h</span>
-                          {status === 'done' ? (
-                            <button className="gcal-delete-btn"
-                              onClick={() => handleDeleteBlock(task, iso)}>
-                              <IconTrash size={12} />
-                              Remove
-                            </button>
-                          ) : status === 'pending' ? (
-                            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Adding…</span>
-                          ) : status === 'deleting' ? (
-                            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Removing…</span>
-                          ) : status === 'error' ? (
-                            <span style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Error</span>
-                          ) : (
-                            <button className="gcal-push-btn"
-                              onClick={() => handleCreateBlock(task, iso, hrs)}>
-                              Add {hrs.toFixed(1)}h block
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+            <>
+              {/* ── Sort toggle toolbar ── */}
+              <div className="gcal-blocks-toolbar">
+                <span className="gcal-blocks-sort-label">Sort by:</span>
+                <div className="gcal-sort-toggle" role="group" aria-label="Sort work blocks by">
+                  <button
+                    className={`gcal-sort-btn${blockSort === 'task' ? ' active' : ''}`}
+                    onClick={() => setBlockSort('task')}
+                    aria-pressed={blockSort === 'task'}
+                  >Task</button>
+                  <button
+                    className={`gcal-sort-btn${blockSort === 'date' ? ' active' : ''}`}
+                    onClick={() => setBlockSort('date')}
+                    aria-pressed={blockSort === 'date'}
+                  >Date</button>
                 </div>
-              ))}
-            </div>
+              </div>
+
+              <div className="gcal-blocks-list">
+                {blockSort === 'task' ? (
+                  // ── Grouped by task (original view) ──
+                  scheduled.map(task => (
+                    <div key={task.id} className="gcal-task-block">
+                      <div className="gcal-task-name">{task.name}</div>
+                      <div className="gcal-task-days">
+                        {task.futureDays.map(iso => renderDayRow(task, iso))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  // ── Grouped by date (chronological view) ──
+                  scheduledByDateGrouped.map(([iso, tasksOnDay]) => (
+                    <div key={iso} className="gcal-date-block">
+                      <div className="gcal-date-heading">{fmtShort(iso)}</div>
+                      <div className="gcal-task-days">
+                        {tasksOnDay.map(task => renderTaskRowForDate(task, iso))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
