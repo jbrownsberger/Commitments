@@ -42,26 +42,45 @@ Deno.serve(async (req: Request) => {
   const tokens = await tokenRes.json();
   const { access_token, refresh_token, expires_in } = tokens;
 
-  if (!refresh_token) {
-    // No refresh token means the user already granted access before without prompt=consent.
-    // Redirect back asking user to reconnect with consent.
-    return Response.redirect(`${APP_URL}?gcal_error=no_refresh_token`, 302);
-  }
-
   const expiresAt = new Date(Date.now() + (expires_in ?? 3600) * 1000).toISOString();
 
-  // Use service role to write tokens — user is not authenticated to edge function directly
+  // Use service role to read/write tokens — user is not authenticated to edge function directly
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+
+  // Google only issues a refresh_token on the first grant (or when the prior
+  // token has been revoked).  On subsequent re-auths with prompt=consent it
+  // may still omit it if it considers the prior grant still active — a
+  // tightened enforcement that began in 2025 for unverified apps.
+  //
+  // Strategy: if Google gave us a refresh_token, use it.  If not, fall back
+  // to the one already stored in the DB.  Only fail if we have neither.
+  let finalRefreshToken = refresh_token ?? null;
+
+  if (!finalRefreshToken) {
+    const { data: existing } = await supabase
+      .from('gcal_tokens')
+      .select('refresh_token')
+      .eq('user_id', state)
+      .single();
+
+    finalRefreshToken = existing?.refresh_token ?? null;
+  }
+
+  if (!finalRefreshToken) {
+    // No refresh token from Google and none on file — cannot proceed.
+    console.error('No refresh_token available for user', state);
+    return Response.redirect(`${APP_URL}?gcal_error=no_refresh_token`, 302);
+  }
 
   const { error: dbError } = await supabase
     .from('gcal_tokens')
     .upsert({
       user_id:       state,
       access_token,
-      refresh_token,
+      refresh_token: finalRefreshToken,
       expires_at:    expiresAt,
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'user_id' });
