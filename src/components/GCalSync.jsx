@@ -61,6 +61,18 @@ function remainingHours(task) {
   return Math.max(0, (parseFloat(task.estimated_hours) || 1) * (1 - prog / 100));
 }
 
+/**
+ * Returns the hours allocated to a single scheduled day for a task.
+ * The Planner distributes remaining hours evenly across all scheduled days,
+ * so the per-day slice is simply: remainingHours / number_of_scheduled_days.
+ */
+function hoursForDay(task) {
+  const total = remainingHours(task);
+  const days  = (task.futureDays || task.scheduled_days || []).length;
+  if (!days) return total;
+  return total / days;
+}
+
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
@@ -590,10 +602,11 @@ export default function GCalSync({ appData }) {
   }, [scheduledByDate]);
 
   // ── Shared day-row renderer (used by both sort views) ─────────────────────────────
+  // hrs is the per-day slice: remainingHours(task) / futureDays.length
   const renderDayRow = (task, iso) => {
-    const key    = `${task.id}-${iso}`;
+    const key = `${task.id}-${iso}`;
     const status = blockStatus[key];
-    const hrs    = remainingHours(task);
+    const hrs = hoursForDay(task);
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-day-label">{fmtShort(iso)}</span>
@@ -621,9 +634,9 @@ export default function GCalSync({ appData }) {
   };
 
   const renderTaskRowForDate = (task, iso) => {
-    const key    = `${task.id}-${iso}`;
+    const key = `${task.id}-${iso}`;
     const status = blockStatus[key];
-    const hrs    = remainingHours(task);
+    const hrs = hoursForDay(task);
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-task-name-inline">{task.name}</span>
