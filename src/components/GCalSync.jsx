@@ -9,7 +9,6 @@ import {
   connectGcal,
   hasValidCachedToken,
   isGcalConnected,
-  getAccessToken,
   revokeToken,
   fetchCalendarList,
   fetchFreeBusy,
@@ -24,8 +23,6 @@ import {
   DEFAULT_SETTINGS,
   LS_CALS_KEY,
   ensureCommitmentsCalendar,
-  loadCommitmentsCalId,
-  clearCommitmentsCalId,
   loadWriteCalId,
   saveWriteCalId,
   clearWriteCalId,
@@ -33,6 +30,7 @@ import {
 import '../styles/gcal.css';
 
 const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const STALE_LABEL_MS  = 60 * 60 * 1000;
 const LOOK_AHEAD_DAYS = 28;
 const DAY_NAMES       = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -275,7 +273,7 @@ function WorkWindowsEditor({ windows, onChange }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────────────
 export default function GCalSync({ appData }) {
-  const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange } = appData;
+  const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange, gcalFreeBusySnapshot } = appData;
   const todayISO = toISO(new Date());
 
   // Optimistic initial state: trust the legacy cached token for the first
@@ -288,10 +286,7 @@ export default function GCalSync({ appData }) {
   // server-side refresh token has actually been revoked.
   useEffect(() => {
     isGcalConnected().then(ok => {
-      if (!ok) {
-        setConnected(false);
-        onFreeBusyClear?.();
-      }
+      setConnected(ok);
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -311,7 +306,7 @@ export default function GCalSync({ appData }) {
   const [selCals,    setSelCals]    = useState(loadSelectedCals);
   const [writeCalId, setWriteCalId] = useState(loadWriteCalId);
 
-  const [freeBusy,          setFreeBusy]          = useState(null);
+  const [freeBusy,          setFreeBusy]          = useState(() => gcalFreeBusySnapshot?.data || null);
   const [loadingFB,         setLoadingFB]         = useState(false);
   const [subtractingBlocks, setSubtractingBlocks] = useState(false);
   const [blockStatus,       setBlockStatus]       = useState({});
@@ -406,7 +401,6 @@ export default function GCalSync({ appData }) {
     setFreeBusy(null);
     setBlockStatus({});
     setSubtractingBlocks(false);
-    onFreeBusyClear?.();
   };
 
   // ── Availability ──────────────────────────────────────────────────────────────────
@@ -447,15 +441,15 @@ export default function GCalSync({ appData }) {
       }
 
       setFreeBusy(result);
-      onFreeBusyUpdate?.(result);
+      onFreeBusyUpdate?.(result, { fetchedAt: new Date().toISOString(), source: 'google' });
+      setConnected(true);
     } catch (e) {
       const msg = e.message || '';
       if (/401|unauthorized|invalid.*(token|credentials)|token.*expired/i.test(msg)) {
         revokeToken();
         setConnected(false);
         setFreeBusy(null);
-        onFreeBusyClear?.();
-        setError('Your Google session expired. Please reconnect.');
+            setError('Your Google session expired. Please reconnect.');
       } else {
         setError(msg);
       }
@@ -532,7 +526,15 @@ export default function GCalSync({ appData }) {
   }, [tasks, todayISO]);
 
   // ── Disconnected ──────────────────────────────────────────────────────────────────
-  if (!connected) {
+  const snapshotFetchedAt = gcalFreeBusySnapshot?.fetchedAt || null;
+  const snapshotAgeMs = snapshotFetchedAt ? (Date.now() - new Date(snapshotFetchedAt).getTime()) : Infinity;
+  const hasSnapshot = !!gcalFreeBusySnapshot?.data;
+  const snapshotIsStale = snapshotAgeMs > STALE_LABEL_MS;
+  const snapshotLabel = snapshotFetchedAt
+    ? new Date(snapshotFetchedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
+
+  if (!connected && !hasSnapshot) {
     return (
       <div className="gcal-pane">
         <div className="gcal-hero">
@@ -654,19 +656,31 @@ export default function GCalSync({ appData }) {
     <div className="gcal-pane">
       <div className="gcal-header">
         <span className="gcal-connected-badge">
-          <IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-          Connected to Google Calendar
+          {connected ? <><IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Connected to Google Calendar</> : <><IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Showing saved Google data</>}
         </span>
         <div className="gcal-header-actions">
           <button className="btn btn-sm" onClick={() => setShowSettings(s => !s)}>
             <IconGear size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
             Settings
           </button>
-          <button className="btn btn-sm" onClick={handleDisconnect}>Disconnect</button>
+          {connected ? (
+            <button className="btn btn-sm" onClick={handleDisconnect}>Disconnect</button>
+          ) : (
+            <button className="btn btn-sm btn-primary" onClick={() => handleConnect(false)} disabled={connecting}>Reconnect Google</button>
+          )}
         </div>
       </div>
 
       {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
+
+      {hasSnapshot && (
+        <div className={snapshotIsStale || !connected ? 'gcal-warning' : 'gcal-info'} style={{ marginBottom: 12 }}>
+          {snapshotLabel ? `Availability last refreshed ${snapshotLabel}.` : 'Availability shown from your last Google sync.'}
+          {(snapshotIsStale || !connected) && (
+            <> {' '}This data may be out of date. <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => handleConnect(false)} disabled={connecting}>{connecting ? 'Connecting…' : 'Refresh from Google'}</button></>
+          )}
+        </div>
+      )}
 
       {showSettings && (
         <div className="gcal-settings-panel">
@@ -858,9 +872,9 @@ export default function GCalSync({ appData }) {
       {activePanel === 'availability' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-            <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB}>
+            <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB || !connected}>
               <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-              {loadingFB ? 'Loading…' : 'Refresh'}
+              {loadingFB ? 'Loading…' : connected ? 'Refresh' : 'Reconnect to refresh'}
             </button>
           </div>
 
