@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase.js';
 import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
-import { loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
+import { loadFreeBusySnapshot, loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
 import {
   connectGcal,
   isGcalConnected,
@@ -237,16 +237,17 @@ function AuthedApp({ userId, userEmail }) {
     await appData.savePreferences({ ...appData.preferences, dark_mode: next });
   }, [darkMode, appData]);
 
-  const [gcalFreeBusy, setGcalFreeBusy] = useState(() => loadFreeBusy());
+  const [gcalFreeBusySnapshot, setGcalFreeBusySnapshot] = useState(() => loadFreeBusySnapshot());
+  const gcalFreeBusy = gcalFreeBusySnapshot?.data || null;
 
-  const onFreeBusyUpdate = (data) => {
-    saveFreeBusy(data);
-    setGcalFreeBusy(data);
+  const onFreeBusyUpdate = (data, meta = {}) => {
+    saveFreeBusy(data, meta);
+    setGcalFreeBusySnapshot(loadFreeBusySnapshot());
   };
 
   const onFreeBusyClear = () => {
     clearFreeBusy();
-    setGcalFreeBusy(null);
+    setGcalFreeBusySnapshot(null);
   };
 
   const [gcalConnected, setGcalConnected] = useState(false);
@@ -255,41 +256,6 @@ function AuthedApp({ userId, userEmail }) {
   // since AuthedApp only renders when session is non-null).
   useEffect(() => {
     isGcalConnected().then(setGcalConnected);
-  }, []);
-
-  // ── Handle OAuth callback query params ───────────────────────────────────────
-  // This effect is inside AuthedApp, which only mounts once `session` is
-  // confirmed non-null in the parent. By the time this runs, the Supabase
-  // JWT is available, so getAccessToken() inside isGcalConnected() will
-  // succeed instead of racing against session initialisation.
-  const callbackHandled = useRef(false);
-  useEffect(() => {
-    if (callbackHandled.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const gcalConnectedParam = params.get('gcal_connected');
-    const gcalErrorParam     = params.get('gcal_error');
-
-    if (!gcalConnectedParam && !gcalErrorParam) return;
-    callbackHandled.current = true;
-
-    // Strip the query params from the URL so a page refresh doesn't re-process them.
-    const cleanUrl = window.location.pathname + window.location.hash;
-    window.history.replaceState({}, '', cleanUrl);
-
-    if (gcalConnectedParam === '1') {
-      // Token was saved server-side — re-check connection status.
-      isGcalConnected().then(setGcalConnected);
-      return;
-    }
-
-    if (gcalErrorParam === 'no_refresh_token') {
-      // Should no longer happen since connectGcal always uses prompt=consent,
-      // but handle gracefully just in case.
-      connectGcal().catch(console.error);
-      return;
-    }
-
-    console.warn('Google Calendar connection error:', gcalErrorParam);
   }, []);
 
   const onConnectionChange = useCallback((isConnected) => {
@@ -310,6 +276,7 @@ function AuthedApp({ userId, userEmail }) {
   const enrichedAppData = {
     ...appData,
     gcalFreeBusy,
+    gcalFreeBusySnapshot,
     onFreeBusyUpdate,
     onFreeBusyClear,
     gcalConnected,
