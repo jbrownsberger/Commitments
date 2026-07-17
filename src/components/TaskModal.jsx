@@ -4,11 +4,15 @@
  * Inline substep add/remove.
  *
  * Recurring reset-mode scheduling:
- *   due_date is the anchor.  Two ways to set it:
- *     'specific' — user picks an exact date (date picker)
- *     'weekday'  — user picks a day of the week (Mon–Sun); only available
- *                  when cadence is exactly 'weekly'.  The app computes the
- *                  next upcoming occurrence and stores it as due_date.
+ *   due_date is the anchor.  Two modes — mutually exclusive by cadence:
+ *     'weekday'  — weekly cadence ONLY.  User picks Mon–Sun; the app stores
+ *                  the next upcoming occurrence of that day as due_date on
+ *                  NEW tasks.  On EDIT the existing due_date is preserved so
+ *                  the anchor never drifts.
+ *     'specific' — all other cadences.  User picks an exact date.
+ *
+ *   There is no user-facing toggle between the two modes; the cadence
+ *   determines which UI is shown.
  */
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
@@ -42,6 +46,10 @@ const DAYS_OF_WEEK = [
   { val: 0, label: 'Sun' },
 ];
 
+/**
+ * Return the ISO date string for the NEXT (or today's) occurrence of `dow`
+ * (0 = Sun … 6 = Sat).  Used only when creating a brand-new weekly task.
+ */
 function nextOccurrenceOfWeekday(dow) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -68,6 +76,7 @@ function serialiseCadence(isCustom, preset, customN, customUnit) {
 
 // ── Recurring section ──────────────────────────────────────────────────────────
 function RecurringSection({ task }) {
+  const isEdit = !!task?.id;
   const parsed = parseCadence(task?.recurring_cadence);
 
   const [isRecurring, setIsRecurring] = useState(!!task?.recurring);
@@ -77,34 +86,47 @@ function RecurringSection({ task }) {
   const [customN,     setCustomN]     = useState(parsed.customN);
   const [customUnit,  setCustomUnit]  = useState(parsed.customUnit);
 
-  // "Day of week" mode is only valid for weekly cadence.
-  const isWeeklyOnly = !isCustom && preset === 'weekly';
+  // Weekly cadence (non-custom) → always weekday mode; everything else → specific date.
+  const isWeekly = !isCustom && preset === 'weekly';
 
-  const initDueMode = task?.due_date ? 'specific'
-    : (parsed.preset === 'weekly' && !parsed.isCustom) ? 'weekday' : 'specific';
-  const [dueMode,     setDueMode]     = useState(initDueMode);
-  const [dueDate,     setDueDate]     = useState(task?.due_date || '');
+  // For weekday mode: derive the selected day from the stored due_date if
+  // editing, otherwise default to Tuesday (2).
   const initDow = task?.due_date
     ? new Date(task.due_date + 'T00:00:00').getDay()
-    : 2; // default Tuesday
+    : 2;
   const [selectedDow, setSelectedDow] = useState(initDow);
 
-  // When cadence changes away from weekly, force dueMode back to 'specific'
-  // so the hidden field always carries a valid date.
+  // For specific-date mode.
+  const [dueDate, setDueDate] = useState(task?.due_date || '');
+
+  // When the user switches cadence away from weekly, wipe selectedDow state
+  // (not strictly necessary, but keeps things tidy) and reset dueDate to the
+  // existing value so the date picker is pre-populated on edit.
   useEffect(() => {
-    if (!isWeeklyOnly && dueMode === 'weekday') {
-      setDueMode('specific');
+    if (!isWeekly) {
+      setDueDate(task?.due_date || '');
     }
-  }, [isWeeklyOnly, dueMode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWeekly]);
 
   // Expand-only state
   const [untilMode,  setUntilMode]  = useState(task?.recurring_until ? 'date' : 'count');
   const [untilDate,  setUntilDate]  = useState(task?.recurring_until  || '');
   const [instCount,  setInstCount]  = useState(task?.recurring_instances || 10);
 
-  const cadenceValue    = serialiseCadence(isCustom, preset, customN, customUnit);
+  const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
+
+  /**
+   * The date written to the hidden `recurring_due_date` field:
+   *
+   *   Weekly + editing  → preserve existing due_date (no drift)
+   *   Weekly + new task → compute next occurrence of selectedDow from today
+   *   All others        → whatever the date-picker holds
+   */
   const computedDueDate = recType === 'reset'
-    ? (dueMode === 'weekday' ? nextOccurrenceOfWeekday(selectedDow) : dueDate)
+    ? (isWeekly
+        ? (isEdit && task?.due_date ? task.due_date : nextOccurrenceOfWeekday(selectedDow))
+        : dueDate)
     : dueDate;
 
   return (
@@ -182,51 +204,39 @@ function RecurringSection({ task }) {
               <span className="tm-rec-label" style={{ paddingTop: 6 }}>Due</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
 
-                {/* Toggle only shown for weekly cadence */}
-                {isWeeklyOnly && (
-                  <div className="tm-seg" role="group" aria-label="Due anchor">
-                    <button type="button"
-                      className={`tm-seg-btn${dueMode === 'specific' ? ' active' : ''}`}
-                      onClick={() => setDueMode('specific')}>
-                      Specific date
-                    </button>
-                    <button type="button"
-                      className={`tm-seg-btn${dueMode === 'weekday' ? ' active' : ''}`}
-                      onClick={() => setDueMode('weekday')}>
-                      Day of week
-                    </button>
-                  </div>
+                {/* Weekly cadence → day-of-week strip ONLY (no date picker, no toggle) */}
+                {isWeekly && (
+                  <>
+                    <div className="tm-seg" role="group" aria-label="Day of week">
+                      {DAYS_OF_WEEK.map(d => (
+                        <button key={d.val} type="button"
+                          className={`tm-seg-btn${selectedDow === d.val ? ' active' : ''}`}
+                          onClick={() => setSelectedDow(d.val)}>
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="tm-rec-hint" style={{ marginTop: 0 }}>
+                      {`Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}. Complete it early and it holds until that day; complete it late and it advances to the next ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}.`}
+                    </p>
+                  </>
                 )}
 
-                {/* Specific date input — shown for all cadences when mode is 'specific' */}
-                {dueMode === 'specific' && (
-                  <input type="date" value={dueDate}
-                    onChange={e => setDueDate(e.target.value)}
-                    style={{ fontSize: 13, padding: '4px 6px',
-                      border: '0.5px solid var(--color-border-secondary)',
-                      borderRadius: 4, background: 'var(--color-bg-input)',
-                      color: 'var(--color-text-primary)' }}
-                  />
+                {/* All other cadences → specific date picker ONLY */}
+                {!isWeekly && (
+                  <>
+                    <input type="date" value={dueDate}
+                      onChange={e => setDueDate(e.target.value)}
+                      style={{ fontSize: 13, padding: '4px 6px',
+                        border: '0.5px solid var(--color-border-secondary)',
+                        borderRadius: 4, background: 'var(--color-bg-input)',
+                        color: 'var(--color-text-primary)' }}
+                    />
+                    <p className="tm-rec-hint" style={{ marginTop: 0 }}>
+                      Resets each cycle on this date. Complete it early and it holds until the due date; complete it late and it advances to the next scheduled occurrence.
+                    </p>
+                  </>
                 )}
-
-                {/* Day-of-week strip — only reachable when weekly + user picked it */}
-                {dueMode === 'weekday' && isWeeklyOnly && (
-                  <div className="tm-seg" role="group" aria-label="Day of week">
-                    {DAYS_OF_WEEK.map(d => (
-                      <button key={d.val} type="button"
-                        className={`tm-seg-btn${selectedDow === d.val ? ' active' : ''}`}
-                        onClick={() => setSelectedDow(d.val)}>
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <p className="tm-rec-hint" style={{ marginTop: 0 }}>
-                  {dueMode === 'weekday'
-                    ? `Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}. Complete it early and it holds until that day; complete it late and it advances to the next ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}.`
-                    : 'Resets each cycle on this date. Complete it early and it holds until the due date; complete it late and it advances to the next scheduled occurrence.'}
-                </p>
               </div>
             </div>
           )}
