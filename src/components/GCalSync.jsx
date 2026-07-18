@@ -370,20 +370,23 @@ export default function GCalSync({ appData }) {
 
   // ── Auth ──────────────────────────────────────────────────────────────────────────
   /**
-   * handleConnect — initiates the server-side OAuth code flow.
+   * handleConnect — initiates the OAuth token flow and, on success,
+   * updates connected state and immediately refreshes availability.
    *
-   * forceConsent=true  → passed only on the very first connect, or when the
-   *   user explicitly wants to re-authorise a different account.
-   *
-   * forceConsent=false (default) → uses prompt='select_account', which lets
-   *   Google skip the consent page for an already-authorised account and
-   *   silently reuse the existing refresh token.
+   * forceConsent=true  → first connect or re-authorise a different account.
+   * forceConsent=false → uses prompt='select_account' so Google can skip
+   *   the consent screen for an already-authorised account.
    */
   const handleConnect = async (forceConsent = false) => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
     try {
-      connectGcal(forceConsent);
+      await connectGcal(forceConsent);
+      setConnected(true);
+      setFreeBusy(null); // clear stale data so auto-load guard doesn't block re-fetch
+      setConnecting(false);
+      // Kick off a fresh availability fetch immediately after sign-in
+      handleFetchFreeBusy();
     } catch (e) {
       setError(e.message);
       setConnecting(false);
@@ -401,6 +404,7 @@ export default function GCalSync({ appData }) {
     setFreeBusy(null);
     setBlockStatus({});
     setSubtractingBlocks(false);
+    onFreeBusyClear?.(); // clear the parent snapshot so isGcalConnected() returns false
   };
 
   // ── Availability ──────────────────────────────────────────────────────────────────
@@ -449,7 +453,7 @@ export default function GCalSync({ appData }) {
         revokeToken();
         setConnected(false);
         setFreeBusy(null);
-            setError('Your Google session expired. Please reconnect.');
+        setError('Your Google session expired. Please reconnect.');
       } else {
         setError(msg);
       }
