@@ -593,9 +593,11 @@ export default function GCalSync({ appData }) {
 
   // ── Shared day-row renderer (used by both sort views) ─────────────────────────────
   const renderDayRow = (task, iso) => {
-    const key    = `${task.id}-${iso}`;
-    const status = blockStatus[key];
-    const hrs    = remainingHours(task);
+    const key           = `${task.id}-${iso}`;
+    const status        = blockStatus[key];
+    const totalHrs      = remainingHours(task);
+    const futureDaysCount = task.futureDays?.length || 1;
+    const hrs           = totalHrs / futureDaysCount;
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-day-label">{fmtShort(iso)}</span>
@@ -623,9 +625,11 @@ export default function GCalSync({ appData }) {
   };
 
   const renderTaskRowForDate = (task, iso) => {
-    const key    = `${task.id}-${iso}`;
-    const status = blockStatus[key];
-    const hrs    = remainingHours(task);
+    const key           = `${task.id}-${iso}`;
+    const status        = blockStatus[key];
+    const totalHrs      = remainingHours(task);
+    const futureDaysCount = task.futureDays?.length || 1;
+    const hrs           = totalHrs / futureDaysCount;
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-task-name-inline">{task.name}</span>
