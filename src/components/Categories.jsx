@@ -184,7 +184,12 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
           task={panelTask.task}
           cat={panelTask.cat}
           onClose={() => setPanelTask(null)}
-          onSave={async (updated) => { await saveTask(updated); setPanelTask(null); }}
+          onSave={async (updated) => {
+            await saveTask(updated);
+            // Update the panel's local task reference so it stays in sync,
+            // but do NOT close the panel — only Close/Edit/Delete should do that.
+            setPanelTask(prev => prev ? { ...prev, task: updated } : null);
+          }}
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
           onEdit={(task) => {
             setPanelTask(null);
