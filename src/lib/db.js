@@ -339,6 +339,9 @@ export async function removeTask(id) {
  *
  *   Case D — status is NOT 'done' AND now < due_date:
  *     Nothing to do.
+ *
+ * Returns an array of updated task objects (with substeps embedded) for
+ * merging back into app state via mergeUpdatedTasks.
  */
 export async function resetStaleRecurringTasks(tasks, userId) {
   const today = formatLocalDate(new Date());
@@ -353,21 +356,45 @@ export async function resetStaleRecurringTasks(tasks, userId) {
   if (toReset.length === 0) return [];
 
   const updated = await Promise.all(
-    toReset.map(t => {
+    toReset.map(async (t) => {
       const nextDue = nextFutureScheduledDate(
         t.recurring_cadence,
         t.due_date,
         t.recurring_dow ?? undefined,
       );
-      // Reset substeps to unchecked so the new cycle starts fresh.
-      const resetSubsteps = (t.substeps || []).map(s => ({ ...s, done: false }));
-      return saveTask({
+
+      // 1. Reset the task row itself (substeps are stripped inside saveTask).
+      const savedTask = await saveTask({
         ...t,
         status:          'not-started',
         manual_progress: 0,
         due_date:        nextDue,
-        substeps:        resetSubsteps,
       });
+
+      // 2. Persist each substep with done:false so the DB reflects the reset.
+      //    Re-use the substeps that were embedded on the task at load time.
+      const originalSubs = t.substeps || [];
+      const savedSubs = originalSubs.length > 0
+        ? await Promise.all(
+            originalSubs.map((s) => {
+              const { id, ...fields } = s;
+              return supabase
+                .from('substeps')
+                .update({ ...fields, done: false })
+                .eq('id', id)
+                .select()
+                .single()
+                .then(({ data, error }) => {
+                  if (error) throw error;
+                  return data;
+                });
+            })
+          )
+        : [];
+
+      // 3. Return the task with its freshly-reset substeps embedded, so
+      //    mergeUpdatedTasks in useAppData gets the full picture.
+      return { ...savedTask, substeps: savedSubs };
     })
   );
 
