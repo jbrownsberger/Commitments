@@ -326,7 +326,7 @@ export async function removeTask(id) {
  * Called once on app load.  For each reset-mode recurring task:
  *
  *   Case A — status is 'done' AND now >= due_date:
- *     Reset to 'not-started', advance due_date:
+ *     Reset to 'not-started', advance due_date, and uncheck all substeps.
  *       - weekly  → next future occurrence of recurring_dow after due_date
  *       - others  → one cadence period after due_date
  *     Always advances from the *scheduled* due_date, not from today.
@@ -359,11 +359,14 @@ export async function resetStaleRecurringTasks(tasks, userId) {
         t.due_date,
         t.recurring_dow ?? undefined,
       );
+      // Reset substeps to unchecked so the new cycle starts fresh.
+      const resetSubsteps = (t.substeps || []).map(s => ({ ...s, done: false }));
       return saveTask({
         ...t,
         status:          'not-started',
         manual_progress: 0,
         due_date:        nextDue,
+        substeps:        resetSubsteps,
       });
     })
   );
