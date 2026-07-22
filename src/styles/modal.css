@@ -88,7 +88,7 @@
 .tm-recurring-toggle input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  accent-color: var(--color-primary, #01696f);
+  accent-color: var(--color-accent);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -153,9 +153,12 @@
   color: var(--color-text-primary);
 }
 .tm-seg-btn.active {
-  background: var(--color-primary, #01696f);
+  background: var(--color-accent);
   color: #fff;
   font-weight: 500;
+}
+.tm-seg-btn.active:hover {
+  background: var(--color-accent-hover);
 }
 
 /* Hint description text under mode selector */
@@ -185,7 +188,7 @@
   user-select: none;
 }
 .tm-rec-radio-row input[type="radio"] {
-  accent-color: var(--color-primary, #01696f);
+  accent-color: var(--color-accent);
   width: 14px;
   height: 14px;
   flex-shrink: 0;
