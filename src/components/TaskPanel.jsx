@@ -7,6 +7,9 @@
  *   progress > 0 and < 100  →  'in progress'
  *   progress === 100         →  'done'
  *   progress === 0           →  'not started'
+ *
+ * Substep weights are DISPLAY-ONLY here. To change a weight, use Edit mode
+ * (TaskModal), which has a proper Save button.
  */
 import React, { useState, useRef } from 'react';
 import Modal from './Modal.jsx';
@@ -125,15 +128,6 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
     ...task,
     substeps: (task.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 })),
   });
-
-  // Draft weight values keyed by substep index — updated on every keystroke
-  // but only committed to local+DB on blur. Initialised from local substeps.
-  const [weightDrafts, setWeightDrafts] = useState(() =>
-    Object.fromEntries(
-      (task.substeps || []).map((s, i) => [i, String(s.weight ?? 1)])
-    )
-  );
-
   const dragIdx = useRef(null);
 
   const prog    = taskProgress(local);
@@ -174,36 +168,12 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
     save({ substeps, status: statusFromProgress(newProg, local.status), manual_progress: newProg });
   };
 
-  // ── Substep weight: draft update (keystroke only — no save)
-  const handleWeightChange = (idx, val) => {
-    setWeightDrafts(prev => ({ ...prev, [idx]: val }));
-  };
-
-  // ── Substep weight: commit on blur
-  const commitWeight = (idx) => {
-    const parsed = Math.max(1, parseInt(weightDrafts[idx]) || 1);
-    // Normalise draft to the clamped value
-    setWeightDrafts(prev => ({ ...prev, [idx]: String(parsed) }));
-    const substeps = local.substeps.map((s, i) =>
-      i === idx ? { ...s, weight: parsed } : s
-    );
-    const newProg = taskProgress({ ...local, substeps });
-    save({ substeps, status: statusFromProgress(newProg, local.status), manual_progress: newProg });
-  };
-
   // ── Substep drag-to-reorder
   const moveSubstep = (from, to) => {
     if (from === to) return;
     const subs = [...local.substeps];
     const [moved] = subs.splice(from, 1);
     subs.splice(to, 0, moved);
-    // Re-index weight drafts to match new order
-    const newDrafts = {};
-    subs.forEach((_, i) => {
-      const origIdx = i < from ? i : i === to ? from : i - 1;
-      newDrafts[i] = weightDrafts[origIdx] ?? String(subs[i].weight ?? 1);
-    });
-    setWeightDrafts(newDrafts);
     save({ substeps: subs });
   };
 
@@ -326,31 +296,30 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
             >
+              {/* drag handle */}
               <span style={{ color:'var(--color-text-tertiary)', cursor:'grab', fontSize:14, userSelect:'none' }}>⠇</span>
+              {/* checkbox */}
               <input
                 type="checkbox"
                 checked={!!s.done}
                 onChange={() => toggleSubstep(i)}
                 style={{ width:16, height:16, cursor:'pointer', flexShrink:0 }}
               />
+              {/* text */}
               <span style={{
                 flex:1, fontSize:14,
                 textDecoration: s.done ? 'line-through' : 'none',
                 color: s.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
               }}>{s.text}</span>
-              <span style={{ fontSize:12, color:'var(--color-text-tertiary)' }}>wt:</span>
-              <input
-                type="number" min={1} max={99}
-                value={weightDrafts[i] ?? s.weight ?? 1}
-                onChange={e => handleWeightChange(i, e.target.value)}
-                onBlur={() => commitWeight(i)}
-                style={{
-                  width:52, fontSize:13, padding:'2px 4px',
-                  border:'0.5px solid var(--color-border-secondary)',
-                  borderRadius:4, textAlign:'center',
-                }}
-                title="Weight (affects progress %) — saved on blur"
-              />
+              {/* weight — read-only display; edit via Edit button → TaskModal */}
+              {(s.weight ?? 1) !== 1 && (
+                <span
+                  style={{ fontSize:11, color:'var(--color-text-tertiary)' }}
+                  title="Substep weight (edit in Edit mode to change)"
+                >
+                  wt:{s.weight}
+                </span>
+              )}
             </div>
           ))}
         </div>

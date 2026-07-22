@@ -1,7 +1,7 @@
 /**
  * TaskModal — add / edit task.
  * Always shows a category dropdown.
- * Inline substep add/remove.
+ * Inline substep add/remove/weight.
  *
  * Recurring reset-mode scheduling:
  *   due_date is the anchor.  Two modes — mutually exclusive by cadence:
@@ -86,22 +86,14 @@ function RecurringSection({ task }) {
   const [customN,     setCustomN]     = useState(parsed.customN);
   const [customUnit,  setCustomUnit]  = useState(parsed.customUnit);
 
-  // Weekly cadence (non-custom) → always weekday mode; everything else → specific date.
   const isWeekly = !isCustom && preset === 'weekly';
 
-  // For weekday mode: derive the selected day from the stored due_date if
-  // editing, otherwise default to Tuesday (2).
   const initDow = task?.due_date
     ? new Date(task.due_date + 'T00:00:00').getDay()
     : 2;
   const [selectedDow, setSelectedDow] = useState(initDow);
-
-  // For specific-date mode.
   const [dueDate, setDueDate] = useState(task?.due_date || '');
 
-  // When the user switches cadence away from weekly, wipe selectedDow state
-  // (not strictly necessary, but keeps things tidy) and reset dueDate to the
-  // existing value so the date picker is pre-populated on edit.
   useEffect(() => {
     if (!isWeekly) {
       setDueDate(task?.due_date || '');
@@ -109,20 +101,12 @@ function RecurringSection({ task }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWeekly]);
 
-  // Expand-only state
   const [untilMode,  setUntilMode]  = useState(task?.recurring_until ? 'date' : 'count');
   const [untilDate,  setUntilDate]  = useState(task?.recurring_until  || '');
   const [instCount,  setInstCount]  = useState(task?.recurring_instances || 10);
 
   const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
 
-  /**
-   * The date written to the hidden `recurring_due_date` field:
-   *
-   *   Weekly + editing  → preserve existing due_date (no drift)
-   *   Weekly + new task → compute next occurrence of selectedDow from today
-   *   All others        → whatever the date-picker holds
-   */
   const computedDueDate = recType === 'reset'
     ? (isWeekly
         ? (isEdit && task?.due_date ? task.due_date : nextOccurrenceOfWeekday(selectedDow))
@@ -203,8 +187,6 @@ function RecurringSection({ task }) {
             <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
               <span className="tm-rec-label" style={{ paddingTop: 6 }}>Due</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-
-                {/* Weekly cadence → day-of-week strip ONLY (no date picker, no toggle) */}
                 {isWeekly && (
                   <>
                     <div className="tm-seg" role="group" aria-label="Day of week">
@@ -221,8 +203,6 @@ function RecurringSection({ task }) {
                     </p>
                   </>
                 )}
-
-                {/* All other cadences → specific date picker ONLY */}
                 {!isWeekly && (
                   <>
                     <input type="date" value={dueDate}
@@ -317,14 +297,22 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
     (task?.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 }))
   );
   const [newStepText, setNewStepText] = useState('');
+  const [newStepWeight, setNewStepWeight] = useState(1);
 
   const addSubstep = () => {
     const text = newStepText.trim();
     if (!text) return;
-    setSubsteps(prev => [...prev, { text, done: false, weight: 1 }]);
+    setSubsteps(prev => [...prev, { text, done: false, weight: Math.max(1, newStepWeight || 1) }]);
     setNewStepText('');
+    setNewStepWeight(1);
   };
+
   const removeSubstep = i => setSubsteps(prev => prev.filter((_, idx) => idx !== i));
+
+  const updateSubstepWeight = (i, val) => {
+    const w = Math.max(1, parseInt(val) || 1);
+    setSubsteps(prev => prev.map((s, idx) => idx === i ? { ...s, weight: w } : s));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -419,22 +407,50 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
         <div className="form-field">
           <label>Substeps</label>
           {substeps.map((s, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
               <span style={{ flex: 1, fontSize: 13 }}>{s.text}</span>
+              <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>wt:</span>
+              <input
+                type="number" min={1} max={99}
+                value={s.weight ?? 1}
+                onChange={e => updateSubstepWeight(i, e.target.value)}
+                style={{
+                  width: 52, fontSize: 13, padding: '2px 4px',
+                  border: '0.5px solid var(--color-border-secondary)',
+                  borderRadius: 4, textAlign: 'center',
+                  background: 'var(--color-bg-input)',
+                  color: 'var(--color-text-primary)',
+                }}
+                title="Weight (affects progress %)"
+              />
               <button type="button" className="btn btn-sm btn-danger"
                 style={{ padding: '1px 8px', fontSize: 11 }}
-                onClick={() => removeSubstep(i)}>Remove</button>
+                onClick={() => removeSubstep(i)}>✕</button>
             </div>
           ))}
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
             <input
               style={{ flex: 1, fontSize: 13, padding: '5px 8px',
                 border: '0.5px solid var(--color-border-secondary)', borderRadius: 4,
                 background: 'var(--color-bg-input)', color: 'var(--color-text-primary)' }}
-              placeholder="Add substep, press Enter"
+              placeholder="Add substep…"
               value={newStepText}
               onChange={e => setNewStepText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubstep(); } }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>wt:</span>
+            <input
+              type="number" min={1} max={99}
+              value={newStepWeight}
+              onChange={e => setNewStepWeight(Math.max(1, parseInt(e.target.value) || 1))}
+              style={{
+                width: 52, fontSize: 13, padding: '5px 4px',
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 4, textAlign: 'center',
+                background: 'var(--color-bg-input)',
+                color: 'var(--color-text-primary)',
+              }}
+              title="Weight for new substep"
             />
             <button type="button" className="btn btn-sm" onClick={addSubstep}>Add</button>
           </div>
