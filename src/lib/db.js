@@ -328,13 +328,13 @@ export async function fetchSubsteps(userId) {
   return data || [];
 }
 export async function saveSubstep(substep) {
-  const { weight, ...rest } = substep;
-  const isNew = !rest.id;
+  // Pass weight through — it is a real column on the substeps table.
+  const isNew = !substep.id;
   let data, error;
   if (isNew) {
-    ({ data, error } = await supabase.from('substeps').insert(rest).select().single());
+    ({ data, error } = await supabase.from('substeps').insert(substep).select().single());
   } else {
-    const { id, ...fields } = rest;
+    const { id, ...fields } = substep;
     ({ data, error } = await supabase.from('substeps').update(fields).eq('id', id).select().single());
   }
   if (error) throw error;
