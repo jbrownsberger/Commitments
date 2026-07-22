@@ -4,15 +4,19 @@
  * Inline substep add/remove/weight.
  *
  * Recurring reset-mode scheduling:
- *   due_date is the anchor.  Two modes — mutually exclusive by cadence:
- *     'weekday'  — weekly cadence ONLY.  User picks Mon–Sun; the app stores
- *                  the next upcoming occurrence of that day as due_date on
- *                  NEW tasks.  On EDIT the existing due_date is preserved so
- *                  the anchor never drifts.
- *     'specific' — all other cadences.  User picks an exact date.
+ *   Two anchor modes, determined by cadence:
  *
- *   There is no user-facing toggle between the two modes; the cadence
- *   determines which UI is shown.
+ *   WEEKLY cadence:
+ *     User picks a day-of-week (Mon–Sun).  This is stored as `recurring_dow`
+ *     (0=Sun … 6=Sat) — the permanent source of truth.  `due_date` is derived
+ *     on save by db.js (always the next occurrence of that weekday at or after
+ *     today) and is never read back by this form; only `recurring_dow` is.
+ *
+ *   All other cadences:
+ *     User picks a specific date which becomes `due_date` directly.
+ *
+ *   On EDIT, the day-of-week picker is initialised from `task.recurring_dow`
+ *   (not from `due_date`), so it always shows exactly what the user set.
  */
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
@@ -36,6 +40,7 @@ const CUSTOM_UNITS = [
   { val: 'months', label: 'months' },
 ];
 
+// Mon first, Sun last — display order only.
 const DAYS_OF_WEEK = [
   { val: 1, label: 'Mon' },
   { val: 2, label: 'Tue' },
@@ -45,19 +50,6 @@ const DAYS_OF_WEEK = [
   { val: 6, label: 'Sat' },
   { val: 0, label: 'Sun' },
 ];
-
-/**
- * Return the ISO date string for the NEXT (or today's) occurrence of `dow`
- * (0 = Sun … 6 = Sat).  Used only when creating a brand-new weekly task.
- */
-function nextOccurrenceOfWeekday(dow) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = (dow - today.getDay() + 7) % 7;
-  const d = new Date(today);
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
 
 function parseCadence(cadence) {
   if (!cadence) return { isCustom: false, preset: 'daily', customN: 2, customUnit: 'days' };
@@ -76,7 +68,6 @@ function serialiseCadence(isCustom, preset, customN, customUnit) {
 
 // ── Recurring section ──────────────────────────────────────────────────────────
 function RecurringSection({ task }) {
-  const isEdit = !!task?.id;
   const parsed = parseCadence(task?.recurring_cadence);
 
   const [isRecurring, setIsRecurring] = useState(!!task?.recurring);
@@ -88,17 +79,19 @@ function RecurringSection({ task }) {
 
   const isWeekly = !isCustom && preset === 'weekly';
 
-  const initDow = task?.due_date
-    ? new Date(task.due_date + 'T00:00:00').getDay()
-    : 2;
+  // ── Day-of-week for weekly tasks ──────────────────────────────────────────
+  // Initialise ONLY from recurring_dow — never from due_date.
+  // Default to Tuesday (2) for new tasks.
+  const initDow = task?.recurring_dow ?? 2;
   const [selectedDow, setSelectedDow] = useState(initDow);
+
+  // ── Specific-date anchor for non-weekly cadences ──────────────────────────
   const [dueDate, setDueDate] = useState(task?.due_date || '');
 
+  // When switching away from weekly, restore the task's existing due_date.
   useEffect(() => {
-    if (!isWeekly) {
-      setDueDate(task?.due_date || '');
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!isWeekly) setDueDate(task?.due_date || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWeekly]);
 
   const [untilMode,  setUntilMode]  = useState(task?.recurring_until ? 'date' : 'count');
@@ -106,12 +99,6 @@ function RecurringSection({ task }) {
   const [instCount,  setInstCount]  = useState(task?.recurring_instances || 10);
 
   const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
-
-  const computedDueDate = recType === 'reset'
-    ? (isWeekly
-        ? (isEdit && task?.due_date ? task.due_date : nextOccurrenceOfWeekday(selectedDow))
-        : dueDate)
-    : dueDate;
 
   return (
     <div className="tm-recurring-wrap">
@@ -187,8 +174,10 @@ function RecurringSection({ task }) {
             <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
               <span className="tm-rec-label" style={{ paddingTop: 6 }}>Due</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-                {isWeekly && (
+
+                {isWeekly ? (
                   <>
+                    {/* Day-of-week picker — value submitted via hidden input */}
                     <div className="tm-seg" role="group" aria-label="Day of week">
                       {DAYS_OF_WEEK.map(d => (
                         <button key={d.val} type="button"
@@ -199,11 +188,15 @@ function RecurringSection({ task }) {
                       ))}
                     </div>
                     <p className="tm-rec-hint" style={{ marginTop: 0 }}>
-                      {`Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}. Complete it early and it holds until that day; complete it late and it advances to the next ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label}.`}
+                      {`Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label ?? ''}.
+                        Complete it early and it holds until that day;
+                        complete it late and it resets to the following
+                        ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label ?? ''}.`}
                     </p>
+                    {/* recurring_dow is the source of truth for weekly tasks. */}
+                    <input type="hidden" name="recurring_dow" value={selectedDow} />
                   </>
-                )}
-                {!isWeekly && (
+                ) : (
                   <>
                     <input type="date" value={dueDate}
                       onChange={e => setDueDate(e.target.value)}
@@ -213,19 +206,22 @@ function RecurringSection({ task }) {
                         color: 'var(--color-text-primary)' }}
                     />
                     <p className="tm-rec-hint" style={{ marginTop: 0 }}>
-                      Resets each cycle on this date. Complete it early and it holds until the due date; complete it late and it advances to the next scheduled occurrence.
+                      Resets each cycle on this date.
+                      Complete it early and it holds until the due date;
+                      complete it late and it advances to the next occurrence.
                     </p>
+                    <input type="hidden" name="recurring_due_date" value={dueDate} />
+                    <input type="hidden" name="recurring_dow" value="" />
                   </>
                 )}
               </div>
             </div>
           )}
 
-          <input type="hidden" name="recurring_due_date" value={computedDueDate} />
-
           {/* ── Expand-only: end condition ── */}
           {recType === 'expand' && (
             <div className="tm-rec-until">
+              <input type="hidden" name="recurring_dow" value="" />
               <div className="tm-rec-row" style={{ alignItems: 'flex-start', gap: 12 }}>
                 <span className="tm-rec-label" style={{ paddingTop: 6 }}>End</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
@@ -276,6 +272,7 @@ function RecurringSection({ task }) {
         <>
           <input type="hidden" name="recurring_type"      value="" />
           <input type="hidden" name="cadence"             value="" />
+          <input type="hidden" name="recurring_dow"       value="" />
           <input type="hidden" name="recurring_due_date"  value="" />
           <input type="hidden" name="recurring_until"     value="" />
           <input type="hidden" name="recurring_instances" value="" />
@@ -296,7 +293,7 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   const [substeps,    setSubsteps]   = useState(
     (task?.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 }))
   );
-  const [newStepText, setNewStepText] = useState('');
+  const [newStepText,   setNewStepText]   = useState('');
   const [newStepWeight, setNewStepWeight] = useState(1);
 
   const addSubstep = () => {
@@ -316,13 +313,32 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const fd          = new FormData(e.target);
+    const fd = new FormData(e.target);
+
     const isRecurring = fd.get('recurring') === 'on';
     const recType     = fd.get('recurring_type') || 'reset';
+    const cadence     = fd.get('cadence') || 'daily';
     const rawUntil    = fd.get('recurring_until');
     const rawCount    = fd.get('recurring_instances');
+
+    // recurring_dow: only meaningful for weekly reset tasks.
+    const rawDow = fd.get('recurring_dow');
+    const isWeeklyCadence = isRecurring && recType === 'reset' && cadence === 'weekly';
+    const recurringDow = isWeeklyCadence && rawDow !== '' && rawDow !== null
+      ? parseInt(rawDow, 10)
+      : null;
+
+    // due_date for non-weekly reset tasks comes from the date picker.
+    // For weekly tasks, db.js derives due_date from recurring_dow on save —
+    // we pass null here and let the server-side logic handle it.
     const recurringDueDate = fd.get('recurring_due_date') || null;
-    const topDueDate  = fd.get('due_date') || null;
+    const topDueDate       = fd.get('due_date') || null;
+
+    const due_date = (() => {
+      if (!isRecurring || recType !== 'reset') return topDueDate;
+      if (isWeeklyCadence) return null;  // db.js will set this from recurring_dow
+      return recurringDueDate || topDueDate;
+    })();
 
     const payload = {
       ...(task || {}),
@@ -330,15 +346,14 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       name:                  fd.get('name').trim(),
       status:                fd.get('status'),
       priority:              fd.get('priority'),
-      due_date:              (isRecurring && recType === 'reset')
-                               ? (recurringDueDate || topDueDate)
-                               : topDueDate,
+      due_date,
       estimated_hours:       parseFloat(fd.get('estimated_hours')) || 1,
       notes:                 fd.get('notes') || null,
       manual_progress:       task?.manual_progress ?? 0,
       recurring:             isRecurring,
       recurring_type:        isRecurring ? recType : null,
-      recurring_cadence:     isRecurring ? (fd.get('cadence') || 'daily') : null,
+      recurring_cadence:     isRecurring ? cadence  : null,
+      recurring_dow:         recurringDow,
       recurring_until:       (isRecurring && recType === 'expand' && rawUntil)  ? rawUntil           : null,
       recurring_instances:   (isRecurring && recType === 'expand' && rawCount)  ? parseInt(rawCount) : null,
       is_recurring_template: isRecurring && recType === 'expand',
@@ -350,6 +365,8 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
     try {
       await onSave(payload);
       onClose();
+    } catch (err) {
+      console.error('Save failed:', err);
     } finally {
       setSubmitting(false);
     }

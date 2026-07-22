@@ -13,16 +13,28 @@
  *   recurring_cadence        — 'daily' | 'weekday' | 'weekly' |
  *                              'every_N_days' | 'every_N_weeks' | 'every_N_months'
  *   recurring_type           — 'reset' | 'expand'
+ *   recurring_dow            — 0–6 (Sun=0…Sat=6), set ONLY for weekly tasks.
+ *                              This is the source of truth for which day the
+ *                              task recurs on.  due_date is always the NEXT
+ *                              upcoming occurrence of that weekday and is
+ *                              re-derived from recurring_dow on every save.
  *   recurring_until          — date string, end date for expand tasks
  *   recurring_instances      — integer, max occurrences for expand tasks
  *   is_recurring_template    — boolean, true on the master expand row
  *   recurring_template_id    — uuid FK back to the template row
  *   updated_at               — timestamptz, auto-set by trigger
  *
+ * Date handling:
+ *   ALL date strings are 'YYYY-MM-DD'.  We NEVER pass a bare ISO date string
+ *   to `new Date()` because that is interpreted as UTC midnight, which shifts
+ *   the local date by the UTC offset.  Instead use parseLocalDate() which
+ *   builds a local-midnight Date from the numeric parts.
+ *
  * Reset scheduling:
  *   due_date is the anchor for reset-mode tasks.  On each reset, due_date
- *   advances by one cadence period from its *previous* value (not from today),
- *   so the schedule never drifts even when tasks are completed late.
+ *   advances to the next occurrence of recurring_dow (for weekly tasks) or
+ *   by one cadence period (all others) from its *previous* value, so the
+ *   schedule never drifts even when tasks are completed late.
  *
  *   Behaviour:
  *     - status becomes 'done' + now >= due_date  → reset & advance due_date
@@ -30,6 +42,54 @@
  *     - status NOT done       + now >= due_date  → show as overdue, do NOT reset
  */
 import { supabase } from './supabase.js';
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Parse a 'YYYY-MM-DD' string into a LOCAL midnight Date.
+ * Never use `new Date(dateString)` for bare dates — it is UTC-interpreted.
+ */
+export function parseLocalDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+/** Format a Date as 'YYYY-MM-DD' in local time. */
+export function formatLocalDate(dt) {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Return the LOCAL date string for the next (or today's) occurrence of `dow`
+ * (0=Sun … 6=Sat) at or after `fromDate` (a local-midnight Date or 'YYYY-MM-DD').
+ * This is the canonical way to compute weekly due_dates — it looks at the
+ * actual weekday, so +7-day arithmetic can never shift the day of week.
+ */
+export function nextOccurrenceOfDow(dow, fromDate) {
+  const base = typeof fromDate === 'string' ? parseLocalDate(fromDate) : new Date(fromDate);
+  base.setHours(0, 0, 0, 0);
+  const diff = (dow - base.getDay() + 7) % 7;
+  const result = new Date(base);
+  result.setDate(result.getDate() + diff);
+  return formatLocalDate(result);
+}
+
+/**
+ * Return the LOCAL date string for the NEXT (strictly future) occurrence of
+ * `dow` after `fromDate`.  Always advances at least one day.
+ */
+export function nextFutureOccurrenceOfDow(dow, fromDate) {
+  const base = typeof fromDate === 'string' ? parseLocalDate(fromDate) : new Date(fromDate);
+  base.setHours(0, 0, 0, 0);
+  // Advance one day first so we never return fromDate itself.
+  base.setDate(base.getDate() + 1);
+  return nextOccurrenceOfDow(dow, base);
+}
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 export function toDbStatus(s) {
@@ -43,55 +103,72 @@ export function toUiStatus(s) {
 
 // ── Cadence helpers ───────────────────────────────────────────────────────────
 /**
- * Advance `fromDate` by exactly one cadence period and return the new Date.
- * Always advances from the *scheduled* date, not from today, so the
- * schedule stays anchored and never drifts on late completions.
+ * Advance `fromDate` by exactly one cadence period and return the new LOCAL
+ * date string.  For 'weekly' cadences the task MUST have a recurring_dow set;
+ * pass it as the third argument and the next occurrence of that weekday is
+ * returned — making it impossible for the day-of-week to drift.
+ *
+ * For all other cadences `dow` is ignored.
  */
-export function nextScheduledDate(cadence, fromDate) {
-  const d = new Date(fromDate);
+export function nextScheduledDate(cadence, fromDate, dow) {
+  const d = typeof fromDate === 'string' ? parseLocalDate(fromDate) : new Date(fromDate);
   d.setHours(0, 0, 0, 0);
 
   if (!cadence || cadence === 'daily') {
     d.setDate(d.getDate() + 1);
-    return d;
+    return formatLocalDate(d);
   }
+
   if (cadence === 'weekday') {
-    // advance to the next Mon–Fri
+    // Advance to the next Mon–Fri.
     do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
-    return d;
+    return formatLocalDate(d);
   }
+
   if (cadence === 'weekly') {
+    // Always jump to the next occurrence of the canonical weekday.
+    // If dow is somehow undefined, fall back to +7 days.
+    if (dow !== undefined && dow !== null) {
+      return nextFutureOccurrenceOfDow(dow, d);
+    }
     d.setDate(d.getDate() + 7);
-    return d;
+    return formatLocalDate(d);
   }
+
   // custom: 'every_N_days' | 'every_N_weeks' | 'every_N_months'
   const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
   if (m) {
     const n = parseInt(m[1], 10);
-    if (m[2] === 'day')   { d.setDate(d.getDate() + n);   return d; }
-    if (m[2] === 'week')  { d.setDate(d.getDate() + n*7); return d; }
-    if (m[2] === 'month') { d.setMonth(d.getMonth() + n); return d; }
+    if (m[2] === 'day')   { d.setDate(d.getDate() + n);   return formatLocalDate(d); }
+    if (m[2] === 'week') {
+      // every_N_weeks also respects dow if provided.
+      if (dow !== undefined && dow !== null) {
+        d.setDate(d.getDate() + n * 7);
+        return nextOccurrenceOfDow(dow, d);
+      }
+      d.setDate(d.getDate() + n * 7);
+      return formatLocalDate(d);
+    }
+    if (m[2] === 'month') { d.setMonth(d.getMonth() + n); return formatLocalDate(d); }
   }
+
   // fallback
   d.setDate(d.getDate() + 1);
-  return d;
+  return formatLocalDate(d);
 }
 
 /**
- * Given a cadence and a fromDate, keep advancing until the result is
- * strictly in the future (> today).  Handles the case where a task is
- * completed very late and the next scheduled date is already in the past.
+ * Keep advancing by one cadence period until the result is strictly in the
+ * future (> today).  Handles tasks completed very late whose next scheduled
+ * date is already in the past.
  */
-export function nextFutureScheduledDate(cadence, fromDate) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  let d = new Date(fromDate);
-  d.setHours(0, 0, 0, 0);
-  // Advance at least once, then keep going until we land in the future
+export function nextFutureScheduledDate(cadence, fromDate, dow) {
+  const today = formatLocalDate(new Date());
+  let cur = typeof fromDate === 'string' ? fromDate : formatLocalDate(fromDate);
   do {
-    d = nextScheduledDate(cadence, d);
-  } while (d <= today);
-  return d;
+    cur = nextScheduledDate(cadence, cur, dow);
+  } while (cur <= today);
+  return cur;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -160,6 +237,7 @@ function dbTaskToApp(t) {
     recurring:               rest.recurring               ?? false,
     recurring_type:          rest.recurring_type          ?? null,
     recurring_cadence:       rest.recurring_cadence       ?? null,
+    recurring_dow:           rest.recurring_dow           ?? null,
     recurring_until:         rest.recurring_until         ?? null,
     recurring_instances:     rest.recurring_instances     ?? null,
     is_recurring_template:   rest.is_recurring_template   ?? false,
@@ -187,13 +265,37 @@ export async function saveTask(task) {
     ...rest
   } = task;
 
+  // For weekly reset tasks: always re-derive due_date from recurring_dow so
+  // the stored date is guaranteed to fall on the right day of the week.
+  let resolvedDueDate = rest.due_date ?? null;
+  if (
+    rest.recurring &&
+    rest.recurring_type === 'reset' &&
+    rest.recurring_cadence === 'weekly' &&
+    rest.recurring_dow !== null &&
+    rest.recurring_dow !== undefined
+  ) {
+    const today = formatLocalDate(new Date());
+    // If the stored due_date already falls on the right DOW and is in the
+    // future (or today), keep it — don't bump it forward unnecessarily.
+    const keepExisting =
+      resolvedDueDate &&
+      parseLocalDate(resolvedDueDate).getDay() === rest.recurring_dow &&
+      resolvedDueDate >= today;
+    if (!keepExisting) {
+      resolvedDueDate = nextOccurrenceOfDow(rest.recurring_dow, today);
+    }
+  }
+
   const row = {
     ...rest,
+    due_date:  resolvedDueDate,
     status:   toDbStatus(rest.status),
     progress: manual_progress ?? manualProgress ?? rest.progress ?? 0,
     recurring:             rest.recurring             ?? false,
     recurring_type:        rest.recurring_type        ?? null,
     recurring_cadence:     rest.recurring_cadence     ?? null,
+    recurring_dow:         rest.recurring_dow         ?? null,
     recurring_until:       rest.recurring_until       ?? null,
     recurring_instances:   rest.recurring_instances   ?? null,
     is_recurring_template: rest.is_recurring_template ?? false,
@@ -224,43 +326,44 @@ export async function removeTask(id) {
  * Called once on app load.  For each reset-mode recurring task:
  *
  *   Case A — status is 'done' AND now >= due_date:
- *     Reset to 'not-started', advance due_date to the next future scheduled
- *     date from the *previous* due_date (not from today), so the schedule
- *     never drifts even on late completions.
+ *     Reset to 'not-started', advance due_date:
+ *       - weekly  → next future occurrence of recurring_dow after due_date
+ *       - others  → one cadence period after due_date
+ *     Always advances from the *scheduled* due_date, not from today.
  *
  *   Case B — status is 'done' AND now < due_date:
- *     Leave as-is.  Task was completed early; wait for due_date to arrive.
+ *     Leave as-is (completed early; wait for due_date).
  *
  *   Case C — status is NOT 'done' AND now >= due_date:
- *     Leave as-is.  Task is overdue.  Do not reset until user completes it.
+ *     Leave as-is (overdue; do not reset until user completes it).
  *
  *   Case D — status is NOT 'done' AND now < due_date:
  *     Nothing to do.
  */
 export async function resetStaleRecurringTasks(tasks, userId) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = formatLocalDate(new Date());
 
   const toReset = tasks.filter(t => {
     if (!t.recurring || t.recurring_type !== 'reset') return false;
-    if (t.status !== 'done') return false;            // Cases C & D — leave alone
-    if (!t.due_date) return false;                    // no anchor → skip (shouldn't happen post-migration)
-    const due = new Date(t.due_date);
-    due.setHours(0, 0, 0, 0);
-    return today >= due;                              // Case A only
+    if (t.status !== 'done') return false;
+    if (!t.due_date) return false;
+    return t.due_date <= today;  // Case A only
   });
 
   if (toReset.length === 0) return [];
 
   const updated = await Promise.all(
     toReset.map(t => {
-      // Advance from the scheduled due_date (not today) so the pattern stays fixed
-      const nextDue = nextFutureScheduledDate(t.recurring_cadence, t.due_date);
+      const nextDue = nextFutureScheduledDate(
+        t.recurring_cadence,
+        t.due_date,
+        t.recurring_dow ?? undefined,
+      );
       return saveTask({
         ...t,
         status:          'not-started',
         manual_progress: 0,
-        due_date:        nextDue.toISOString().slice(0, 10),
+        due_date:        nextDue,
       });
     })
   );
@@ -271,26 +374,27 @@ export async function resetStaleRecurringTasks(tasks, userId) {
 // ── Recurring: expand (spawn instances) ──────────────────────────────────────
 export async function expandRecurringTemplate(template, userId) {
   const cadence  = template.recurring_cadence || 'daily';
-  const until    = template.recurring_until    ? new Date(template.recurring_until) : null;
+  const dow      = template.recurring_dow ?? undefined;
+  const until    = template.recurring_until ? parseLocalDate(template.recurring_until) : null;
   const maxCount = template.recurring_instances ?? 10;
 
   const dates = [];
-  let cursor = new Date();
-  cursor.setHours(0, 0, 0, 0);
+  let cursor = formatLocalDate(new Date());
 
   while (true) {
-    const dow = cursor.getDay();
+    const curDate = parseLocalDate(cursor);
+    const dayOfWeek = curDate.getDay();
     const eligible =
-      cadence === 'weekday' ? (dow >= 1 && dow <= 5) : true;
+      cadence === 'weekday' ? (dayOfWeek >= 1 && dayOfWeek <= 5) : true;
 
-    if (eligible) dates.push(cursor.toISOString().slice(0, 10));
-    if (until  && cursor >= until)           break;
+    if (eligible) dates.push(cursor);
+    if (until && curDate >= until)           break;
     if (!until && dates.length >= maxCount)  break;
     if (dates.length >= 365)                 break;
 
-    cursor = cadence === 'daily' || cadence === 'weekday'
-      ? (() => { const d = new Date(cursor); d.setDate(d.getDate() + 1); return d; })()
-      : nextScheduledDate(cadence, cursor);
+    cursor = (cadence === 'daily' || cadence === 'weekday')
+      ? (() => { const d = parseLocalDate(cursor); d.setDate(d.getDate() + 1); return formatLocalDate(d); })()
+      : nextScheduledDate(cadence, cursor, dow);
   }
 
   if (dates.length === 0) return [];
@@ -309,6 +413,7 @@ export async function expandRecurringTemplate(template, userId) {
     recurring:             false,
     recurring_type:        null,
     recurring_cadence:     null,
+    recurring_dow:         null,
     recurring_until:       null,
     recurring_instances:   null,
     is_recurring_template: false,
@@ -328,7 +433,7 @@ export async function fetchSubsteps(userId) {
   return data || [];
 }
 export async function saveSubstep(substep) {
-  // Pass weight through — it is a real column on the substeps table.
+  // Pass all fields through — weight is a real column on the substeps table.
   const isNew = !substep.id;
   let data, error;
   if (isNew) {
