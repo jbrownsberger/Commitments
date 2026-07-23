@@ -22,7 +22,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <Splash text="Loading\u2026" />;
+  if (session === undefined) return <Splash text="Loading…" />;
   if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
@@ -186,7 +186,7 @@ function LoginPage() {
               className="btn btn-primary login-submit"
               disabled={loading}
             >
-              {loading            ? 'Please wait\u2026'   :
+              {loading            ? 'Please wait…'   :
                mode === 'magic'    ? 'Send magic link' :
                mode === 'password' ? 'Sign in'         : 'Create account'}
             </button>
@@ -194,9 +194,9 @@ function LoginPage() {
 
           <p className="login-hint">
             {mode === 'magic'
-              ? 'We\u2019ll email you a one-click sign-in link. No password needed.'
+              ? 'We’ll email you a one-click sign-in link. No password needed.'
               : mode === 'signup'
-              ? 'You\u2019ll receive a confirmation email before you can sign in.'
+              ? 'You’ll receive a confirmation email before you can sign in.'
               : null}
           </p>
         </div>
@@ -265,7 +265,7 @@ function AuthedApp({ userId, userEmail }) {
   const gcalSettings = loadGcalSettings();
   const gcalSelCals  = [...loadSelectedCals()];
 
-  if (appData.loading) return <Splash text="Loading your data\u2026" />;
+  if (appData.loading) return <Splash text="Loading your data…" />;
   if (appData.error)   return (
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
       color: 'var(--color-text-danger)', fontSize: 13 }}>
