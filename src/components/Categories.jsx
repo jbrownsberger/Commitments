@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Modal from './Modal.jsx';
-import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, formatDate } from './TaskPanel.jsx';
+import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, formatDate, cadenceLabel } from './TaskPanel.jsx';
+import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import '../styles/categories.css';
 
 const COLORS = [
@@ -26,8 +27,14 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const tasksFor = (catId) => (tasks || [])
-    .filter(t => t.category_id === catId)
+    .filter(t => t.category_id === catId && isWorkTask(t))
     .sort((a, b) => (a.position || 0) - (b.position || 0));
+
+  const taskBadge = (task) => {
+    if (task.recurring) return cadenceLabel(task) || 'recurring';
+    if (isSeriesInstance(task)) return 'series';
+    return null;
+  };
 
   const toggleCat   = (id) => setOpenCats(p  => ({ ...p, [id]: !p[id] }));
   const toggleCompl = (id) => setOpenCompl(p => ({ ...p, [id]: !p[id] }));
@@ -110,7 +117,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
                         cat={cat}
                         onCycle={cycleStatus}
                         onOpen={openPanel}
-                        badge={task.recurring ? (task.recurring_cadence || 'daily') : null}
+                        badge={taskBadge(task)}
                       />
                     ))}
                   </div>
@@ -133,7 +140,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
                               cat={cat}
                               onCycle={cycleStatus}
                               onOpen={openPanel}
-                              badge={task.recurring ? (task.recurring_cadence || 'daily') : null}
+                              badge={taskBadge(task)}
                             />
                           ))}
                         </div>
@@ -185,10 +192,10 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
           cat={panelTask.cat}
           onClose={() => setPanelTask(null)}
           onSave={async (updated) => {
-            await saveTask(updated);
-            // Update the panel's local task reference so it stays in sync,
-            // but do NOT close the panel — only Close/Edit/Delete should do that.
-            setPanelTask(prev => prev ? { ...prev, task: updated } : null);
+            const saved = await saveTask(updated);
+            // Use returned row (rolling may have advanced). Keep panel open.
+            setPanelTask(prev => prev ? { ...prev, task: saved || updated } : null);
+            return saved;
           }}
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
           onEdit={(task) => {

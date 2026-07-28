@@ -13,6 +13,12 @@
  */
 import React, { useState, useRef } from 'react';
 import Modal from './Modal.jsx';
+import {
+  cadenceLabel as engineCadenceLabel,
+  modeLabel,
+  isSeriesInstance,
+  isSeriesTemplate,
+} from '../lib/recurrence.js';
 
 const STATUS_CYCLE = ['not started', 'in progress', 'done'];
 
@@ -80,59 +86,45 @@ const PRIORITY_STYLES = {
 };
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
 
-// ── Recurring cadence label ────────────────────────────────────────────────
-// Maps 0-6 (Sun…Sat) to full day names.
-const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-
-/**
- * Returns a human-readable cadence string for a task, e.g.:
- *   'daily', 'weekdays', 'weekly on Thursday', 'every 2 weeks', 'every 3 months'
- *
- * For weekly tasks, reads recurring_dow (the canonical source of truth).
- * Falls back to deriving the day from due_date only if recurring_dow is absent
- * (for any legacy rows created before the migration).
- */
+/** Human-readable cadence string (re-exported for Overview / Categories). */
 export function cadenceLabel(task) {
-  const cadence = task.recurring_cadence;
-  if (!cadence) return '';
-
-  if (cadence === 'daily')   return 'daily';
-  if (cadence === 'weekday') return 'weekdays';
-
-  if (cadence === 'weekly') {
-    let dow = task.recurring_dow;
-    // Legacy fallback: derive from due_date if recurring_dow not set.
-    if (dow === null || dow === undefined) {
-      if (task.due_date) {
-        const [y, m, d] = task.due_date.split('-').map(Number);
-        dow = new Date(y, m - 1, d).getDay();
-      }
-    }
-    const dayName = (dow !== null && dow !== undefined) ? DOW_NAMES[dow] : null;
-    return dayName ? `weekly on ${dayName}` : 'weekly';
-  }
-
-  // Custom cadences: 'every_N_days' | 'every_N_weeks' | 'every_N_months'
-  const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
-  if (m) {
-    const n    = parseInt(m[1], 10);
-    const unit = m[2];
-    return n === 1 ? `every ${unit}` : `every ${n} ${unit}s`;
-  }
-
-  return cadence;
+  return engineCadenceLabel(task);
 }
 
 // ── Recurring meta badge ───────────────────────────────────────────────────
 function RecurringMeta({ task }) {
+  // Series instances: light "part of series" note
+  if (isSeriesInstance(task)) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 12,
+        color: 'var(--color-text-info, var(--color-text-secondary))',
+        marginTop: 8,
+        padding: '5px 8px',
+        background: 'var(--color-background-info, rgba(59,130,246,0.06))',
+        borderRadius: 'var(--radius-sm, 4px)',
+        width: 'fit-content',
+      }}>
+        <span style={{ fontSize: 13 }}>⧉</span>
+        <span>Part of a series</span>
+      </div>
+    );
+  }
+
   if (!task.recurring || !task.recurring_cadence) return null;
 
   const label = cadenceLabel(task);
+  const mode = modeLabel(task);
+  const isTemplate = isSeriesTemplate(task);
 
-  let lastResetStr = null;
-  if (task.updated_at) {
+  let lastCompletedStr = null;
+  const completedAt = task.recurring_last_completed_at;
+  if (completedAt) {
     try {
-      lastResetStr = new Date(task.updated_at).toLocaleDateString('en-US', {
+      lastCompletedStr = new Date(completedAt).toLocaleDateString('en-US', {
         month: 'short', day: 'numeric',
       });
     } catch (_) {}
@@ -150,12 +142,18 @@ function RecurringMeta({ task }) {
       background: 'var(--color-background-info, rgba(59,130,246,0.06))',
       borderRadius: 'var(--radius-sm, 4px)',
       width: 'fit-content',
+      flexWrap: 'wrap',
     }}>
       <span style={{ fontSize: 13 }}>↻</span>
       <span>Repeats {label}</span>
-      {lastResetStr && (
-        <span style={{ color: 'var(--color-text-tertiary, var(--color-text-secondary))', marginLeft: 2 }}>
-          · last reset {lastResetStr}
+      {mode && (
+        <span style={{ color: 'var(--color-text-tertiary, var(--color-text-secondary))' }}>
+          · {mode}{isTemplate ? ' template' : ''}
+        </span>
+      )}
+      {lastCompletedStr && (
+        <span style={{ color: 'var(--color-text-tertiary, var(--color-text-secondary))' }}>
+          · last completed {lastCompletedStr}
         </span>
       )}
     </div>
@@ -182,11 +180,24 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
     : days === 0 ? 'today'
     : `${days}d left`;
 
-  // Persist a partial update
-  const save = (updates) => {
+  // Persist a partial update. Rolling tasks may advance on complete — apply
+  // the returned task so the panel shows the next due date immediately.
+  const save = async (updates) => {
     const next = { ...local, ...updates };
     setLocal(next);
-    onSave(next);
+    try {
+      const result = await onSave(next);
+      if (result && result.id === next.id) {
+        setLocal({
+          ...result,
+          substeps: (result.substeps || next.substeps || []).map(s => ({
+            ...s, weight: s.weight ?? 1,
+          })),
+        });
+      }
+    } catch (e) {
+      console.error('TaskPanel save failed:', e);
+    }
   };
 
   // ── Status button

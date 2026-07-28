@@ -5,6 +5,7 @@ import {
   clearPushEntry,
   seedPushStatusFromRegistry,
 } from '../lib/gcalScheduler.js';
+import { isSeriesTemplate as isExpandTemplate } from '../lib/recurrence.js';
 import '../styles/planner.css';
 
 const SHOW_WEEKS = 4;
@@ -51,13 +52,6 @@ function hoursOnDay(task, iso, todayISO) {
   const perUnweighted = unweighted.length > 0
     ? Math.max(rem - explicitTotal, 0) / unweighted.length : 0;
   return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
-}
-
-// Expand templates are meta-rows that spawn instances — exclude them from the
-// planner.  Regular recurring tasks (reset mode) are real tasks and should
-// appear just like any other active task.
-function isExpandTemplate(t) {
-  return t.is_recurring_template === true;
 }
 
 /**
@@ -1045,7 +1039,11 @@ export default function Planner({ appData, userId, onEditTask }) {
           task={panelTask.task}
           cat={panelTask.cat}
           onClose={() => setPanelTask(null)}
-          onSave={async (updated) => { await saveTask(updated); setPanelTask({ ...panelTask, task: updated }); }}
+          onSave={async (updated) => {
+            const saved = await saveTask(updated);
+            setPanelTask(prev => prev ? { ...prev, task: saved || updated } : null);
+            return saved;
+          }}
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
           onEdit={(task) => { setPanelTask(null); onEditTask(task); }}
         />

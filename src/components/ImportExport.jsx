@@ -26,8 +26,10 @@ function tasksToICS(tasks, categories) {
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const stamp  = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
+  // Export dated work items: rolling tasks + series instances + one-offs.
+  // Skip series templates (meta-rows) and completed tasks.
   const vtodos = tasks
-    .filter(t => !t.recurring && t.status !== 'done')
+    .filter(t => !t.is_recurring_template && t.status !== 'done')
     .map(t => {
       const catName = catMap[t.category_id]?.name || '';
       const due = t.due_date ? `\nDUE;VALUE=DATE:${toICSDate(t.due_date)}` : '';
@@ -111,18 +113,28 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
       preferences,
       categories: categories.map(({ id, name, color }) => ({ id, name, color })),
       tasks: tasks.map(t => ({
-        id:              t.id,
-        category_id:     t.category_id,
-        name:            t.name,
-        status:          t.status,
-        priority:        t.priority,
-        due_date:        t.due_date,
-        estimated_hours: t.estimated_hours,
-        manual_progress: t.manual_progress,
-        notes:           t.notes,
-        recurring:       t.recurring,
-        substeps:        (t.substeps || []).map(s => ({ text: s.text, done: s.done })),
-        scheduled_days:  t.scheduled_days,
+        id:                          t.id,
+        category_id:                 t.category_id,
+        name:                        t.name,
+        status:                      t.status,
+        priority:                    t.priority,
+        due_date:                    t.due_date,
+        estimated_hours:             t.estimated_hours,
+        manual_progress:             t.manual_progress,
+        notes:                       t.notes,
+        recurring:                   t.recurring,
+        recurring_type:              t.recurring_type,
+        recurring_cadence:           t.recurring_cadence,
+        recurring_dow:               t.recurring_dow,
+        recurring_dom:               t.recurring_dom,
+        recurring_start:             t.recurring_start,
+        recurring_until:             t.recurring_until,
+        recurring_instances:         t.recurring_instances,
+        is_recurring_template:       t.is_recurring_template,
+        recurring_template_id:       t.recurring_template_id,
+        recurring_last_completed_at: t.recurring_last_completed_at,
+        substeps:                    (t.substeps || []).map(s => ({ text: s.text, done: s.done, weight: s.weight })),
+        scheduled_days:              t.scheduled_days,
       })),
       quickTasks: (quickTasks || []).map(q => ({
         name: q.name, done: q.done, timeframeMinutes: q.timeframeMinutes, deadline: q.deadline,
@@ -180,16 +192,30 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
         const key = `${newCatId}::${t.name.toLowerCase()}`;
         if (existingKeys.has(key)) continue;
         await saveTask({
-          category_id:     newCatId,
-          name:            t.name,
-          status:          t.status || 'not started',
-          priority:        t.priority || 'med',
-          due_date:        t.due_date || null,
-          estimated_hours: t.estimated_hours || 1,
-          manual_progress: t.manual_progress || 0,
-          notes:           t.notes || '',
-          substeps:        (t.substeps || []).map(s => ({ text: s.text, done: s.done ?? false })),
-          scheduled_days:  t.scheduled_days || [],
+          category_id:                 newCatId,
+          name:                        t.name,
+          status:                      t.status || 'not started',
+          priority:                    t.priority || 'med',
+          due_date:                    t.due_date || null,
+          estimated_hours:             t.estimated_hours || 1,
+          manual_progress:             t.manual_progress || 0,
+          notes:                       t.notes || '',
+          recurring:                   !!t.recurring,
+          recurring_type:              t.recurring_type || null,
+          recurring_cadence:           t.recurring_cadence || null,
+          recurring_dow:               t.recurring_dow ?? null,
+          recurring_dom:               t.recurring_dom ?? null,
+          recurring_start:             t.recurring_start || null,
+          recurring_until:             t.recurring_until || null,
+          recurring_instances:         t.recurring_instances ?? null,
+          is_recurring_template:       !!t.is_recurring_template,
+          // Do not re-link to old template ids from another DB
+          recurring_template_id:       null,
+          recurring_last_completed_at: t.recurring_last_completed_at || null,
+          substeps:                    (t.substeps || []).map(s => ({
+            text: s.text, done: s.done ?? false, weight: s.weight ?? 1,
+          })),
+          scheduled_days:              t.scheduled_days || [],
         });
         imported++;
       }

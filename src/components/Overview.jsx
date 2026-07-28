@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor } from './TaskPanel.jsx';
+import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, cadenceLabel } from './TaskPanel.jsx';
 import QuickTasks from './QuickTasks.jsx';
+import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import '../styles/overview.css';
 
 /* ── Inline capacity editor ──────────────────────────────────────────────────── */
@@ -162,9 +163,10 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     substeps:        t.substeps        ?? [],
   });
 
-  const allTasks = tasks || [];
+  // Series templates are meta-rows — never show them as work.
+  const allTasks = (tasks || []).filter(isWorkTask);
 
-  // Recurring tasks are first-class citizens of the incomplete list.
+  // Rolling recurring tasks are first-class citizens of the incomplete list.
   const allInc = allTasks.filter(t => t.status !== 'done').map(enrich);
 
   // Stats
@@ -232,8 +234,9 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     const next  = cycle[(cycle.indexOf(task.status) + 1) % cycle.length];
     const updated = { ...task, status: next,
       manual_progress: next === 'done' ? 100 : next === 'not started' ? 0 : task.manual_progress };
-    await saveTask(updated);
-    if (panelTask?.id === task.id) setPanelTask(updated);
+    // saveTask may advance rolling tasks — use the returned row
+    const saved = await saveTask(updated);
+    if (panelTask?.id === task.id) setPanelTask(saved || updated);
   };
 
   const toggleNextSubstep = async (task) => {
@@ -243,13 +246,14 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     const prog     = taskProgress({ ...task, substeps });
     const status   = statusFromProgress(prog, task.status);
     const updated  = { ...task, substeps, manual_progress: prog, status };
-    await saveTask(updated);
-    if (panelTask?.id === task.id) setPanelTask(updated);
+    const saved = await saveTask(updated);
+    if (panelTask?.id === task.id) setPanelTask(saved || updated);
   };
 
   const handlePanelSave = async (updated) => {
-    await saveTask(updated);
-    setPanelTask(updated);
+    const saved = await saveTask(updated);
+    setPanelTask(saved || updated);
+    return saved;
   };
 
   const handleSaveCapacity = async (hours) => {
@@ -471,8 +475,11 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
   // Build a compact single-line sub-label: "Category · Xd overdue" or "Category · Xh left"
   // plus a right-side pill for hours this week or hours remaining.
+  const recLabel = task.recurring
+    ? cadenceLabel(task)
+    : (isSeriesInstance(task) ? 'series' : null);
   const subLeft = [
-    task.catName || (task.recurring ? '↻ ' + (task.recurring_cadence || 'recurring') : null),
+    task.catName || (recLabel ? '↻ ' + recLabel : null),
     isOverdue
       ? daysStr
       : (daysStr ? daysStr : null),
@@ -535,8 +542,8 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
               </div>
             )}
 
-            {/* Recurring cadence badge (only if name row doesn't already show it) */}
-            {task.recurring && task.catName && task.recurring_cadence && (
+            {/* Recurring / series badge (only if category already shown above) */}
+            {task.catName && (task.recurring || isSeriesInstance(task)) && (
               <div style={{ marginTop: 2 }}>
                 <span
                   className="focus-card-cat"
@@ -546,7 +553,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
                     fontSize: 10,
                   }}
                 >
-                  ↻ {task.recurring_cadence}
+                  {task.recurring ? `↻ ${cadenceLabel(task)}` : '⧉ series'}
                 </span>
               </div>
             )}

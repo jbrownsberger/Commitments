@@ -11,8 +11,12 @@ import {
   saveQuickTask         as dbSaveQuickTask,
   removeQuickTask       as dbRemoveQuickTask,
   setScheduledDays,
-  resetStaleRecurringTasks,
-  expandRecurringTemplate,
+  catchUpRollingTasks,
+  advanceRollingTask,
+  materializeSeries,
+  extendSeriesIfNeeded,
+  isRollingTask,
+  isSeriesTemplate,
 } from '../lib/db.js';
 
 const UNDO_LIMIT = 30;
@@ -65,11 +69,10 @@ export function useAppData(userId) {
           substeps: subs.filter(s => s.task_id === t.id),
         }));
 
-        // ── Auto-reset stale recurring tasks ──────────────────────────────────
-        // Runs silently; any resets are merged in before state is set.
-        // A DB error here never blocks the rest of the load.
-        const resetTasks = await resetStaleRecurringTasks(tasksWithSubs, userId)
-          .catch(e => { console.warn('recurring reset skipped:', e.message); return []; });
+        // ── Catch-up: rolling tasks left done under the old system ────────────
+        // Primary advance happens on complete; this is a safety net only.
+        const resetTasks = await catchUpRollingTasks(tasksWithSubs, userId)
+          .catch(e => { console.warn('recurring catch-up skipped:', e.message); return []; });
 
         const finalTasks = mergeUpdatedTasks(tasksWithSubs, resetTasks);
 
@@ -141,47 +144,102 @@ export function useAppData(userId) {
   // ── Tasks ───────────────────────────────────────────────────────────────────
   const saveTask = useCallback(async (task) => {
     pushUndo();
+
+    // Snapshot pre-save state for rolling "transitioned to done" detection.
+    const prevTask = task.id
+      ? tasks.find(t => t.id === task.id)
+      : null;
+    const wasDone = prevTask?.status === 'done';
+
     const { substeps: subs, ...taskData } = normaliseTaskFields(task);
-    const saved = await dbSaveTask({ ...taskData, user_id: userId });
+    let saved = await dbSaveTask({ ...taskData, user_id: userId });
 
     // Persist substeps
     let savedSubs = (subs && subs.length > 0)
       ? await Promise.all(
           subs.map((s, i) => dbSaveSubstep({ ...s, task_id: saved.id, user_id: userId, position: i }))
         )
-      : subs;
+      : (subs ?? []);
 
-    // ── Expand-mode: spawn instances for brand-new templates only ─────────────
-    // Skipped entirely on edits (task.id exists) and for reset-mode tasks.
-    let expandedInstances = [];
-    const isNewExpandTemplate = !task.id && saved.is_recurring_template === true;
-    if (isNewExpandTemplate) {
-      expandedInstances = await expandRecurringTemplate(saved, userId)
-        .catch(e => { console.warn('expand recurring skipped:', e.message); return []; });
+    saved = { ...saved, substeps: savedSubs };
+
+    // ── Rolling: advance immediately when the task becomes done ──────────────
+    const nowDone = saved.status === 'done';
+    const becameDone = nowDone && !wasDone;
+    // Also treat progress hitting 100 / explicit done on a rolling task as complete
+    // even if prev was already done (no double-advance).
+    if (isRollingTask(saved) && becameDone) {
+      try {
+        const advanced = await advanceRollingTask(
+          { ...saved, substeps: savedSubs },
+          userId,
+        );
+        saved = advanced;
+        savedSubs = advanced.substeps || [];
+      } catch (e) {
+        console.warn('rolling advance skipped:', e.message);
+      }
+    }
+
+    // ── Series: materialize instances for new templates ──────────────────────
+    let newInstances = [];
+    const isNewSeries = !task.id && isSeriesTemplate(saved);
+    if (isNewSeries) {
+      newInstances = await materializeSeries(saved, userId, { substeps: savedSubs })
+        .catch(e => { console.warn('series materialize skipped:', e.message); return []; });
+    }
+
+    // ── Series: extend on edit when bounds grow ──────────────────────────────
+    if (task.id && isSeriesTemplate(saved)) {
+      const existing = tasks.filter(t => t.recurring_template_id === saved.id);
+      newInstances = await extendSeriesIfNeeded(saved, existing, userId, {
+        substeps: savedSubs,
+      }).catch(e => { console.warn('series extend skipped:', e.message); return []; });
     }
 
     setTasks(prev => {
-      // Preserve scheduled_days from existing state — dbSaveTask doesn't return them.
       const existing = prev.find(t => t.id === saved.id);
       const withSubs = {
         ...saved,
-        scheduled_days:      existing?.scheduled_days      ?? task.scheduled_days      ?? [],
-        scheduled_day_hours: saved.scheduled_day_hours     ?? task.scheduled_day_hours ?? {},
+        scheduled_days:      saved.scheduled_days      ?? existing?.scheduled_days      ?? task.scheduled_days      ?? [],
+        scheduled_day_hours: saved.scheduled_day_hours ?? existing?.scheduled_day_hours ?? task.scheduled_day_hours ?? {},
         substeps:            savedSubs ?? existing?.substeps ?? [],
       };
 
-      const base = task.id
-        ? prev.map(t => t.id === saved.id ? withSubs : t)  // update existing
-        : [...prev, withSubs];                              // insert new template
+      // When rolling advanced, also clear scheduled days in local state.
+      if (isRollingTask(withSubs) && becameDone) {
+        withSubs.scheduled_days = [];
+        withSubs.scheduled_day_hours = {};
+      }
 
-      // Append spawned instances after the template row
-      return expandedInstances.length > 0
-        ? [...base, ...expandedInstances]
-        : base;
+      let base = task.id
+        ? prev.map(t => t.id === saved.id ? withSubs : t)
+        : [...prev, withSubs];
+
+      if (newInstances.length > 0) {
+        // Avoid duplicates if extend re-ran
+        const existingIds = new Set(base.map(t => t.id));
+        const fresh = newInstances.filter(t => !existingIds.has(t.id));
+        base = [...base, ...fresh];
+      }
+      return base;
     });
 
+    // Keep flat substeps list roughly in sync for any consumers
+    if (savedSubs && savedSubs.length > 0) {
+      setSubsteps(prev => {
+        const byId = Object.fromEntries(prev.map(s => [s.id, s]));
+        for (const s of savedSubs) byId[s.id] = s;
+        // Also merge instance substeps
+        for (const inst of newInstances) {
+          for (const s of (inst.substeps || [])) byId[s.id] = s;
+        }
+        return Object.values(byId);
+      });
+    }
+
     return saved;
-  }, [userId, pushUndo]);
+  }, [userId, pushUndo, tasks]);
 
   const removeTask = useCallback(async (id) => {
     pushUndo();

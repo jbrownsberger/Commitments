@@ -3,23 +3,23 @@
  * Always shows a category dropdown.
  * Inline substep add/remove/weight.
  *
- * Recurring reset-mode scheduling:
- *   Two anchor modes, determined by cadence:
+ * Recurring:
+ *   Rolling (reset) — one live task; completes → advances to next due.
+ *   Series  (expand) — hidden template + pre-dated instance tasks.
  *
- *   WEEKLY cadence:
- *     User picks a day-of-week (Mon–Sun).  This is stored as `recurring_dow`
- *     (0=Sun … 6=Sat) — the permanent source of truth.  `due_date` is derived
- *     on save by db.js (always the next occurrence of that weekday at or after
- *     today) and is never read back by this form; only `recurring_dow` is.
- *
- *   All other cadences:
- *     User picks a specific date which becomes `due_date` directly.
- *
- *   On EDIT, the day-of-week picker is initialised from `task.recurring_dow`
- *   (not from `due_date`), so it always shows exactly what the user set.
+ * Pattern controls set cadence / dow / dom. A single "First due" date is the
+ * schedule anchor for both modes (no competing top-level due field when
+ * recurring is on).
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Modal from './Modal.jsx';
+import {
+  parseCadenceString,
+  serialiseCadence,
+  firstOccurrenceOnOrAfter,
+  previewOccurrences,
+  todayStr,
+} from '../lib/recurrence.js';
 
 const PRIORITY_LABELS = { low: 'Low', med: 'Medium', high: 'High', critical: 'Critical' };
 const STATUS_OPTS = [
@@ -32,6 +32,7 @@ const PRESET_CADENCES = [
   { val: 'daily',   label: 'Daily'    },
   { val: 'weekday', label: 'Weekdays' },
   { val: 'weekly',  label: 'Weekly'   },
+  { val: 'monthly', label: 'Monthly'  },
 ];
 
 const CUSTOM_UNITS = [
@@ -51,54 +52,74 @@ const DAYS_OF_WEEK = [
   { val: 0, label: 'Sun' },
 ];
 
-function parseCadence(cadence) {
-  if (!cadence) return { isCustom: false, preset: 'daily', customN: 2, customUnit: 'days' };
-  const m = cadence.match(/^every_(\d+)_(day|week|month)s?$/);
-  if (m) return {
-    isCustom: true, preset: 'daily',
-    customN: parseInt(m[1], 10), customUnit: m[2] + 's',
-  };
-  return { isCustom: false, preset: cadence, customN: 2, customUnit: 'days' };
-}
-
-function serialiseCadence(isCustom, preset, customN, customUnit) {
-  if (!isCustom) return preset;
-  return `every_${customN}_${customUnit.replace(/s$/, '')}s`;
-}
-
 // ── Recurring section ──────────────────────────────────────────────────────────
-function RecurringSection({ task }) {
-  const parsed = parseCadence(task?.recurring_cadence);
+function RecurringSection({ task, isRecurring, setIsRecurring }) {
+  const parsed = parseCadenceString(task?.recurring_cadence);
 
-  const [isRecurring, setIsRecurring] = useState(!!task?.recurring);
-  const [recType,     setRecType]     = useState(task?.recurring_type || 'reset');
-  const [isCustom,    setIsCustom]    = useState(parsed.isCustom);
-  const [preset,      setPreset]      = useState(parsed.preset);
-  const [customN,     setCustomN]     = useState(parsed.customN);
-  const [customUnit,  setCustomUnit]  = useState(parsed.customUnit);
+  const [recType,    setRecType]    = useState(task?.recurring_type || 'reset');
+  const [isCustom,   setIsCustom]   = useState(parsed.isCustom);
+  const [preset,     setPreset]     = useState(
+    parsed.isCustom ? 'daily' : (parsed.preset === 'monthly' || PRESET_CADENCES.some(p => p.val === parsed.preset) ? parsed.preset : 'daily')
+  );
+  const [customN,    setCustomN]    = useState(parsed.customN);
+  const [customUnit, setCustomUnit] = useState(parsed.customUnit);
 
-  const isWeekly = !isCustom && preset === 'weekly';
-
-  // ── Day-of-week for weekly tasks ──────────────────────────────────────────
-  // Initialise ONLY from recurring_dow — never from due_date.
-  // Default to Tuesday (2) for new tasks.
-  const initDow = task?.recurring_dow ?? 2;
+  const initDow = task?.recurring_dow ?? (task?.due_date
+    ? (() => {
+        const [y, m, d] = task.due_date.split('-').map(Number);
+        return new Date(y, m - 1, d).getDay();
+      })()
+    : 2);
   const [selectedDow, setSelectedDow] = useState(initDow);
 
-  // ── Specific-date anchor for non-weekly cadences ──────────────────────────
-  const [dueDate, setDueDate] = useState(task?.due_date || '');
+  const initDom = task?.recurring_dom
+    ?? (task?.due_date ? parseInt(task.due_date.slice(8), 10) : new Date().getDate());
+  const [selectedDom, setSelectedDom] = useState(initDom);
 
-  // When switching away from weekly, restore the task's existing due_date.
+  const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
+  const isWeekly  = !isCustom && preset === 'weekly';
+  const isMonthly = !isCustom && preset === 'monthly';
+  const isCustomWeeks  = isCustom && customUnit === 'weeks';
+  const isCustomMonths = isCustom && customUnit === 'months';
+  const needsDow = isWeekly || isCustomWeeks;
+  const needsDom = isMonthly || isCustomMonths;
+
+  const rule = useMemo(() => ({
+    cadence: cadenceValue,
+    dow: needsDow ? selectedDow : null,
+    dom: needsDom ? selectedDom : null,
+  }), [cadenceValue, needsDow, selectedDow, needsDom, selectedDom]);
+
+  // First due: prefer existing due / start; else snap from today.
+  const defaultFirstDue = useMemo(() => {
+    if (task?.due_date) return task.due_date;
+    if (task?.recurring_start) return task.recurring_start;
+    return firstOccurrenceOnOrAfter(rule, todayStr());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial only
+
+  const [firstDue, setFirstDue] = useState(defaultFirstDue);
+
+  // When pattern changes on a *new* task, re-snap first due to the next valid date.
+  // On edit, leave the user's due alone unless they change the pattern intentionally.
+  const isNew = !task?.id;
   useEffect(() => {
-    if (!isWeekly) setDueDate(task?.due_date || '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isWeekly]);
+    if (!isRecurring) return;
+    if (!isNew && task?.due_date) return;
+    setFirstDue(firstOccurrenceOnOrAfter(rule, todayStr()));
+  }, [cadenceValue, selectedDow, selectedDom, isRecurring]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [untilMode,  setUntilMode]  = useState(task?.recurring_until ? 'date' : 'count');
   const [untilDate,  setUntilDate]  = useState(task?.recurring_until  || '');
   const [instCount,  setInstCount]  = useState(task?.recurring_instances || 10);
 
-  const cadenceValue = serialiseCadence(isCustom, preset, customN, customUnit);
+  const preview = useMemo(() => {
+    if (!isRecurring || !firstDue) return '';
+    try {
+      return previewOccurrences(rule, firstDue, 3);
+    } catch {
+      return '';
+    }
+  }, [isRecurring, rule, firstDue]);
 
   return (
     <div className="tm-recurring-wrap">
@@ -114,10 +135,10 @@ function RecurringSection({ task }) {
         <div className="tm-recurring-body">
 
           {/* ── Cadence ── */}
-          <div className="tm-rec-row">
-            <span className="tm-rec-label">Repeats</span>
+          <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
+            <span className="tm-rec-label" style={{ paddingTop: 6 }}>Repeats</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-              <div className="tm-seg" role="group" aria-label="Cadence">
+              <div className="tm-seg tm-seg-wrap" role="group" aria-label="Cadence">
                 {PRESET_CADENCES.map(o => (
                   <button key={o.val} type="button"
                     className={`tm-seg-btn${!isCustom && preset === o.val ? ' active' : ''}`}
@@ -131,110 +152,92 @@ function RecurringSection({ task }) {
                   Custom
                 </button>
               </div>
+
               {isCustom && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Every</span>
                   <input type="number" min={1} max={365} value={customN}
                     onChange={e => setCustomN(Math.max(1, parseInt(e.target.value) || 1))}
-                    style={{ width: 58, fontSize: 13, padding: '4px 6px',
-                      border: '0.5px solid var(--color-border-secondary)',
-                      borderRadius: 4, background: 'var(--color-bg-input)',
-                      color: 'var(--color-text-primary)' }}
+                    className="tm-rec-count-input"
                   />
                   <select value={customUnit} onChange={e => setCustomUnit(e.target.value)}
-                    style={{ fontSize: 13, padding: '4px 6px' }}>
+                    className="tm-rec-date-input">
                     {CUSTOM_UNITS.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
                   </select>
                 </div>
               )}
+
+              {needsDow && (
+                <div className="tm-seg" role="group" aria-label="Day of week">
+                  {DAYS_OF_WEEK.map(d => (
+                    <button key={d.val} type="button"
+                      className={`tm-seg-btn${selectedDow === d.val ? ' active' : ''}`}
+                      onClick={() => setSelectedDow(d.val)}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {needsDom && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                    On day
+                  </span>
+                  <input type="number" min={1} max={31} value={selectedDom}
+                    onChange={e => setSelectedDom(Math.min(31, Math.max(1, parseInt(e.target.value) || 1)))}
+                    className="tm-rec-count-input"
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    of each month
+                  </span>
+                </div>
+              )}
             </div>
             <input type="hidden" name="cadence" value={cadenceValue} />
+            <input type="hidden" name="recurring_dow" value={needsDow ? selectedDow : ''} />
+            <input type="hidden" name="recurring_dom" value={needsDom ? selectedDom : ''} />
           </div>
 
           {/* ── Behavior ── */}
-          <div className="tm-rec-row">
-            <span className="tm-rec-label">Behavior</span>
-            <div className="tm-seg" role="group">
-              <button type="button"
-                className={`tm-seg-btn${recType === 'reset' ? ' active' : ''}`}
-                onClick={() => setRecType('reset')}>
-                Auto-reset
-              </button>
-              <button type="button"
-                className={`tm-seg-btn${recType === 'expand' ? ' active' : ''}`}
-                onClick={() => setRecType('expand')}>
-                Create instances
-              </button>
+          <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
+            <span className="tm-rec-label" style={{ paddingTop: 6 }}>Behavior</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+              <div className="tm-seg" role="group">
+                <button type="button"
+                  className={`tm-seg-btn${recType === 'reset' ? ' active' : ''}`}
+                  onClick={() => setRecType('reset')}>
+                  Rolling
+                </button>
+                <button type="button"
+                  className={`tm-seg-btn${recType === 'expand' ? ' active' : ''}`}
+                  onClick={() => setRecType('expand')}>
+                  Series
+                </button>
+              </div>
+              <p className="tm-rec-hint" style={{ paddingLeft: 0, margin: 0 }}>
+                {recType === 'reset'
+                  ? 'One task that rolls to the next due date when you complete it.'
+                  : 'Creates a list of dated tasks up front (template stays hidden).'}
+              </p>
             </div>
             <input type="hidden" name="recurring_type" value={recType} />
           </div>
 
-          {/* ── Due anchor (reset mode only) ── */}
-          {recType === 'reset' && (
-            <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
-              <span className="tm-rec-label" style={{ paddingTop: 6 }}>Due</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+          {/* ── First due (both modes) ── */}
+          <div className="tm-rec-row">
+            <span className="tm-rec-label">First due</span>
+            <input type="date" name="recurring_first_due" value={firstDue}
+              onChange={e => setFirstDue(e.target.value)}
+              className="tm-rec-date-input" required />
+          </div>
 
-                {isWeekly ? (
-                  <>
-                    {/* Day-of-week picker — value submitted via hidden input */}
-                    <div className="tm-seg" role="group" aria-label="Day of week">
-                      {DAYS_OF_WEEK.map(d => (
-                        <button key={d.val} type="button"
-                          className={`tm-seg-btn${selectedDow === d.val ? ' active' : ''}`}
-                          onClick={() => setSelectedDow(d.val)}>
-                          {d.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="tm-rec-hint" style={{ marginTop: 0 }}>
-                      {`Resets each week on ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label ?? ''}.
-                        Complete it early and it holds until that day;
-                        complete it late and it resets to the following
-                        ${DAYS_OF_WEEK.find(d => d.val === selectedDow)?.label ?? ''}.`}
-                    </p>
-                    {/* recurring_dow is the source of truth for weekly tasks. */}
-                    <input type="hidden" name="recurring_dow" value={selectedDow} />
-                  </>
-                ) : (
-                  <>
-                    <input type="date" value={dueDate}
-                      onChange={e => setDueDate(e.target.value)}
-                      style={{ fontSize: 13, padding: '4px 6px',
-                        border: '0.5px solid var(--color-border-secondary)',
-                        borderRadius: 4, background: 'var(--color-bg-input)',
-                        color: 'var(--color-text-primary)' }}
-                    />
-                    <p className="tm-rec-hint" style={{ marginTop: 0 }}>
-                      Resets each cycle on this date.
-                      Complete it early and it holds until the due date;
-                      complete it late and it advances to the next occurrence.
-                    </p>
-                    <input type="hidden" name="recurring_due_date" value={dueDate} />
-                    <input type="hidden" name="recurring_dow" value="" />
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Expand-only: end condition ── */}
+          {/* ── Series end ── */}
           {recType === 'expand' && (
             <div className="tm-rec-until">
-              <input type="hidden" name="recurring_dow" value="" />
               <div className="tm-rec-row" style={{ alignItems: 'flex-start', gap: 12 }}>
                 <span className="tm-rec-label" style={{ paddingTop: 6 }}>End</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-                  <label className="tm-rec-radio-row">
-                    <input type="radio" name="until_mode" value="date"
-                      checked={untilMode === 'date'} onChange={() => setUntilMode('date')} />
-                    <span>On date</span>
-                    {untilMode === 'date' && (
-                      <input type="date" name="recurring_until" value={untilDate}
-                        onChange={e => setUntilDate(e.target.value)}
-                        className="tm-rec-date-input" required />
-                    )}
-                  </label>
                   <label className="tm-rec-radio-row">
                     <input type="radio" name="until_mode" value="count"
                       checked={untilMode === 'count'} onChange={() => setUntilMode('count')} />
@@ -248,6 +251,16 @@ function RecurringSection({ task }) {
                           {instCount === 1 ? 'occurrence' : 'occurrences'}
                         </span>
                       </>
+                    )}
+                  </label>
+                  <label className="tm-rec-radio-row">
+                    <input type="radio" name="until_mode" value="date"
+                      checked={untilMode === 'date'} onChange={() => setUntilMode('date')} />
+                    <span>On date</span>
+                    {untilMode === 'date' && (
+                      <input type="date" name="recurring_until" value={untilDate}
+                        onChange={e => setUntilDate(e.target.value)}
+                        className="tm-rec-date-input" required />
                     )}
                   </label>
                   {untilMode === 'count' && <input type="hidden" name="recurring_until" value="" />}
@@ -265,6 +278,14 @@ function RecurringSection({ task }) {
             </>
           )}
 
+          {/* ── Preview ── */}
+          {preview && (
+            <div className="tm-rec-preview">
+              <span className="tm-rec-preview-label">Next</span>
+              <span>{preview}</span>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -273,7 +294,8 @@ function RecurringSection({ task }) {
           <input type="hidden" name="recurring_type"      value="" />
           <input type="hidden" name="cadence"             value="" />
           <input type="hidden" name="recurring_dow"       value="" />
-          <input type="hidden" name="recurring_due_date"  value="" />
+          <input type="hidden" name="recurring_dom"       value="" />
+          <input type="hidden" name="recurring_first_due" value="" />
           <input type="hidden" name="recurring_until"     value="" />
           <input type="hidden" name="recurring_instances" value="" />
           <input type="hidden" name="until_mode"          value="" />
@@ -287,6 +309,7 @@ function RecurringSection({ task }) {
 export default function TaskModal({ task, catId, categories = [], onSave, onClose }) {
   const isEdit = !!task;
   const [submitting, setSubmitting] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(!!task?.recurring);
   const [selCatId, setSelCatId] = useState(
     catId ?? task?.category_id ?? categories[0]?.id ?? null
   );
@@ -315,30 +338,34 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
     e.preventDefault();
     const fd = new FormData(e.target);
 
-    const isRecurring = fd.get('recurring') === 'on';
+    const recurringOn = fd.get('recurring') === 'on';
     const recType     = fd.get('recurring_type') || 'reset';
     const cadence     = fd.get('cadence') || 'daily';
     const rawUntil    = fd.get('recurring_until');
     const rawCount    = fd.get('recurring_instances');
+    const rawDow      = fd.get('recurring_dow');
+    const rawDom      = fd.get('recurring_dom');
+    const firstDue    = fd.get('recurring_first_due') || null;
+    const topDueDate  = fd.get('due_date') || null;
 
-    // recurring_dow: only meaningful for weekly reset tasks.
-    const rawDow = fd.get('recurring_dow');
-    const isWeeklyCadence = isRecurring && recType === 'reset' && cadence === 'weekly';
-    const recurringDow = isWeeklyCadence && rawDow !== '' && rawDow !== null
+    const recurringDow = (rawDow !== '' && rawDow !== null)
       ? parseInt(rawDow, 10)
       : null;
+    const recurringDom = (rawDom !== '' && rawDom !== null)
+      ? parseInt(rawDom, 10)
+      : null;
 
-    // due_date for non-weekly reset tasks comes from the date picker.
-    // For weekly tasks, db.js derives due_date from recurring_dow on save —
-    // we pass null here and let the server-side logic handle it.
-    const recurringDueDate = fd.get('recurring_due_date') || null;
-    const topDueDate       = fd.get('due_date') || null;
+    // Single due anchor: recurring uses First due; otherwise top-level due date.
+    let due_date = recurringOn ? firstDue : topDueDate;
 
-    const due_date = (() => {
-      if (!isRecurring || recType !== 'reset') return topDueDate;
-      if (isWeeklyCadence) return null;  // db.js will set this from recurring_dow
-      return recurringDueDate || topDueDate;
-    })();
+    // Snap first due onto the pattern grid (weekly DOW / monthly DOM / weekdays).
+    if (recurringOn && due_date) {
+      due_date = firstOccurrenceOnOrAfter({
+        cadence,
+        dow: recurringDow,
+        dom: recurringDom,
+      }, due_date);
+    }
 
     const payload = {
       ...(task || {}),
@@ -350,16 +377,26 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       estimated_hours:       parseFloat(fd.get('estimated_hours')) || 1,
       notes:                 fd.get('notes') || null,
       manual_progress:       task?.manual_progress ?? 0,
-      recurring:             isRecurring,
-      recurring_type:        isRecurring ? recType : null,
-      recurring_cadence:     isRecurring ? cadence  : null,
-      recurring_dow:         recurringDow,
-      recurring_until:       (isRecurring && recType === 'expand' && rawUntil)  ? rawUntil           : null,
-      recurring_instances:   (isRecurring && recType === 'expand' && rawCount)  ? parseInt(rawCount) : null,
-      is_recurring_template: isRecurring && recType === 'expand',
+      recurring:             recurringOn,
+      recurring_type:        recurringOn ? recType : null,
+      recurring_cadence:     recurringOn ? cadence  : null,
+      recurring_dow:         recurringOn ? recurringDow : null,
+      recurring_dom:         recurringOn ? recurringDom : null,
+      recurring_start:       recurringOn ? due_date : null,
+      recurring_until:       (recurringOn && recType === 'expand' && rawUntil)  ? rawUntil           : null,
+      recurring_instances:   (recurringOn && recType === 'expand' && rawCount)  ? parseInt(rawCount, 10) : null,
+      is_recurring_template: recurringOn && recType === 'expand',
+      // Series template itself is not work — keep it not-started
+      ...(recurringOn && recType === 'expand' ? { status: 'not started', manual_progress: 0 } : {}),
       substeps,
       position:              task?.position ?? 0,
     };
+
+    // Clear recurrence linkage when turning off
+    if (!recurringOn) {
+      payload.recurring_template_id = task?.recurring_template_id ?? null;
+      payload.recurring_last_completed_at = null;
+    }
 
     setSubmitting(true);
     try {
@@ -405,10 +442,14 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
           </select>
         </div>
 
-        <div className="form-field">
-          <label>Due date</label>
-          <input type="date" name="due_date" defaultValue={task?.due_date || ''} />
-        </div>
+        {/* Non-recurring only: top-level due date. Recurring uses First due. */}
+        {!isRecurring && (
+          <div className="form-field">
+            <label>Due date</label>
+            <input type="date" name="due_date" defaultValue={task?.due_date || ''} />
+          </div>
+        )}
+        {isRecurring && <input type="hidden" name="due_date" value="" />}
 
         <div className="form-field">
           <label>Estimated hours</label>
@@ -473,7 +514,11 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
           </div>
         </div>
 
-        <RecurringSection task={task} />
+        <RecurringSection
+          task={task}
+          isRecurring={isRecurring}
+          setIsRecurring={setIsRecurring}
+        />
 
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>Cancel</button>
