@@ -1,5 +1,6 @@
 /**
- * Shell — top-level layout. Manages the global add/edit task modal and search overlay.
+ * Shell — top-level layout.
+ * Manages the global add/edit task modal, task-view panel, and search overlay.
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { signOut } from '../lib/db.js';
@@ -8,6 +9,7 @@ import Categories   from './Categories.jsx';
 import Planner      from './Planner.jsx';
 import GCalSync     from './GCalSync.jsx';
 import TaskModal    from './TaskModal.jsx';
+import TaskPanel    from './TaskPanel.jsx';
 import ImportExport from './ImportExport.jsx';
 import Search       from './Search.jsx';
 import '../styles/shell.css';
@@ -120,24 +122,6 @@ const IconChevronDown = () => (
   </svg>
 );
 
-const IconDownload = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="7 10 12 15 17 10" />
-    <line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
-
-const IconUpload = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="17 8 12 3 7 8" />
-    <line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
-
 const IconSearch = () => (
   <svg width="13" height="13" viewBox="0 0 20 20" fill="none"
        xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -232,12 +216,13 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
 // ── Shell ────────────────────────────────────────────────────────────────────────
 export default function Shell({ appData, userId, userEmail, darkMode, onToggleDarkMode }) {
   const [tab,        setTab]        = useState('overview');
-  const [editModal,  setEditModal]  = useState(null);
+  const [editModal,  setEditModal]  = useState(null);   // { task, catId }
+  const [panelTask,  setPanelTask]  = useState(null);   // task shown in TaskPanel
   const [searchOpen, setSearchOpen] = useState(false);
   const tabsRef    = useRef(null);
   const wrapperRef = useRef(null);
 
-  const { categories, tasks, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+  const { categories, tasks, saveTask, removeTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
 
   // ── ⌘K / Ctrl+K shortcut ────────────────────────────────────────────────
   useEffect(() => {
@@ -282,6 +267,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     updateFade();
   }, [tab, updateFade]);
 
+  // ── Task open / edit helpers ────────────────────────────────────────────────
   const openAdd = (catId) => {
     if (categories.length === 0) return;
     setEditModal({ task: null, catId: catId ?? categories[0]?.id ?? null });
@@ -291,19 +277,33 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     setEditModal({ task, catId: task.category_id });
   };
 
+  // Opens the read/interact pane (TaskPanel) — used by search results.
+  const openPanel = (task) => {
+    const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
+    const cat    = catMap[task.category_id];
+    setPanelTask({ ...task, _cat: cat });
+  };
+
   const handleSave = async (payload) => {
     await saveTask(payload);
     setEditModal(null);
   };
 
+  // TaskPanel save: update in-place and keep the panel open with fresh data.
+  const handlePanelSave = async (updated) => {
+    const saved = await saveTask(updated);
+    const next  = saved || updated;
+    setPanelTask(prev => prev ? { ...next, _cat: prev._cat } : null);
+    return saved;
+  };
+
   return (
     <div id="root">
       <div className="app">
-        {/* ── Single compact header row ── */}
+        {/* ── Header ── */}
         <div className="header">
           <h1>Commitments</h1>
           <div className="header-actions">
-            {/* Search button */}
             <button
               className="btn btn-icon"
               onClick={() => setSearchOpen(true)}
@@ -320,6 +320,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
               disabled={categories.length === 0}
               title={categories.length === 0 ? 'Add a category first' : 'Add a new task'}
             >+ New task</button>
+
             <UserDropdown
               userEmail={userEmail}
               darkMode={darkMode}
@@ -371,12 +372,24 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         />
       )}
 
+      {/* ── Global task-view panel (opened from search results) ── */}
+      {panelTask && (
+        <TaskPanel
+          task={panelTask}
+          cat={panelTask._cat ?? {}}
+          onClose={() => setPanelTask(null)}
+          onSave={handlePanelSave}
+          onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}
+          onEdit={(task) => { setPanelTask(null); openEdit(task); }}
+        />
+      )}
+
       {/* ── Global search overlay ── */}
       {searchOpen && (
         <Search
           tasks={tasks}
           categories={categories}
-          onSelectTask={(task) => openEdit(task)}
+          onSelectTask={(task) => { openPanel(task); }}
           onClose={() => setSearchOpen(false)}
         />
       )}
