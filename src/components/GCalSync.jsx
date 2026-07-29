@@ -14,8 +14,11 @@ import {
   fetchFreeBusy,
   fetchCommitmentsBlockIntervals,
   subtractCommitmentsBlocks,
-  createWorkBlock,
+  upsertWorkBlock,
+  deleteTaskWorkBlock,
   deleteWorkBlock,
+  getPushEntry,
+  getPushRegistry,
   loadGcalSettings,
   saveGcalSettings,
   loadSelectedCals,
@@ -116,6 +119,23 @@ function windowSummary(workWindows) {
     .filter(w => w.end > w.start)
     .map(w => `${hrLabel(w.start)}–${hrLabel(w.end)}`)
     .join(', ');
+}
+
+// ── Seed blockStatus from the push registry ───────────────────────────────────────────
+// Returns { 'taskId-iso': 'done', … } for every registry entry whose date is
+// covered by the given scheduled task list.
+function seedBlockStatusFromRegistry(scheduledTasks) {
+  const reg = getPushRegistry();
+  const status = {};
+  for (const [key] of Object.entries(reg)) {
+    // registry keys are  "taskId|isoDate"
+    const [taskId, iso] = key.split('|');
+    if (!taskId || !iso) continue;
+    const task = scheduledTasks.find(t => String(t.id) === String(taskId));
+    if (!task) continue;
+    status[`${taskId}-${iso}`] = 'done';
+  }
+  return status;
 }
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────────────
@@ -277,8 +297,6 @@ export default function GCalSync({ appData }) {
   const todayISO = toISO(new Date());
 
   // ── Connection state ──────────────────────────────────────────────────────────────
-  // Three possible values: 'checking' | 'connected' | 'disconnected'
-  // 'checking' renders a brief inline spinner so the UI never flashes blank.
   const [connStatus, setConnStatus] = useState('checking');
   const connected  = connStatus === 'connected';
   const checking   = connStatus === 'checking';
@@ -286,14 +304,12 @@ export default function GCalSync({ appData }) {
   const [connecting, setConnecting] = useState(false);
   const [error,      setError]      = useState(null);
 
-  // Verify connection on mount.
   useEffect(() => {
     isGcalConnected()
       .then(ok => setConnStatus(ok ? 'connected' : 'disconnected'))
       .catch(() => setConnStatus('disconnected'));
   }, []);
 
-  // Keep parent App in sync whenever connection status changes.
   useEffect(() => {
     if (checking) return;
     onConnectionChange?.(connected);
@@ -362,9 +378,22 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  // ── Load block intervals when switching to the Blocks panel ──────────────────────
+  // ── Seed blockStatus from the push registry on mount / task change ────────────────
+  // This ensures that tasks already pushed via the Planner show as 'done' here
+  // without requiring a round-trip to the GCal API.
+  useEffect(() => {
+    setBlockStatus(prev => ({ ...seedBlockStatusFromRegistry(scheduled), ...prev }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
+  // ── When switching to the Blocks panel, reconcile registry + live API ────────────
   useEffect(() => {
     if (activePanel !== 'blocks' || !connected) return;
+
+    // Immediately seed from local registry (fast, no flash).
+    setBlockStatus(prev => ({ ...seedBlockStatusFromRegistry(scheduled), ...prev }));
+
+    // Then do a live fetch to catch blocks pushed from other sessions/devices.
     const endISO  = addDays(todayISO, 28);
     const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
     const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
@@ -373,7 +402,7 @@ export default function GCalSync({ appData }) {
         setBlockStatus(prev => {
           const next = { ...prev };
           for (const iso of Object.keys(blocksByDay)) {
-            tasks.forEach(task => {
+            scheduled.forEach(task => {
               const key = `${task.id}-${iso}`;
               if (!next[key]) next[key] = 'done';
             });
@@ -453,9 +482,6 @@ export default function GCalSync({ appData }) {
       await connectGcal(forceConsent);
       setConnStatus('connected');
       setConnecting(false);
-      // Kick off availability fetch immediately. handleFetchFreeBusy reads
-      // selCals/writeCalId from localStorage as a fallback when React state
-      // hasn't populated yet.
       handleFetchFreeBusy();
     } catch (e) {
       setError(e.message);
@@ -486,29 +512,35 @@ export default function GCalSync({ appData }) {
   }, [connected]);
 
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
-  const handleCreateBlock = async (task, iso, hrs) => {
+
+  // Uses upsertWorkBlock — same path as the Planner push button.
+  // notBeforeMs = 0 so blocks are placed from the start of the work window
+  // (no cross-task chaining here; that is only needed when pushing a whole day at once).
+  const handleCreateBlock = useCallback(async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
     try {
-      await createWorkBlock(task, iso, hrs, settings, [...selCals]);
+      await upsertWorkBlock(task, iso, hrs, 0, settings, [...selCals]);
       setBlockStatus(s => ({ ...s, [key]: 'done' }));
     } catch (e) {
       setBlockStatus(s => ({ ...s, [key]: 'error' }));
       setError(e.message);
     }
-  };
+  }, [settings, selCals]);
 
-  const handleDeleteBlock = async (task, iso) => {
+  // Deletes only the specific task's event(s) for this day (via push registry),
+  // leaving other tasks' blocks on the same day untouched.
+  const handleDeleteBlock = useCallback(async (task, iso) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'deleting' }));
     try {
-      await deleteWorkBlock(iso);
+      await deleteTaskWorkBlock(task.id, iso);
       setBlockStatus(s => ({ ...s, [key]: null }));
     } catch (e) {
       setBlockStatus(s => ({ ...s, [key]: 'error' }));
       setError(e.message);
     }
-  };
+  }, []);
 
   // ── Derived data ──────────────────────────────────────────────────────────────────
   const scheduled = tasks
