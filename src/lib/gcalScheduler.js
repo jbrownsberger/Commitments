@@ -107,11 +107,6 @@ async function getTokenClient() {
     hint: getAccountHint() || undefined,
     callback: () => {},
     error_callback: (error) => {
-      // 'popup_closed' fires as a normal part of every successful OAuth flow
-      // (the popup closes after granting). Ignore it here — by the time it
-      // fires the success callback has already resolved pendingTokenRequest.
-      // Also ignore any stale error_callback that arrives after success
-      // (pendingTokenRequest will already be null in that case).
       if (!pendingTokenRequest) return;
       if (error?.type === 'popup_closed') return;
       pendingTokenRequest.reject(new Error(error?.type || 'Google authorization failed'));
@@ -472,6 +467,25 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
   const lastEv = events[events.length - 1];
   const endMs = new Date(lastEv.end.dateTime).getTime();
   return { events, hoursPlaced, created: true, endMs };
+}
+
+/**
+ * Delete only the GCal event(s) for a specific task on a specific day,
+ * using the push registry. This is the safe, task-scoped alternative to
+ * deleteWorkBlock, which deletes ALL Commitments blocks on the day.
+ */
+export async function deleteTaskWorkBlock(taskId, isoDate) {
+  const calId = loadWriteCalId();
+  const entry = getPushEntry(taskId, isoDate);
+  if (!entry) return 0;
+  const idsToDelete = entry.eventIds || [entry.eventId].filter(Boolean);
+  await Promise.allSettled(
+    idsToDelete.map(id =>
+      gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${id}`, { method: 'DELETE' })
+    )
+  );
+  clearPushEntry(taskId, isoDate);
+  return idsToDelete.length;
 }
 
 export async function deleteWorkBlock(isoDate) {
