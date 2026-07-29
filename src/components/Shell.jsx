@@ -1,5 +1,5 @@
 /**
- * Shell — top-level layout. Manages the global add/edit task modal.
+ * Shell — top-level layout. Manages the global add/edit task modal and search overlay.
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { signOut } from '../lib/db.js';
@@ -9,6 +9,7 @@ import Planner      from './Planner.jsx';
 import GCalSync     from './GCalSync.jsx';
 import TaskModal    from './TaskModal.jsx';
 import ImportExport from './ImportExport.jsx';
+import Search       from './Search.jsx';
 import '../styles/shell.css';
 
 // ── Tab definitions with inline SVG icons ────────────────────────────────────
@@ -137,6 +138,14 @@ const IconUpload = () => (
   </svg>
 );
 
+const IconSearch = () => (
+  <svg width="13" height="13" viewBox="0 0 20 20" fill="none"
+       xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="8.5" cy="8.5" r="5.75" stroke="currentColor" strokeWidth="1.7"/>
+    <path d="M13 13l4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+  </svg>
+);
+
 // ── User dropdown ──────────────────────────────────────────────────────────────────
 function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo, onUndo, onRedo, appData }) {
   const [open, setOpen] = useState(false);
@@ -222,12 +231,25 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
 
 // ── Shell ────────────────────────────────────────────────────────────────────────
 export default function Shell({ appData, userId, userEmail, darkMode, onToggleDarkMode }) {
-  const [tab,       setTab]       = useState('overview');
-  const [editModal, setEditModal] = useState(null);
+  const [tab,        setTab]        = useState('overview');
+  const [editModal,  setEditModal]  = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const tabsRef    = useRef(null);
   const wrapperRef = useRef(null);
 
-  const { categories, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+  const { categories, tasks, saveTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+
+  // ── ⌘K / Ctrl+K shortcut ────────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // ── Scroll-fade logic ────────────────────────────────────────────────────
   const updateFade = useCallback(() => {
@@ -281,6 +303,17 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         <div className="header">
           <h1>Commitments</h1>
           <div className="header-actions">
+            {/* Search button */}
+            <button
+              className="btn btn-icon"
+              onClick={() => setSearchOpen(true)}
+              title="Search tasks (⌘K)"
+              aria-label="Search tasks"
+            >
+              <IconSearch />
+              <span style={{ fontSize: 12 }}>Search</span>
+            </button>
+
             <button
               className="btn btn-primary"
               onClick={() => openAdd()}
@@ -335,6 +368,16 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
           categories={categories}
           onSave={handleSave}
           onClose={() => setEditModal(null)}
+        />
+      )}
+
+      {/* ── Global search overlay ── */}
+      {searchOpen && (
+        <Search
+          tasks={tasks}
+          categories={categories}
+          onSelectTask={(task) => openEdit(task)}
+          onClose={() => setSearchOpen(false)}
         />
       )}
     </div>
