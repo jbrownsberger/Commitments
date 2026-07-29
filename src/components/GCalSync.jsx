@@ -276,21 +276,30 @@ export default function GCalSync({ appData }) {
   const { tasks, onFreeBusyUpdate, onFreeBusyClear, onConnectionChange, gcalFreeBusySnapshot } = appData;
   const todayISO = toISO(new Date());
 
-  // Optimistic initial state: trust the legacy cached token for the first
-  // render, then immediately verify server-side via isGcalConnected().
-  const [connected,  setConnected]  = useState(hasValidCachedToken);
+  // ── Connection state ──────────────────────────────────────────────────────────────
+  // Three possible values: 'checking' | 'connected' | 'disconnected'
+  // 'checking' renders a brief inline spinner so the UI never flashes blank.
+  const [connStatus, setConnStatus] = useState('checking');
+  const connected  = connStatus === 'connected';
+  const checking   = connStatus === 'checking';
+
   const [connecting, setConnecting] = useState(false);
   const [error,      setError]      = useState(null);
 
-  // On mount, do a cheap async check so we don't show "connected" when the
-  // server-side refresh token has actually been revoked.
+  // Verify connection on mount.
   useEffect(() => {
-    isGcalConnected().then(ok => {
-      setConnected(ok);
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    isGcalConnected()
+      .then(ok => setConnStatus(ok ? 'connected' : 'disconnected'))
+      .catch(() => setConnStatus('disconnected'));
   }, []);
 
+  // Keep parent App in sync whenever connection status changes.
+  useEffect(() => {
+    if (checking) return;
+    onConnectionChange?.(connected);
+  }, [connStatus, onConnectionChange]);
+
+  // ── Settings ──────────────────────────────────────────────────────────────────────
   const [settings,     setSettings]     = useState(loadGcalSettings);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -302,27 +311,31 @@ export default function GCalSync({ appData }) {
     });
   };
 
+  // ── Calendar list & selections ────────────────────────────────────────────────────
   const [calendars,  setCalendars]  = useState([]);
   const [selCals,    setSelCals]    = useState(loadSelectedCals);
   const [writeCalId, setWriteCalId] = useState(loadWriteCalId);
 
+  // ── Free/busy data ────────────────────────────────────────────────────────────────
   const [freeBusy,          setFreeBusy]          = useState(() => gcalFreeBusySnapshot?.data || null);
   const [loadingFB,         setLoadingFB]         = useState(false);
   const [subtractingBlocks, setSubtractingBlocks] = useState(false);
-  const [blockStatus,       setBlockStatus]       = useState({});
-  const [activePanel,       setActivePanel]       = useState('availability');
 
-  // Sort mode for the Work Blocks panel: 'task' (default) or 'date'
-  const [blockSort, setBlockSort] = useState('task');
+  // ── Work blocks panel ─────────────────────────────────────────────────────────────
+  const [blockStatus, setBlockStatus] = useState({});
+  const [activePanel, setActivePanel] = useState('availability');
+  const [blockSort,   setBlockSort]   = useState('task');
 
-  // Ref-based flag to signal handleFetchFreeBusy that it was called from
-  // handleConnect and should skip the calendars-not-loaded guard.
-  const freshConnectRef = useRef(false);
+  // ── Snapshot metadata ─────────────────────────────────────────────────────────────
+  const snapshotFetchedAt = gcalFreeBusySnapshot?.fetchedAt || null;
+  const snapshotAgeMs     = snapshotFetchedAt ? (Date.now() - new Date(snapshotFetchedAt).getTime()) : Infinity;
+  const hasSnapshot       = !!gcalFreeBusySnapshot?.data;
+  const snapshotIsStale   = snapshotAgeMs > STALE_LABEL_MS;
+  const snapshotLabel     = snapshotFetchedAt
+    ? new Date(snapshotFetchedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
 
-  useEffect(() => {
-    onConnectionChange?.(connected);
-  }, [connected, onConnectionChange]);
-
+  // ── Load calendar list when connected ─────────────────────────────────────────────
   useEffect(() => {
     if (!connected || !CLIENT_ID) return;
     fetchCalendarList()
@@ -349,12 +362,12 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
+  // ── Load block intervals when switching to the Blocks panel ──────────────────────
   useEffect(() => {
     if (activePanel !== 'blocks' || !connected) return;
-    const todayISO = toISO(new Date());
-    const endISO   = addDays(todayISO, 28);
-    const timeMin  = new Date(todayISO + 'T00:00:00').toISOString();
-    const timeMax  = new Date(endISO   + 'T23:59:59').toISOString();
+    const endISO  = addDays(todayISO, 28);
+    const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
+    const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
     fetchCommitmentsBlockIntervals(timeMin, timeMax)
       .then(blocksByDay => {
         setBlockStatus(prev => {
@@ -372,16 +385,7 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePanel, connected]);
 
-  // ── Availability ──────────────────────────────────────────────────────────────────
-  /**
-   * handleFetchFreeBusy — fetches free/busy from Google and updates state.
-   *
-   * When called immediately after a fresh connect (freshConnectRef.current
-   * is true), calendars state may not be populated yet because the
-   * fetchCalendarList useEffect hasn't run. In that case we fall back to
-   * reading directly from localStorage, which was just written by the
-   * connectGcal flow, so the calendar list is always available.
-   */
+  // ── Availability fetch ────────────────────────────────────────────────────────────
   const handleFetchFreeBusy = useCallback(async () => {
     setLoadingFB(true); setError(null); setSubtractingBlocks(false);
     try {
@@ -389,7 +393,6 @@ export default function GCalSync({ appData }) {
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
-      // On fresh connect calendars state is empty; read from localStorage.
       const currentWriteCalId = loadWriteCalId();
       const currentSelCals    = selCals.size > 0 ? selCals : loadSelectedCals();
       const allCalIds = currentSelCals.size > 0
@@ -425,12 +428,12 @@ export default function GCalSync({ appData }) {
 
       setFreeBusy(result);
       onFreeBusyUpdate?.(result, { fetchedAt: new Date().toISOString(), source: 'google' });
-      setConnected(true);
+      setConnStatus('connected');
     } catch (e) {
       const msg = e.message || '';
       if (/401|unauthorized|invalid.*(token|credentials)|token.*expired/i.test(msg)) {
         revokeToken();
-        setConnected(false);
+        setConnStatus('disconnected');
         setFreeBusy(null);
         setError('Your Google session expired. Please reconnect.');
       } else {
@@ -442,42 +445,30 @@ export default function GCalSync({ appData }) {
     }
   }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate, onFreeBusyClear]);
 
-  // ── Auth ──────────────────────────────────────────────────────────────────────────
-  /**
-   * handleConnect — initiates the OAuth token flow and immediately kicks
-   * off an availability fetch on success.
-   *
-   * We call handleFetchFreeBusy() directly here rather than relying on a
-   * useEffect because:
-   *  - If connected was already true (optimistic initial state), the effect
-   *    dep doesn't fire when we set connected → true again.
-   *  - React batches state updates, so freeBusy→null + connected→true land
-   *    in one render and the effect may still see the old loadingFB=true
-   *    guard from an earlier render and skip the fetch.
-   * Calling it directly after the await is reliable.
-   */
-  const handleConnect = async (forceConsent = false) => {
+  // ── Connect ───────────────────────────────────────────────────────────────────────
+  const handleConnect = useCallback(async (forceConsent = false) => {
     if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
     setConnecting(true); setError(null);
     try {
       await connectGcal(forceConsent);
-      setConnected(true);
+      setConnStatus('connected');
       setConnecting(false);
-      // Kick off availability fetch immediately.
-      // handleFetchFreeBusy reads selCals/writeCalId from localStorage
-      // as a fallback when the React state hasn't populated yet.
+      // Kick off availability fetch immediately. handleFetchFreeBusy reads
+      // selCals/writeCalId from localStorage as a fallback when React state
+      // hasn't populated yet.
       handleFetchFreeBusy();
     } catch (e) {
       setError(e.message);
       setConnecting(false);
     }
-  };
+  }, [handleFetchFreeBusy]);
 
-  const handleDisconnect = () => {
+  // ── Disconnect ────────────────────────────────────────────────────────────────────
+  const handleDisconnect = useCallback(() => {
     revokeToken();
     localStorage.removeItem(LS_CALS_KEY);
     clearWriteCalId();
-    setConnected(false);
+    setConnStatus('disconnected');
     setCalendars([]);
     setSelCals(new Set());
     setWriteCalId('primary');
@@ -485,7 +476,7 @@ export default function GCalSync({ appData }) {
     setBlockStatus({});
     setSubtractingBlocks(false);
     onFreeBusyClear?.();
-  };
+  }, [onFreeBusyClear]);
 
   // Auto-load availability on mount when connected and no data yet.
   useEffect(() => {
@@ -519,6 +510,7 @@ export default function GCalSync({ appData }) {
     }
   };
 
+  // ── Derived data ──────────────────────────────────────────────────────────────────
   const scheduled = tasks
     .filter(t => t.status !== 'done' && t.scheduled_days?.some(d => d >= todayISO))
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
@@ -550,49 +542,6 @@ export default function GCalSync({ appData }) {
     return map;
   }, [tasks, todayISO]);
 
-  // ── Disconnected ──────────────────────────────────────────────────────────────────
-  const snapshotFetchedAt = gcalFreeBusySnapshot?.fetchedAt || null;
-  const snapshotAgeMs = snapshotFetchedAt ? (Date.now() - new Date(snapshotFetchedAt).getTime()) : Infinity;
-  const hasSnapshot = !!gcalFreeBusySnapshot?.data;
-  const snapshotIsStale = snapshotAgeMs > STALE_LABEL_MS;
-  const snapshotLabel = snapshotFetchedAt
-    ? new Date(snapshotFetchedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
-    : null;
-
-  if (!connected && !hasSnapshot) {
-    return (
-      <div className="gcal-pane">
-        <div className="gcal-hero">
-          <div className="gcal-hero-icon"><IconCalendar size={48} /></div>
-          <h2>Google Calendar</h2>
-          <p>Connect your Google Calendar to see real free time each day and push work blocks directly to your calendar.</p>
-          <button className="btn btn-primary gcal-connect-btn" onClick={() => handleConnect(true)} disabled={connecting}>
-            <IconLink size={15} style={{ marginRight: 7, verticalAlign: 'middle' }} />
-            {connecting ? 'Connecting…' : 'Connect Google Calendar'}
-          </button>
-          {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
-        </div>
-        <div className="gcal-setup">
-          <h3>Setup (one-time)</h3>
-          <ol>
-            <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create or select a project.</li>
-            <li>Enable the <strong>Google Calendar API</strong>.</li>
-            <li>Under <em>Credentials</em>, create an <strong>OAuth 2.0 Web Client ID</strong>.</li>
-            <li>Add your app origin to <em>Authorized JavaScript origins</em> (e.g. <code>http://localhost:5173</code> and your deployed URL).</li>
-            <li>Add <code>VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com</code> to your <code>.env</code> file and redeploy.</li>
-          </ol>
-          {!CLIENT_ID && (
-            <div className="gcal-warning">
-              <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-              <code>VITE_GOOGLE_CLIENT_ID</code> is not set.
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Connected ─────────────────────────────────────────────────────────────────────
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const windowH = totalWindowHours(settings);
 
@@ -614,12 +563,13 @@ export default function GCalSync({ appData }) {
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
   }, [scheduledByDate]);
 
+  // ── Row renderers ─────────────────────────────────────────────────────────────────
   const renderDayRow = (task, iso) => {
-    const key           = `${task.id}-${iso}`;
-    const status        = blockStatus[key];
-    const totalHrs      = remainingHours(task);
+    const key             = `${task.id}-${iso}`;
+    const status          = blockStatus[key];
+    const totalHrs        = remainingHours(task);
     const futureDaysCount = task.futureDays?.length || 1;
-    const hrs           = totalHrs / futureDaysCount;
+    const hrs             = totalHrs / futureDaysCount;
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-day-label">{fmtShort(iso)}</span>
@@ -645,11 +595,11 @@ export default function GCalSync({ appData }) {
   };
 
   const renderTaskRowForDate = (task, iso) => {
-    const key           = `${task.id}-${iso}`;
-    const status        = blockStatus[key];
-    const totalHrs      = remainingHours(task);
+    const key             = `${task.id}-${iso}`;
+    const status          = blockStatus[key];
+    const totalHrs        = remainingHours(task);
     const futureDaysCount = task.futureDays?.length || 1;
-    const hrs           = totalHrs / futureDaysCount;
+    const hrs             = totalHrs / futureDaysCount;
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-task-name-inline">{task.name}</span>
@@ -674,323 +624,370 @@ export default function GCalSync({ appData }) {
     );
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────────────
   return (
     <div className="gcal-pane">
-      <div className="gcal-header">
-        <span className="gcal-connected-badge">
-          {connected
-            ? <><IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Connected to Google Calendar</>
-            : <><IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Showing saved Google data</>}
-        </span>
-        <div className="gcal-header-actions">
-          <button className="btn btn-sm" onClick={() => setShowSettings(s => !s)}>
-            <IconGear size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-            Settings
-          </button>
-          {connected ? (
-            <button className="btn btn-sm" onClick={handleDisconnect}>Disconnect</button>
-          ) : (
-            <button className="btn btn-sm btn-primary" onClick={() => handleConnect(false)} disabled={connecting}>Reconnect Google</button>
-          )}
-        </div>
-      </div>
 
-      {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
-
-      {hasSnapshot && (
-        <div className={snapshotIsStale || !connected ? 'gcal-warning' : 'gcal-info'} style={{ marginBottom: 12 }}>
-          {snapshotLabel ? `Availability last refreshed ${snapshotLabel}.` : 'Availability shown from your last Google sync.'}
-          {(snapshotIsStale || !connected) && (
-            <> {' '}This data may be out of date. <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => handleConnect(false)} disabled={connecting}>{connecting ? 'Connecting…' : 'Refresh from Google'}</button></>
-          )}
+      {/* ── Checking / initialising ── */}
+      {checking && (
+        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
+          Checking Google Calendar connection…
         </div>
       )}
 
-      {showSettings && (
-        <div className="gcal-settings-panel">
-          <div className="gcal-settings-grid">
-
-            <div className="gcal-setting-group">
-              <div className="gcal-section-label">Working windows</div>
-              <WorkWindowsEditor
-                windows={workWindows || [{ start: 8, end: 20 }]}
-                onChange={next => updateSetting('workWindows', next)}
-              />
-            </div>
-
-            <div className="gcal-setting-group">
-              <div className="gcal-section-label">
-                Non-work days <span className="gcal-setting-hint">(automatically 0 availability)</span>
+      {/* ── Disconnected hero (never connected, no saved snapshot) ── */}
+      {!checking && !connected && !hasSnapshot && (
+        <>
+          <div className="gcal-hero">
+            <div className="gcal-hero-icon"><IconCalendar size={48} /></div>
+            <h2>Google Calendar</h2>
+            <p>Connect your Google Calendar to see real free time each day and push work blocks directly to your calendar.</p>
+            <button className="btn btn-primary gcal-connect-btn" onClick={() => handleConnect(true)} disabled={connecting}>
+              <IconLink size={15} style={{ marginRight: 7, verticalAlign: 'middle' }} />
+              {connecting ? 'Connecting…' : 'Connect Google Calendar'}
+            </button>
+            {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
+          </div>
+          <div className="gcal-setup">
+            <h3>Setup (one-time)</h3>
+            <ol>
+              <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create or select a project.</li>
+              <li>Enable the <strong>Google Calendar API</strong>.</li>
+              <li>Under <em>Credentials</em>, create an <strong>OAuth 2.0 Web Client ID</strong>.</li>
+              <li>Add your app origin to <em>Authorized JavaScript origins</em> (e.g. <code>http://localhost:5173</code> and your deployed URL).</li>
+              <li>Add <code>VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com</code> to your <code>.env</code> file and redeploy.</li>
+            </ol>
+            {!CLIENT_ID && (
+              <div className="gcal-warning">
+                <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                <code>VITE_GOOGLE_CLIENT_ID</code> is not set.
               </div>
-              <div className="gcal-dow-row">
-                {DAY_NAMES.map((name, idx) => {
-                  const isOff = (nonWorkDays || []).includes(idx);
-                  return (
-                    <button key={idx} type="button"
-                      className={`gcal-dow-btn${isOff ? ' gcal-dow-off' : ''}`}
-                      onClick={() => toggleNonWorkDay(idx)}
-                      title={isOff ? `${name}: non-work day` : `${name}: work day`}
-                    >{name}</button>
-                  );
-                })}
-              </div>
-              {(nonWorkDays || []).length > 0 && (
-                <div className="gcal-setting-preview">
-                  {DAY_NAMES.filter((_, i) => (nonWorkDays || []).includes(i)).join(', ')} will show 0h available
-                </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Connected / snapshot UI ── */}
+      {!checking && (connected || hasSnapshot) && (
+        <>
+          <div className="gcal-header">
+            <span className="gcal-connected-badge">
+              {connected
+                ? <><IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Connected to Google Calendar</>
+                : <><IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Showing saved Google data</>}
+            </span>
+            <div className="gcal-header-actions">
+              <button className="btn btn-sm" onClick={() => setShowSettings(s => !s)}>
+                <IconGear size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                Settings
+              </button>
+              {connected ? (
+                <button className="btn btn-sm" onClick={handleDisconnect}>Disconnect</button>
+              ) : (
+                <button className="btn btn-sm btn-primary" onClick={() => handleConnect(false)} disabled={connecting}>Reconnect Google</button>
               )}
             </div>
-
-            <div className="gcal-setting-group">
-              <div className="gcal-section-label">Daily deduction <span className="gcal-setting-hint">(lunch, overhead, life)</span></div>
-              <div className="gcal-hours-row">
-                <input type="number" min={0} max={480} step={5}
-                  value={deductMins}
-                  onChange={e => updateSetting('deductMins', +e.target.value)}
-                  style={{ width: 70 }} />
-                <span className="gcal-setting-unit">minutes/day</span>
-              </div>
-              <div className="gcal-setting-preview">= {(deductMins / 60).toFixed(1)}h subtracted before anything else</div>
-            </div>
-
-            <div className="gcal-setting-group">
-              <div className="gcal-section-label">Event buffer <span className="gcal-setting-hint">(context-switching time)</span></div>
-              <div className="gcal-hours-row">
-                <input type="number" min={0} max={60} step={5}
-                  value={bufferMins}
-                  onChange={e => updateSetting('bufferMins', +e.target.value)}
-                  style={{ width: 70 }} />
-                <span className="gcal-setting-unit">min before &amp; after each event</span>
-              </div>
-            </div>
-
-            <div className="gcal-setting-group">
-              <div className="gcal-section-label">Efficiency <span className="gcal-setting-hint">(of remaining free time)</span></div>
-              <div className="gcal-efficiency-row">
-                <input type="range" min={10} max={100} step={5}
-                  value={efficiency}
-                  onChange={e => updateSetting('efficiency', +e.target.value)}
-                  className="gcal-slider" />
-                <span className="gcal-efficiency-val">{efficiency}%</span>
-              </div>
-              <div className="gcal-setting-preview">e.g. a day with 6h free → {(6 * efficiency / 100).toFixed(1)}h usable</div>
-            </div>
-
           </div>
 
-          {calendars.length > 0 && (
-            <div className="gcal-write-cal-section">
-              <div className="gcal-section-label">
-                Work blocks calendar
-                <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
-              </div>
+          {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
 
-              <div className="gcal-write-cal-tip">
-                <span className="gcal-write-cal-tip-icon">💡</span>
-                <span>
-                  For the cleanest availability numbers, create a dedicated calendar
-                  in Google Calendar — e.g. <em>Commitments Work Blocks</em> — then
-                  select it below.{' '}
-                  <a href="https://calendar.google.com/calendar/r/settings/createcalendar"
-                    target="_blank" rel="noopener noreferrer">Create one now ↗</a>
-                  <span className="gcal-write-cal-refresh-hint">
-                    After creating, refresh this page so the new calendar appears in the list.
-                  </span>
-                </span>
-              </div>
-
-              <select
-                className="gcal-write-cal-select"
-                value={writeCalId}
-                onChange={e => { const id = e.target.value; saveWriteCalId(id); setWriteCalId(id); }}
-              >
-                <option value="primary">Primary calendar (fallback)</option>
-                {calendars
-                  .filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer')
-                  .map(cal => <option key={cal.id} value={cal.id}>{cal.summary}</option>)
-                }
-              </select>
-
-              {usingPrimaryFallback ? (
-                <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
-                  <IconWarning size={13} />
-                  <span>Writing to your primary calendar. App-written blocks are identified by tag and subtracted automatically — but a dedicated calendar is cleaner.</span>
-                </div>
-              ) : (
-                <div className="gcal-write-cal-notice gcal-write-cal-notice--ok">
-                  <IconCheck size={13} />
-                  <span>Work blocks go to this calendar only, and it's excluded from your availability calculation automatically.</span>
-                </div>
+          {hasSnapshot && (
+            <div className={snapshotIsStale || !connected ? 'gcal-warning' : 'gcal-info'} style={{ marginBottom: 12 }}>
+              {snapshotLabel ? `Availability last refreshed ${snapshotLabel}.` : 'Availability shown from your last Google sync.'}
+              {(snapshotIsStale || !connected) && (
+                <> {' '}This data may be out of date. <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => handleConnect(false)} disabled={connecting}>{connecting ? 'Connecting…' : 'Refresh from Google'}</button></>
               )}
             </div>
           )}
 
-          {calendars.length > 0 && (
-            <div className="gcal-setting-group" style={{ marginTop: 16 }}>
-              <div className="gcal-section-label">Calendars to include
-                <span className="gcal-setting-hint"> (read for availability)</span>
+          {showSettings && (
+            <div className="gcal-settings-panel">
+              <div className="gcal-settings-grid">
+
+                <div className="gcal-setting-group">
+                  <div className="gcal-section-label">Working windows</div>
+                  <WorkWindowsEditor
+                    windows={workWindows || [{ start: 8, end: 20 }]}
+                    onChange={next => updateSetting('workWindows', next)}
+                  />
+                </div>
+
+                <div className="gcal-setting-group">
+                  <div className="gcal-section-label">
+                    Non-work days <span className="gcal-setting-hint">(automatically 0 availability)</span>
+                  </div>
+                  <div className="gcal-dow-row">
+                    {DAY_NAMES.map((name, idx) => {
+                      const isOff = (nonWorkDays || []).includes(idx);
+                      return (
+                        <button key={idx} type="button"
+                          className={`gcal-dow-btn${isOff ? ' gcal-dow-off' : ''}`}
+                          onClick={() => toggleNonWorkDay(idx)}
+                          title={isOff ? `${name}: non-work day` : `${name}: work day`}
+                        >{name}</button>
+                      );
+                    })}
+                  </div>
+                  {(nonWorkDays || []).length > 0 && (
+                    <div className="gcal-setting-preview">
+                      {DAY_NAMES.filter((_, i) => (nonWorkDays || []).includes(i)).join(', ')} will show 0h available
+                    </div>
+                  )}
+                </div>
+
+                <div className="gcal-setting-group">
+                  <div className="gcal-section-label">Daily deduction <span className="gcal-setting-hint">(lunch, overhead, life)</span></div>
+                  <div className="gcal-hours-row">
+                    <input type="number" min={0} max={480} step={5}
+                      value={deductMins}
+                      onChange={e => updateSetting('deductMins', +e.target.value)}
+                      style={{ width: 70 }} />
+                    <span className="gcal-setting-unit">minutes/day</span>
+                  </div>
+                  <div className="gcal-setting-preview">= {(deductMins / 60).toFixed(1)}h subtracted before anything else</div>
+                </div>
+
+                <div className="gcal-setting-group">
+                  <div className="gcal-section-label">Event buffer <span className="gcal-setting-hint">(context-switching time)</span></div>
+                  <div className="gcal-hours-row">
+                    <input type="number" min={0} max={60} step={5}
+                      value={bufferMins}
+                      onChange={e => updateSetting('bufferMins', +e.target.value)}
+                      style={{ width: 70 }} />
+                    <span className="gcal-setting-unit">min before &amp; after each event</span>
+                  </div>
+                </div>
+
+                <div className="gcal-setting-group">
+                  <div className="gcal-section-label">Efficiency <span className="gcal-setting-hint">(of remaining free time)</span></div>
+                  <div className="gcal-efficiency-row">
+                    <input type="range" min={10} max={100} step={5}
+                      value={efficiency}
+                      onChange={e => updateSetting('efficiency', +e.target.value)}
+                      className="gcal-slider" />
+                    <span className="gcal-efficiency-val">{efficiency}%</span>
+                  </div>
+                  <div className="gcal-setting-preview">e.g. a day with 6h free → {(6 * efficiency / 100).toFixed(1)}h usable</div>
+                </div>
+
               </div>
-              <div className="gcal-cal-list">
-                {calendars
-                  .filter(cal => cal.id !== writeCalId)
-                  .map(cal => (
-                    <label key={cal.id} className="gcal-cal-item">
-                      <input type="checkbox"
-                        checked={selCals.has(cal.id)}
-                        onChange={e => {
-                          setSelCals(prev => {
-                            const next = new Set(prev);
-                            e.target.checked ? next.add(cal.id) : next.delete(cal.id);
-                            saveSelectedCals(next);
-                            return next;
-                          });
-                        }} />
-                      <span className="gcal-cal-dot" style={{ background: cal.backgroundColor || '#888' }} />
-                      <span>{cal.summary}</span>
-                    </label>
-                  ))}
-              </div>
+
+              {calendars.length > 0 && (
+                <div className="gcal-write-cal-section">
+                  <div className="gcal-section-label">
+                    Work blocks calendar
+                    <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
+                  </div>
+
+                  <div className="gcal-write-cal-tip">
+                    <span className="gcal-write-cal-tip-icon">💡</span>
+                    <span>
+                      For the cleanest availability numbers, create a dedicated calendar
+                      in Google Calendar — e.g. <em>Commitments Work Blocks</em> — then
+                      select it below.{' '}
+                      <a href="https://calendar.google.com/calendar/r/settings/createcalendar"
+                        target="_blank" rel="noopener noreferrer">Create one now ↗</a>
+                      <span className="gcal-write-cal-refresh-hint">
+                        After creating, refresh this page so the new calendar appears in the list.
+                      </span>
+                    </span>
+                  </div>
+
+                  <select
+                    className="gcal-write-cal-select"
+                    value={writeCalId}
+                    onChange={e => { const id = e.target.value; saveWriteCalId(id); setWriteCalId(id); }}
+                  >
+                    <option value="primary">Primary calendar (fallback)</option>
+                    {calendars
+                      .filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer')
+                      .map(cal => <option key={cal.id} value={cal.id}>{cal.summary}</option>)
+                    }
+                  </select>
+
+                  {usingPrimaryFallback ? (
+                    <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
+                      <IconWarning size={13} />
+                      <span>Writing to your primary calendar. App-written blocks are identified by tag and subtracted automatically — but a dedicated calendar is cleaner.</span>
+                    </div>
+                  ) : (
+                    <div className="gcal-write-cal-notice gcal-write-cal-notice--ok">
+                      <IconCheck size={13} />
+                      <span>Work blocks go to this calendar only, and it's excluded from your availability calculation automatically.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {calendars.length > 0 && (
+                <div className="gcal-setting-group" style={{ marginTop: 16 }}>
+                  <div className="gcal-section-label">Calendars to include
+                    <span className="gcal-setting-hint"> (read for availability)</span>
+                  </div>
+                  <div className="gcal-cal-list">
+                    {calendars
+                      .filter(cal => cal.id !== writeCalId)
+                      .map(cal => (
+                        <label key={cal.id} className="gcal-cal-item">
+                          <input type="checkbox"
+                            checked={selCals.has(cal.id)}
+                            onChange={e => {
+                              setSelCals(prev => {
+                                const next = new Set(prev);
+                                e.target.checked ? next.add(cal.id) : next.delete(cal.id);
+                                saveSelectedCals(next);
+                                return next;
+                              });
+                            }} />
+                          <span className="gcal-cal-dot" style={{ background: cal.backgroundColor || '#888' }} />
+                          <span>{cal.summary}</span>
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }}
+                onClick={() => { setShowSettings(false); handleFetchFreeBusy(); }}>
+                <IconRefresh size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                Apply &amp; Refresh
+              </button>
             </div>
           )}
 
-          <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }}
-            onClick={() => { setShowSettings(false); handleFetchFreeBusy(); }}>
-            <IconRefresh size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-            Apply &amp; Refresh
-          </button>
-        </div>
-      )}
-
-      <div className="gcal-panel-tabs">
-        <button className={`gcal-panel-tab${activePanel === 'availability' ? ' active' : ''}`}
-          onClick={() => setActivePanel('availability')}>
-          <IconBarChart size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-          Availability
-        </button>
-        <button className={`gcal-panel-tab${activePanel === 'blocks' ? ' active' : ''}`}
-          onClick={() => setActivePanel('blocks')}>
-          <IconCalendar size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-          Work Blocks
-        </button>
-      </div>
-
-      {activePanel === 'availability' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-            <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB || !connected}>
-              <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-              {loadingFB ? 'Loading…' : connected ? 'Refresh' : 'Reconnect to refresh'}
+          <div className="gcal-panel-tabs">
+            <button className={`gcal-panel-tab${activePanel === 'availability' ? ' active' : ''}`}
+              onClick={() => setActivePanel('availability')}>
+              <IconBarChart size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              Availability
+            </button>
+            <button className={`gcal-panel-tab${activePanel === 'blocks' ? ' active' : ''}`}
+              onClick={() => setActivePanel('blocks')}>
+              <IconCalendar size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              Work Blocks
             </button>
           </div>
 
-          {subtractingBlocks && (
-            <div className="gcal-info" style={{ marginBottom: 8 }}>
-              Subtracting your Commitments work blocks from busy time…
+          {activePanel === 'availability' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                <button className="btn btn-sm" onClick={handleFetchFreeBusy} disabled={loadingFB || !connected}>
+                  <IconRefresh size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                  {loadingFB ? 'Loading…' : connected ? 'Refresh' : 'Reconnect to refresh'}
+                </button>
+              </div>
+
+              {subtractingBlocks && (
+                <div className="gcal-info" style={{ marginBottom: 8 }}>
+                  Subtracting your Commitments work blocks from busy time…
+                </div>
+              )}
+
+              {freeBusy ? (
+                <div className="gcal-fb-grid">
+                  {Object.entries(freeBusy).map(([iso, mins]) => {
+                    const freeHrs = mins / 60;
+                    const planHrs = plannedHoursByDay[iso] || 0;
+                    const isToday = iso === todayISO;
+                    const isPast  = iso < todayISO;
+                    const isOff   = (nonWorkDays || []).includes(new Date(iso + 'T00:00:00').getDay());
+                    const isOver  = planHrs > freeHrs && freeHrs > 0;
+                    const freePct = windowH > 0 ? Math.min(100, (freeHrs / windowH) * 100) : 0;
+                    const planPct = windowH > 0 ? Math.min(100, (planHrs / windowH) * 100) : 0;
+
+                    let rowClass = 'gcal-fb-row';
+                    if (isToday) rowClass += ' gcal-today';
+                    if (isPast)  rowClass += ' gcal-past';
+                    if (isOver)  rowClass += ' gcal-over';
+                    if (isOff)   rowClass += ' gcal-day-off';
+
+                    return (
+                      <div key={iso} className={rowClass}>
+                        <div className="gcal-fb-date">
+                          {fmtShort(iso)}
+                          {isOff && <span className="gcal-off-badge">off</span>}
+                        </div>
+                        <div className="gcal-fb-bar-wrap">
+                          <div className="gcal-fb-bar" style={{ width: `${freePct}%` }} />
+                          {planHrs > 0 && (
+                            <div className={`gcal-fb-plan-bar${isOver ? ' over' : ''}`}
+                              style={{ width: `${planPct}%` }} />
+                          )}
+                        </div>
+                        <div className="gcal-fb-label">
+                          <span className="gcal-fb-free">{freeHrs.toFixed(1)}h free</span>
+                          {planHrs > 0 && (
+                            <span className={`gcal-fb-planned${isOver ? ' over' : ''}`}>
+                              {planHrs.toFixed(1)}h planned
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                !loadingFB && (
+                  <div className="gcal-empty">
+                    <p>No availability data yet.</p>
+                    <button className="btn btn-primary btn-sm" onClick={handleFetchFreeBusy}>Load availability</button>
+                  </div>
+                )
+              )}
             </div>
           )}
 
-          {freeBusy ? (
-            <div className="gcal-fb-grid">
-              {Object.entries(freeBusy).map(([iso, mins]) => {
-                const freeHrs  = mins / 60;
-                const planHrs  = plannedHoursByDay[iso] || 0;
-                const isToday  = iso === todayISO;
-                const isPast   = iso < todayISO;
-                const isOff    = (nonWorkDays || []).includes(new Date(iso + 'T00:00:00').getDay());
-                const isOver   = planHrs > freeHrs && freeHrs > 0;
-                const freePct  = windowH > 0 ? Math.min(100, (freeHrs / windowH) * 100) : 0;
-                const planPct  = windowH > 0 ? Math.min(100, (planHrs / windowH) * 100) : 0;
-
-                let rowClass = 'gcal-fb-row';
-                if (isToday) rowClass += ' gcal-today';
-                if (isPast)  rowClass += ' gcal-past';
-                if (isOver)  rowClass += ' gcal-over';
-                if (isOff)   rowClass += ' gcal-day-off';
-
-                return (
-                  <div key={iso} className={rowClass}>
-                    <div className="gcal-fb-date">
-                      {fmtShort(iso)}
-                      {isOff && <span className="gcal-off-badge">off</span>}
-                    </div>
-                    <div className="gcal-fb-bar-wrap">
-                      <div className="gcal-fb-bar" style={{ width: `${freePct}%` }} />
-                      {planHrs > 0 && (
-                        <div className={`gcal-fb-plan-bar${isOver ? ' over' : ''}`}
-                          style={{ width: `${planPct}%` }} />
-                      )}
-                    </div>
-                    <div className="gcal-fb-label">
-                      <span className="gcal-fb-free">{freeHrs.toFixed(1)}h free</span>
-                      {planHrs > 0 && (
-                        <span className={`gcal-fb-planned${isOver ? ' over' : ''}`}>
-                          {planHrs.toFixed(1)}h planned
-                        </span>
-                      )}
+          {activePanel === 'blocks' && (
+            <div className="gcal-blocks-panel">
+              {scheduled.length === 0 ? (
+                <div className="gcal-empty">
+                  <p>No tasks have been scheduled yet. Use the Planner tab to assign tasks to days.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="gcal-blocks-toolbar">
+                    <span className="gcal-blocks-sort-label">Sort by:</span>
+                    <div className="gcal-sort-toggle" role="group" aria-label="Sort work blocks by">
+                      <button
+                        className={`gcal-sort-btn${blockSort === 'task' ? ' active' : ''}`}
+                        onClick={() => setBlockSort('task')}
+                        aria-pressed={blockSort === 'task'}
+                      >Task</button>
+                      <button
+                        className={`gcal-sort-btn${blockSort === 'date' ? ' active' : ''}`}
+                        onClick={() => setBlockSort('date')}
+                        aria-pressed={blockSort === 'date'}
+                      >Date</button>
                     </div>
                   </div>
-                );
-              })}
+                  <div className="gcal-blocks-list">
+                    {blockSort === 'task' ? (
+                      scheduled.map(task => (
+                        <div key={task.id} className="gcal-task-block">
+                          <div className="gcal-task-name">{task.name}</div>
+                          <div className="gcal-task-days">
+                            {task.futureDays.map(iso => renderDayRow(task, iso))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      scheduledByDateGrouped.map(([iso, tasksOnDay]) => (
+                        <div key={iso} className="gcal-date-block">
+                          <div className="gcal-date-heading">{fmtShort(iso)}</div>
+                          <div className="gcal-task-days">
+                            {tasksOnDay.map(task => renderTaskRowForDate(task, iso))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            !loadingFB && (
-              <div className="gcal-empty">
-                <p>No availability data yet.</p>
-                <button className="btn btn-primary btn-sm" onClick={handleFetchFreeBusy}>Load availability</button>
-              </div>
-            )
           )}
-        </div>
+        </>
       )}
 
-      {activePanel === 'blocks' && (
-        <div className="gcal-blocks-panel">
-          {scheduled.length === 0 ? (
-            <div className="gcal-empty">
-              <p>No tasks have been scheduled yet. Use the Planner tab to assign tasks to days.</p>
-            </div>
-          ) : (
-            <>
-              <div className="gcal-blocks-toolbar">
-                <span className="gcal-blocks-sort-label">Sort by:</span>
-                <div className="gcal-sort-toggle" role="group" aria-label="Sort work blocks by">
-                  <button
-                    className={`gcal-sort-btn${blockSort === 'task' ? ' active' : ''}`}
-                    onClick={() => setBlockSort('task')}
-                    aria-pressed={blockSort === 'task'}
-                  >Task</button>
-                  <button
-                    className={`gcal-sort-btn${blockSort === 'date' ? ' active' : ''}`}
-                    onClick={() => setBlockSort('date')}
-                    aria-pressed={blockSort === 'date'}
-                  >Date</button>
-                </div>
-              </div>
-              <div className="gcal-blocks-list">
-                {blockSort === 'task' ? (
-                  scheduled.map(task => (
-                    <div key={task.id} className="gcal-task-block">
-                      <div className="gcal-task-name">{task.name}</div>
-                      <div className="gcal-task-days">
-                        {task.futureDays.map(iso => renderDayRow(task, iso))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  scheduledByDateGrouped.map(([iso, tasksOnDay]) => (
-                    <div key={iso} className="gcal-date-block">
-                      <div className="gcal-date-heading">{fmtShort(iso)}</div>
-                      <div className="gcal-task-days">
-                        {tasksOnDay.map(task => renderTaskRowForDate(task, iso))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
