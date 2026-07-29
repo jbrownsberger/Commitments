@@ -157,6 +157,7 @@ export async function fetchTasks(userId) {
 const TASK_APP_ONLY_KEYS = new Set([
   'substeps', 'scheduled_days', 'catName', 'catColor', 'catId',
   'manual_progress', 'manualProgress', 'dueDate', 'estimatedHours',
+  '_cat',   // UI-only category object attached by Shell's openPanel / search flow
 ]);
 
 export async function saveTask(task) {
@@ -165,6 +166,7 @@ export async function saveTask(task) {
     catName, catColor, catId,
     manual_progress, manualProgress,
     dueDate, estimatedHours,
+    _cat,
     ...rest
   } = task;
 
