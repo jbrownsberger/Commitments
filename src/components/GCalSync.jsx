@@ -371,7 +371,16 @@ export default function GCalSync({ appData }) {
   // ── Auth ──────────────────────────────────────────────────────────────────────────
   /**
    * handleConnect — initiates the OAuth token flow and, on success,
-   * updates connected state and immediately refreshes availability.
+   * updates connected state so the auto-load useEffect fires the fetch.
+   *
+   * IMPORTANT: we do NOT call handleFetchFreeBusy() directly here.
+   * React batches state updates asynchronously, so calling the fetch
+   * immediately after setConnected(true) would race the render cycle and
+   * produce a blank screen. Instead we:
+   *   1. Set freeBusy → null first (so the auto-load guard sees it as unloaded)
+   *   2. Then set connected → true
+   *   3. Let the useEffect([connected, freeBusy]) auto-load hook fire the
+   *      fetch cleanly on the next render — exactly as on a page reload.
    *
    * forceConsent=true  → first connect or re-authorise a different account.
    * forceConsent=false → uses prompt='select_account' so Google can skip
@@ -382,11 +391,12 @@ export default function GCalSync({ appData }) {
     setConnecting(true); setError(null);
     try {
       await connectGcal(forceConsent);
+      // Clear stale data first so the auto-load guard (freeBusy !== null)
+      // doesn't block the fetch, then flip connected on the same render batch.
+      setFreeBusy(null);
       setConnected(true);
-      setFreeBusy(null); // clear stale data so auto-load guard doesn't block re-fetch
       setConnecting(false);
-      // Kick off a fresh availability fetch immediately after sign-in
-      handleFetchFreeBusy();
+      // No manual handleFetchFreeBusy() call — the useEffect handles it.
     } catch (e) {
       setError(e.message);
       setConnecting(false);
@@ -463,12 +473,14 @@ export default function GCalSync({ appData }) {
     }
   }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate, onFreeBusyClear]);
 
-  // Auto-load availability when the tab mounts (or re-mounts after tab switch)
+  // Auto-load availability when connected flips true or freeBusy is cleared.
+  // Depends on both [connected] and [freeBusy] so it reliably re-fires after
+  // handleConnect sets freeBusy → null before setting connected → true.
   useEffect(() => {
     if (!connected || freeBusy !== null || loadingFB) return;
     handleFetchFreeBusy();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+  }, [connected, freeBusy]);
 
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
@@ -680,6 +692,14 @@ export default function GCalSync({ appData }) {
       </div>
 
       {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
+
+      {/* Transitional banner shown while OAuth has completed but the first
+          availability fetch hasn't begun yet — eliminates blank-screen flash. */}
+      {connecting && (
+        <div className="gcal-info" style={{ marginBottom: 12 }}>
+          Finalizing connection…
+        </div>
+      )}
 
       {hasSnapshot && (
         <div className={snapshotIsStale || !connected ? 'gcal-warning' : 'gcal-info'} style={{ marginBottom: 12 }}>
