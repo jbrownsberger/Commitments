@@ -4,7 +4,7 @@
  * Auth, API helpers, and block CRUD now live in src/lib/gcalScheduler.js.
  * This component owns UI state only.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   connectGcal,
   hasValidCachedToken,
@@ -315,6 +315,10 @@ export default function GCalSync({ appData }) {
   // Sort mode for the Work Blocks panel: 'task' (default) or 'date'
   const [blockSort, setBlockSort] = useState('task');
 
+  // Ref-based flag to signal handleFetchFreeBusy that it was called from
+  // handleConnect and should skip the calendars-not-loaded guard.
+  const freshConnectRef = useRef(false);
+
   useEffect(() => {
     onConnectionChange?.(connected);
   }, [connected, onConnectionChange]);
@@ -368,56 +372,16 @@ export default function GCalSync({ appData }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePanel, connected]);
 
-  // ── Auth ──────────────────────────────────────────────────────────────────────────
-  /**
-   * handleConnect — initiates the OAuth token flow and, on success,
-   * updates connected state so the auto-load useEffect fires the fetch.
-   *
-   * IMPORTANT: we do NOT call handleFetchFreeBusy() directly here.
-   * React batches state updates asynchronously, so calling the fetch
-   * immediately after setConnected(true) would race the render cycle and
-   * produce a blank screen. Instead we:
-   *   1. Set freeBusy → null first (so the auto-load guard sees it as unloaded)
-   *   2. Then set connected → true
-   *   3. Let the useEffect([connected, freeBusy]) auto-load hook fire the
-   *      fetch cleanly on the next render — exactly as on a page reload.
-   *
-   * forceConsent=true  → first connect or re-authorise a different account.
-   * forceConsent=false → uses prompt='select_account' so Google can skip
-   *   the consent screen for an already-authorised account.
-   */
-  const handleConnect = async (forceConsent = false) => {
-    if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
-    setConnecting(true); setError(null);
-    try {
-      await connectGcal(forceConsent);
-      // Clear stale data first so the auto-load guard (freeBusy !== null)
-      // doesn't block the fetch, then flip connected on the same render batch.
-      setFreeBusy(null);
-      setConnected(true);
-      setConnecting(false);
-      // No manual handleFetchFreeBusy() call — the useEffect handles it.
-    } catch (e) {
-      setError(e.message);
-      setConnecting(false);
-    }
-  };
-
-  const handleDisconnect = () => {
-    revokeToken();
-    localStorage.removeItem(LS_CALS_KEY);
-    clearWriteCalId();
-    setConnected(false);
-    setCalendars([]);
-    setSelCals(new Set());
-    setWriteCalId('primary');
-    setFreeBusy(null);
-    setBlockStatus({});
-    setSubtractingBlocks(false);
-    onFreeBusyClear?.(); // clear the parent snapshot so isGcalConnected() returns false
-  };
-
   // ── Availability ──────────────────────────────────────────────────────────────────
+  /**
+   * handleFetchFreeBusy — fetches free/busy from Google and updates state.
+   *
+   * When called immediately after a fresh connect (freshConnectRef.current
+   * is true), calendars state may not be populated yet because the
+   * fetchCalendarList useEffect hasn't run. In that case we fall back to
+   * reading directly from localStorage, which was just written by the
+   * connectGcal flow, so the calendar list is always available.
+   */
   const handleFetchFreeBusy = useCallback(async () => {
     setLoadingFB(true); setError(null); setSubtractingBlocks(false);
     try {
@@ -425,11 +389,16 @@ export default function GCalSync({ appData }) {
       const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
       const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
 
-      const allCalIds = selCals.size > 0 ? [...selCals] : calendars.map(c => c.id);
-      const calIds    = allCalIds.filter(id => id !== writeCalId);
+      // On fresh connect calendars state is empty; read from localStorage.
+      const currentWriteCalId = loadWriteCalId();
+      const currentSelCals    = selCals.size > 0 ? selCals : loadSelectedCals();
+      const allCalIds = currentSelCals.size > 0
+        ? [...currentSelCals]
+        : (calendars.length > 0 ? calendars.map(c => c.id) : []);
+      const calIds = allCalIds.filter(id => id !== currentWriteCalId);
       if (!calIds.length) throw new Error('No calendars selected.');
 
-      const isFallback = writeCalId === 'primary';
+      const isFallback = currentWriteCalId === 'primary';
 
       const [fbResp, blocksByDay] = await Promise.all([
         fetchFreeBusy(calIds, timeMin, timeMax).catch(() => ({ calendars: {} })),
@@ -473,14 +442,57 @@ export default function GCalSync({ appData }) {
     }
   }, [calendars, selCals, writeCalId, settings, todayISO, onFreeBusyUpdate, onFreeBusyClear]);
 
-  // Auto-load availability when connected flips true or freeBusy is cleared.
-  // Depends on both [connected] and [freeBusy] so it reliably re-fires after
-  // handleConnect sets freeBusy → null before setting connected → true.
+  // ── Auth ──────────────────────────────────────────────────────────────────────────
+  /**
+   * handleConnect — initiates the OAuth token flow and immediately kicks
+   * off an availability fetch on success.
+   *
+   * We call handleFetchFreeBusy() directly here rather than relying on a
+   * useEffect because:
+   *  - If connected was already true (optimistic initial state), the effect
+   *    dep doesn't fire when we set connected → true again.
+   *  - React batches state updates, so freeBusy→null + connected→true land
+   *    in one render and the effect may still see the old loadingFB=true
+   *    guard from an earlier render and skip the fetch.
+   * Calling it directly after the await is reliable.
+   */
+  const handleConnect = async (forceConsent = false) => {
+    if (!CLIENT_ID) { setError('No Google Client ID configured. See setup instructions below.'); return; }
+    setConnecting(true); setError(null);
+    try {
+      await connectGcal(forceConsent);
+      setConnected(true);
+      setConnecting(false);
+      // Kick off availability fetch immediately.
+      // handleFetchFreeBusy reads selCals/writeCalId from localStorage
+      // as a fallback when the React state hasn't populated yet.
+      handleFetchFreeBusy();
+    } catch (e) {
+      setError(e.message);
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    revokeToken();
+    localStorage.removeItem(LS_CALS_KEY);
+    clearWriteCalId();
+    setConnected(false);
+    setCalendars([]);
+    setSelCals(new Set());
+    setWriteCalId('primary');
+    setFreeBusy(null);
+    setBlockStatus({});
+    setSubtractingBlocks(false);
+    onFreeBusyClear?.();
+  };
+
+  // Auto-load availability on mount when connected and no data yet.
   useEffect(() => {
     if (!connected || freeBusy !== null || loadingFB) return;
     handleFetchFreeBusy();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, freeBusy]);
+  }, [connected]);
 
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
   const handleCreateBlock = async (task, iso, hrs) => {
@@ -512,7 +524,6 @@ export default function GCalSync({ appData }) {
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
-  // Flat chronological list of { iso, task } pairs for the "by date" sort view
   const scheduledByDate = React.useMemo(() => {
     const rows = [];
     for (const task of scheduled) {
@@ -524,8 +535,6 @@ export default function GCalSync({ appData }) {
     return rows;
   }, [scheduled]);
 
-  // ── Compute planned hours per day from scheduled tasks ────────────────────────────
-  // Used to render the blue committed-load bar and red overload bar.
   const plannedHoursByDay = React.useMemo(() => {
     const map = {};
     for (const task of tasks) {
@@ -597,8 +606,6 @@ export default function GCalSync({ appData }) {
 
   const usingPrimaryFallback = writeCalId === 'primary';
 
-  // ── Date-grouped data for the 'by date' sort view ─────────────────────────────────
-  // Produces an array of [isoDate, task[]] pairs, sorted chronologically.
   const scheduledByDateGrouped = React.useMemo(() => {
     const map = {};
     for (const { iso, task } of scheduledByDate) {
@@ -607,7 +614,6 @@ export default function GCalSync({ appData }) {
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
   }, [scheduledByDate]);
 
-  // ── Shared day-row renderer (used by both sort views) ─────────────────────────────
   const renderDayRow = (task, iso) => {
     const key           = `${task.id}-${iso}`;
     const status        = blockStatus[key];
@@ -619,8 +625,7 @@ export default function GCalSync({ appData }) {
         <span className="gcal-day-label">{fmtShort(iso)}</span>
         <span className="gcal-day-hrs">{hrs.toFixed(1)}h</span>
         {status === 'done' ? (
-          <button className="gcal-delete-btn"
-            onClick={() => handleDeleteBlock(task, iso)}>
+          <button className="gcal-delete-btn" onClick={() => handleDeleteBlock(task, iso)}>
             <IconTrash size={12} />
             Remove
           </button>
@@ -631,8 +636,7 @@ export default function GCalSync({ appData }) {
         ) : status === 'error' ? (
           <span style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Error</span>
         ) : (
-          <button className="gcal-push-btn"
-            onClick={() => handleCreateBlock(task, iso, hrs)}>
+          <button className="gcal-push-btn" onClick={() => handleCreateBlock(task, iso, hrs)}>
             Add {hrs.toFixed(1)}h block
           </button>
         )}
@@ -651,8 +655,7 @@ export default function GCalSync({ appData }) {
         <span className="gcal-task-name-inline">{task.name}</span>
         <span className="gcal-day-hrs">{hrs.toFixed(1)}h</span>
         {status === 'done' ? (
-          <button className="gcal-delete-btn"
-            onClick={() => handleDeleteBlock(task, iso)}>
+          <button className="gcal-delete-btn" onClick={() => handleDeleteBlock(task, iso)}>
             <IconTrash size={12} />
             Remove
           </button>
@@ -663,8 +666,7 @@ export default function GCalSync({ appData }) {
         ) : status === 'error' ? (
           <span style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Error</span>
         ) : (
-          <button className="gcal-push-btn"
-            onClick={() => handleCreateBlock(task, iso, hrs)}>
+          <button className="gcal-push-btn" onClick={() => handleCreateBlock(task, iso, hrs)}>
             Add {hrs.toFixed(1)}h block
           </button>
         )}
@@ -676,7 +678,9 @@ export default function GCalSync({ appData }) {
     <div className="gcal-pane">
       <div className="gcal-header">
         <span className="gcal-connected-badge">
-          {connected ? <><IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Connected to Google Calendar</> : <><IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Showing saved Google data</>}
+          {connected
+            ? <><IconCheck size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Connected to Google Calendar</>
+            : <><IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />Showing saved Google data</>}
         </span>
         <div className="gcal-header-actions">
           <button className="btn btn-sm" onClick={() => setShowSettings(s => !s)}>
@@ -692,14 +696,6 @@ export default function GCalSync({ appData }) {
       </div>
 
       {error && <div className="gcal-error" style={{ marginBottom: 12 }}>{error}</div>}
-
-      {/* Transitional banner shown while OAuth has completed but the first
-          availability fetch hasn't begun yet — eliminates blank-screen flash. */}
-      {connecting && (
-        <div className="gcal-info" style={{ marginBottom: 12 }}>
-          Finalizing connection…
-        </div>
-      )}
 
       {hasSnapshot && (
         <div className={snapshotIsStale || !connected ? 'gcal-warning' : 'gcal-info'} style={{ marginBottom: 12 }}>
@@ -782,7 +778,6 @@ export default function GCalSync({ appData }) {
 
           </div>
 
-          {/* ── Write calendar picker ─────────────────────────────────────────── */}
           {calendars.length > 0 && (
             <div className="gcal-write-cal-section">
               <div className="gcal-section-label">
@@ -796,13 +791,8 @@ export default function GCalSync({ appData }) {
                   For the cleanest availability numbers, create a dedicated calendar
                   in Google Calendar — e.g. <em>Commitments Work Blocks</em> — then
                   select it below.{' '}
-                  <a
-                    href="https://calendar.google.com/calendar/r/settings/createcalendar"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Create one now ↗
-                  </a>
+                  <a href="https://calendar.google.com/calendar/r/settings/createcalendar"
+                    target="_blank" rel="noopener noreferrer">Create one now ↗</a>
                   <span className="gcal-write-cal-refresh-hint">
                     After creating, refresh this page so the new calendar appears in the list.
                   </span>
@@ -812,42 +802,29 @@ export default function GCalSync({ appData }) {
               <select
                 className="gcal-write-cal-select"
                 value={writeCalId}
-                onChange={e => {
-                  const id = e.target.value;
-                  saveWriteCalId(id);
-                  setWriteCalId(id);
-                }}
+                onChange={e => { const id = e.target.value; saveWriteCalId(id); setWriteCalId(id); }}
               >
                 <option value="primary">Primary calendar (fallback)</option>
                 {calendars
                   .filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer')
-                  .map(cal => (
-                    <option key={cal.id} value={cal.id}>{cal.summary}</option>
-                  ))
+                  .map(cal => <option key={cal.id} value={cal.id}>{cal.summary}</option>)
                 }
               </select>
 
               {usingPrimaryFallback ? (
                 <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
                   <IconWarning size={13} />
-                  <span>
-                    Writing to your primary calendar. App-written blocks are identified
-                    by tag and subtracted automatically — but a dedicated calendar is cleaner.
-                  </span>
+                  <span>Writing to your primary calendar. App-written blocks are identified by tag and subtracted automatically — but a dedicated calendar is cleaner.</span>
                 </div>
               ) : (
                 <div className="gcal-write-cal-notice gcal-write-cal-notice--ok">
                   <IconCheck size={13} />
-                  <span>
-                    Work blocks go to this calendar only, and it's excluded from your
-                    availability calculation automatically.
-                  </span>
+                  <span>Work blocks go to this calendar only, and it's excluded from your availability calculation automatically.</span>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Calendars to include ──────────────────────────────────────────── */}
           {calendars.length > 0 && (
             <div className="gcal-setting-group" style={{ marginTop: 16 }}>
               <div className="gcal-section-label">Calendars to include
@@ -921,10 +898,8 @@ export default function GCalSync({ appData }) {
                 const isPast   = iso < todayISO;
                 const isOff    = (nonWorkDays || []).includes(new Date(iso + 'T00:00:00').getDay());
                 const isOver   = planHrs > freeHrs && freeHrs > 0;
-
-                // Bar widths: both bars are relative to windowH (total working hours)
-                const freePct = windowH > 0 ? Math.min(100, (freeHrs / windowH) * 100) : 0;
-                const planPct = windowH > 0 ? Math.min(100, (planHrs / windowH) * 100) : 0;
+                const freePct  = windowH > 0 ? Math.min(100, (freeHrs / windowH) * 100) : 0;
+                const planPct  = windowH > 0 ? Math.min(100, (planHrs / windowH) * 100) : 0;
 
                 let rowClass = 'gcal-fb-row';
                 if (isToday) rowClass += ' gcal-today';
@@ -934,26 +909,17 @@ export default function GCalSync({ appData }) {
 
                 return (
                   <div key={iso} className={rowClass}>
-                    {/* Column 1: date */}
                     <div className="gcal-fb-date">
                       {fmtShort(iso)}
                       {isOff && <span className="gcal-off-badge">off</span>}
                     </div>
-
-                    {/* Column 2: stacked bars */}
                     <div className="gcal-fb-bar-wrap">
-                      {/* Green: free/available time */}
                       <div className="gcal-fb-bar" style={{ width: `${freePct}%` }} />
-                      {/* Blue (or red if over): committed planned hours */}
                       {planHrs > 0 && (
-                        <div
-                          className={`gcal-fb-plan-bar${isOver ? ' over' : ''}`}
-                          style={{ width: `${planPct}%` }}
-                        />
+                        <div className={`gcal-fb-plan-bar${isOver ? ' over' : ''}`}
+                          style={{ width: `${planPct}%` }} />
                       )}
                     </div>
-
-                    {/* Column 3: text labels */}
                     <div className="gcal-fb-label">
                       <span className="gcal-fb-free">{freeHrs.toFixed(1)}h free</span>
                       {planHrs > 0 && (
@@ -985,7 +951,6 @@ export default function GCalSync({ appData }) {
             </div>
           ) : (
             <>
-              {/* ── Sort toggle toolbar ── */}
               <div className="gcal-blocks-toolbar">
                 <span className="gcal-blocks-sort-label">Sort by:</span>
                 <div className="gcal-sort-toggle" role="group" aria-label="Sort work blocks by">
@@ -1001,10 +966,8 @@ export default function GCalSync({ appData }) {
                   >Date</button>
                 </div>
               </div>
-
               <div className="gcal-blocks-list">
                 {blockSort === 'task' ? (
-                  // ── Grouped by task (original view) ──
                   scheduled.map(task => (
                     <div key={task.id} className="gcal-task-block">
                       <div className="gcal-task-name">{task.name}</div>
@@ -1014,7 +977,6 @@ export default function GCalSync({ appData }) {
                     </div>
                   ))
                 ) : (
-                  // ── Grouped by date (chronological view) ──
                   scheduledByDateGrouped.map(([iso, tasksOnDay]) => (
                     <div key={iso} className="gcal-date-block">
                       <div className="gcal-date-heading">{fmtShort(iso)}</div>

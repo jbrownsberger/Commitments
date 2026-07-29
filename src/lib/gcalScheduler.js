@@ -107,10 +107,15 @@ async function getTokenClient() {
     hint: getAccountHint() || undefined,
     callback: () => {},
     error_callback: (error) => {
-      if (pendingTokenRequest) {
-        pendingTokenRequest.reject(new Error(error?.type || 'Google authorization failed'));
-        pendingTokenRequest = null;
-      }
+      // 'popup_closed' fires as a normal part of every successful OAuth flow
+      // (the popup closes after granting). Ignore it here — by the time it
+      // fires the success callback has already resolved pendingTokenRequest.
+      // Also ignore any stale error_callback that arrives after success
+      // (pendingTokenRequest will already be null in that case).
+      if (!pendingTokenRequest) return;
+      if (error?.type === 'popup_closed') return;
+      pendingTokenRequest.reject(new Error(error?.type || 'Google authorization failed'));
+      pendingTokenRequest = null;
     },
   });
   return tokenClient;
@@ -396,7 +401,7 @@ export async function findBestSlotAfter(isoDate, durationHours, notBeforeMs, set
   const windows = (settings.workWindows || [{ start: settings.workStart ?? 8, end: settings.workEnd ?? 20 }])
     .filter(w => w.end > w.start).sort((a, b) => a.start - b.start);
   const firstStart = windows.length
-    ? new Date(`${isoDate}T${String(windows[0].start).padStart(2,'0')}:00:00`).getTime()
+    ? new Date(`${isoDate}T${String(windows[0].start).padStart(2,'00')}:00:00`).getTime()
     : new Date(`${isoDate}T08:00:00`).getTime();
   const earliest = notBeforeMs > 0 ? Math.max(notBeforeMs, firstStart) : firstStart;
   return new Date(earliest);
