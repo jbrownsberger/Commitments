@@ -178,6 +178,60 @@ body {
 .user-dropdown-item--danger { color: var(--color-text-danger); }
 .user-dropdown-item--danger:hover { background: var(--color-bg-danger); }
 
+.user-dropdown-menu--wide {
+  min-width: 240px;
+}
+
+.user-dropdown-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.user-dropdown-hint {
+  padding: 4px 14px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.user-dropdown-pref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.user-dropdown-pref select {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  max-width: 100px;
+}
+.user-dropdown-pref input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.user-dropdown-pref:has(select:disabled),
+.user-dropdown-pref:has(input:disabled) {
+  opacity: 0.45;
+}
+
 /* ── Import / Export (menu-mode flash message) ────────────────────────────── */
 .import-export-flash {
   font-size: 11px;

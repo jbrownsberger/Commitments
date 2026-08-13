@@ -85,7 +85,8 @@ export async function fetchPreferences(userId) {
   return data || {};
 }
 export async function savePreferences(prefs) {
-  const { user_id, ...rest } = prefs;
+  // last_push_digest_on is owned by the cron job — never overwrite it from the client.
+  const { user_id, last_push_digest_on: _digestStamp, ...rest } = prefs;
   const { data, error } = await supabase
     .from('user_preferences').upsert({ user_id, ...rest }).select().single();
   if (error) throw error;

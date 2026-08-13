@@ -4,6 +4,14 @@
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { signOut } from '../lib/db.js';
+import {
+  getPushStatus,
+  subscribePush,
+  unsubscribePush,
+  sendTestPush,
+  detectTimezone,
+  isPushSupported,
+} from '../lib/push.js';
 import Overview     from './Overview.jsx';
 import Categories   from './Categories.jsx';
 import Planner      from './Planner.jsx';
@@ -130,10 +138,53 @@ const IconSearch = () => (
   </svg>
 );
 
+const IconBell = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
+const LEAD_DAY_OPTIONS = [
+  { value: 0, label: 'None' },
+  { value: 1, label: '1 day' },
+  { value: 2, label: '2 days' },
+  { value: 3, label: '3 days' },
+];
+
+const DIGEST_HOUR_OPTIONS = [6, 7, 8, 9, 10, 11, 12].map(h => ({
+  value: h,
+  label: h === 12 ? '12 PM' : `${h} AM`,
+}));
+
 // ── User dropdown ──────────────────────────────────────────────────────────────────
-function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo, onUndo, onRedo, appData }) {
+function UserDropdown({
+  userId, userEmail, darkMode, onToggleDarkMode,
+  canUndo, canRedo, onUndo, onRedo, appData,
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+
+  const [pushStatus, setPushStatus] = useState({
+    supported: isPushSupported(),
+    permission: 'default',
+    subscribed: false,
+  });
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState(null); // { ok, text }
+
+  const prefs = appData?.preferences || {};
+  const savePreferences = appData?.savePreferences;
+
+  const refreshPushStatus = useCallback(async () => {
+    try {
+      const s = await getPushStatus();
+      setPushStatus(s);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -143,6 +194,108 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      refreshPushStatus();
+      setPushMsg(null);
+    }
+  }, [open, refreshPushStatus]);
+
+  // Keep the digest timezone in sync with this device once subscribed.
+  useEffect(() => {
+    if (!pushStatus.subscribed || !savePreferences || !userId) return;
+    const tz = detectTimezone();
+    if (!tz || prefs.timezone === tz) return;
+    savePreferences({ ...prefs, user_id: userId, timezone: tz }).catch(() => {});
+  }, [pushStatus.subscribed, prefs.timezone, savePreferences, userId, prefs]);
+
+  const flash = (ok, text) => {
+    setPushMsg({ ok, text });
+    setTimeout(() => setPushMsg(null), 4000);
+  };
+
+  const handleEnablePush = async () => {
+    if (!userId || pushBusy) return;
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      await subscribePush(userId);
+      if (savePreferences) {
+        await savePreferences({
+          ...prefs,
+          user_id: userId,
+          notify_digest: prefs.notify_digest ?? true,
+          notify_overdue: prefs.notify_overdue ?? true,
+          notify_due_today: prefs.notify_due_today ?? true,
+          notify_lead_days: prefs.notify_lead_days ?? 1,
+          notify_digest_hour: prefs.notify_digest_hour ?? 9,
+          timezone: detectTimezone(),
+        });
+      }
+      await refreshPushStatus();
+      flash(true, 'Notifications enabled');
+    } catch (err) {
+      flash(false, err.message || 'Could not enable notifications');
+      await refreshPushStatus();
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleDisablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      await unsubscribePush(userId);
+      await refreshPushStatus();
+      flash(true, 'Notifications disabled');
+    } catch (err) {
+      flash(false, err.message || 'Could not disable notifications');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      await sendTestPush();
+      flash(true, 'Test notification sent');
+    } catch (err) {
+      flash(false, err.message || 'Test failed');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const updateNotifyPref = async (patch) => {
+    if (!savePreferences || !userId) return;
+    try {
+      await savePreferences({
+        ...prefs,
+        user_id: userId,
+        timezone: prefs.timezone || detectTimezone(),
+        ...patch,
+      });
+    } catch (err) {
+      flash(false, err.message || 'Could not save preference');
+    }
+  };
+
+  const digestOn = prefs.notify_digest !== false;
+  const leadDays = prefs.notify_lead_days ?? 1;
+  const digestHour = prefs.notify_digest_hour ?? 9;
+
+  let pushHint = null;
+  if (!pushStatus.supported) {
+    pushHint = 'Not supported in this browser';
+  } else if (pushStatus.permission === 'denied') {
+    pushHint = 'Permission denied — enable in System Settings';
+  }
 
   return (
     <div className="user-dropdown" ref={ref}>
@@ -158,7 +311,7 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
       </button>
 
       {open && (
-        <div className="user-dropdown-menu" role="menu">
+        <div className="user-dropdown-menu user-dropdown-menu--wide" role="menu">
           <div className="user-dropdown-email">{userEmail}</div>
           <div className="user-dropdown-divider" />
 
@@ -197,6 +350,94 @@ function UserDropdown({ userEmail, darkMode, onToggleDarkMode, canUndo, canRedo,
             menuMode
             onAction={() => setOpen(false)}
           />
+
+          <div className="user-dropdown-divider" />
+
+          {/* ── Notifications ── */}
+          <div className="user-dropdown-section-label">
+            <IconBell /> Notifications
+          </div>
+
+          {pushHint && (
+            <div className="user-dropdown-hint">{pushHint}</div>
+          )}
+
+          {!pushHint && !pushStatus.subscribed && (
+            <button
+              className="user-dropdown-item"
+              role="menuitem"
+              onClick={handleEnablePush}
+              disabled={pushBusy || !pushStatus.supported}
+            >
+              <IconBell />
+              {pushBusy ? 'Enabling…' : 'Enable notifications'}
+            </button>
+          )}
+
+          {!pushHint && pushStatus.subscribed && (
+            <>
+              <button
+                className="user-dropdown-item"
+                role="menuitem"
+                onClick={handleTestPush}
+                disabled={pushBusy}
+              >
+                Send test notification
+              </button>
+              <button
+                className="user-dropdown-item"
+                role="menuitem"
+                onClick={handleDisablePush}
+                disabled={pushBusy}
+              >
+                Disable notifications
+              </button>
+
+              <label className="user-dropdown-pref">
+                <span>Daily digest</span>
+                <input
+                  type="checkbox"
+                  checked={digestOn}
+                  onChange={(e) => updateNotifyPref({ notify_digest: e.target.checked })}
+                />
+              </label>
+
+              <label className="user-dropdown-pref">
+                <span>Lead time</span>
+                <select
+                  value={leadDays}
+                  onChange={(e) => updateNotifyPref({ notify_lead_days: Number(e.target.value) })}
+                  disabled={!digestOn}
+                >
+                  {LEAD_DAY_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="user-dropdown-pref">
+                <span>Digest hour</span>
+                <select
+                  value={digestHour}
+                  onChange={(e) => updateNotifyPref({
+                    notify_digest_hour: Number(e.target.value),
+                    timezone: detectTimezone(),
+                  })}
+                  disabled={!digestOn}
+                >
+                  {DIGEST_HOUR_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          {pushMsg && (
+            <span className={`import-export-flash${pushMsg.ok ? '' : ' error'}`}>
+              {pushMsg.text}
+            </span>
+          )}
 
           <div className="user-dropdown-divider" />
 
@@ -322,6 +563,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
             >+ New task</button>
 
             <UserDropdown
+              userId={userId}
               userEmail={userEmail}
               darkMode={darkMode}
               onToggleDarkMode={onToggleDarkMode}
