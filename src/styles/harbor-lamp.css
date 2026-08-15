@@ -1,7 +1,6 @@
-:root {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-
-  /* F4 Harbor Lamp */
+/* F4 Harbor Lamp overlay.
+   html:root beats :root in shell.css so the electric blue accent cannot leak back. */
+html:root {
   --color-accent:             #A08E7E;
   --color-accent-hover:       #8C7A6A;
   --color-accent-soft:        #C5D0D2;
@@ -27,12 +26,9 @@
   --color-border-danger:      #C4A098;
   --color-border-success:     #A3B8A8;
   --color-border-info:        #82979B;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
 }
 
-[data-theme="dark"] {
+html[data-theme="dark"] {
   --color-accent:             #C4B4A4;
   --color-accent-hover:       #D4C4B4;
   --color-accent-soft:        #3A4446;
@@ -60,26 +56,32 @@
   --color-border-info:        #4A5A5C;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; }
-body {
-  font-family: var(--font-sans);
+html, body {
+  background: var(--color-bg-page);
   color: var(--color-text-primary);
-  background: var(--color-bg-page);
-  min-height: 100vh;
-}
-[data-theme="dark"] body {
-  background: var(--color-bg-page);
 }
 
-@keyframes splash-spin {
-  to { transform: rotate(360deg); }
+.btn-primary {
+  color: #F6F2EA;
 }
-.splash-spinner {
-  width: 28px;
-  height: 28px;
-  border: 2.5px solid var(--color-border-secondary);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-  animation: splash-spin 0.75s linear infinite;
+
+html[data-theme="dark"] .btn-primary {
+  color: #1C1B19;
+}
+
+a {
+  color: var(--color-sea);
+}
+
+.substep-pill:hover {
+  background: var(--color-accent-soft);
+}
+
+html[data-theme="dark"] .substep-pill:hover {
+  background: var(--color-bg-info);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-sea);
+  outline-offset: 2px;
 }
