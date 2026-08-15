@@ -63,9 +63,20 @@ html[data-theme="dark"] {
   --color-border-info:        #547494;
 }
 
-html, body {
+html, body, #root {
   background: var(--color-bg-page);
   color: var(--color-text-primary);
+}
+
+.toolbar,
+.planner-controls,
+[data-theme="dark"] .planner-controls {
+  background: var(--color-bg-page) !important;
+}
+
+.tabs-wrapper::after,
+[data-theme="dark"] .tabs-wrapper::after {
+  background: linear-gradient(to right, transparent, var(--color-bg-page)) !important;
 }
 
 .btn-primary {
@@ -82,9 +93,7 @@ html[data-theme="dark"] .btn-primary {
   color: #1C1B19;
 }
 
-a {
-  color: var(--color-azure);
-}
+a { color: var(--color-azure); }
 
 .tab.active {
   color: var(--color-juniper);
@@ -96,18 +105,14 @@ a {
   border-color: var(--color-azure);
 }
 
-.progress-fill {
-  background: var(--color-juniper);
-}
+.progress-fill { background: var(--color-juniper); }
 
 .substep-pill {
   background: var(--color-bg-info);
   color: var(--color-text-info);
   border-color: var(--color-sea);
 }
-.substep-pill:hover {
-  background: var(--color-accent-soft);
-}
+.substep-pill:hover { background: var(--color-accent-soft); }
 
 :focus-visible {
   outline: 2px solid var(--color-sea);
@@ -131,18 +136,16 @@ a {
   color: var(--color-poppy);
 }
 
-.login-feature-icon {
-  color: var(--color-azure);
-}
+.login-feature-icon { color: var(--color-azure); }
 
-/* Default picker hexes → official SW companions */
-[style*="#e05252" i] { background-color: #B85B57 !important; }
-[style*="#e07a52" i] { background-color: #C46A4A !important; }
-[style*="#d4a017" i] { background-color: #E8B84A !important; }
-[style*="#5a9e5a" i] { background-color: #658375 !important; }
-[style*="#3a86c8" i] { background-color: #466685 !important; }
-[style*="#7b5ea7" i] { background-color: #3A5874 !important; }
-[style*="#c4607a" i] { background-color: #B85B57 !important; }
-[style*="#4aadad" i] { background-color: #82979B !important; }
-[style*="#888888" i] { background-color: #6A706C !important; }
-[style*="#2d2d2d" i] { background-color: #2A3037 !important; }
+/* Old picker hexes + rgb() (Safari: no attribute i-flag) */
+[style*="#e05252"], [style*="#E05252"], [style*="rgb(224, 82, 82)"] { background-color: #B85B57 !important; }
+[style*="#e07a52"], [style*="#E07A52"], [style*="rgb(224, 122, 82)"] { background-color: #C46A4A !important; }
+[style*="#d4a017"], [style*="#D4A017"], [style*="rgb(212, 160, 23)"] { background-color: #E8B84A !important; }
+[style*="#5a9e5a"], [style*="#5A9E5A"], [style*="rgb(90, 158, 90)"] { background-color: #658375 !important; }
+[style*="#3a86c8"], [style*="#3A86C8"], [style*="rgb(58, 134, 200)"] { background-color: #466685 !important; }
+[style*="#7b5ea7"], [style*="#7B5EA7"], [style*="rgb(123, 94, 167)"] { background-color: #3A5874 !important; }
+[style*="#c4607a"], [style*="#C4607A"], [style*="rgb(196, 96, 122)"] { background-color: #B85B57 !important; }
+[style*="#4aadad"], [style*="#4AADAD"], [style*="rgb(74, 173, 173)"] { background-color: #82979B !important; }
+[style*="#888888"], [style*="rgb(136, 136, 136)"] { background-color: #6A706C !important; }
+[style*="#2d2d2d"], [style*="#2D2D2D"], [style*="rgb(45, 45, 45)"] { background-color: #2A3037 !important; }
