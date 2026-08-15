@@ -1,28 +1,30 @@
-/* F4 Harbor Lamp overlay.
-   html:root beats :root in shell.css so the electric blue accent cannot leak back. */
+/* F4 Harbor Lamp overlay — html:root beats :root in shell.css */
 html:root {
   --color-accent:             #A08E7E;
   --color-accent-hover:       #8C7A6A;
   --color-accent-soft:        #C5D0D2;
   --color-sea:                #82979B;
+  --color-lilac:              #C0B6B4;
+  --color-cocoa-berry:        #A08882;
+  --color-dutch-cocoa:        #8C706A;
   --color-text-primary:       #2C2A28;
   --color-text-secondary:     #6A6460;
   --color-text-tertiary:      #8A847E;
   --color-text-danger:        #8A5348;
   --color-text-success:       #4F6B5A;
-  --color-text-warning:       #8A6A3A;
+  --color-text-warning:       #8C706A;
   --color-text-info:          #5A6E72;
-  --color-bg-page:            #E6E4DC;
-  --color-bg-primary:         #F4F2EC;
-  --color-bg-secondary:       #E8E6DE;
-  --color-bg-tertiary:        #D4D0C8;
+  --color-bg-page:            #EBEBE7;
+  --color-bg-primary:         #F7F7F4;
+  --color-bg-secondary:       #F0EEE8;
+  --color-bg-tertiary:        #DCDCD5;
   --color-bg-danger:          #F0E4E0;
   --color-bg-success:         #E4EBE4;
-  --color-bg-warning:         #F0E8D8;
+  --color-bg-warning:         #E8E2D6;
   --color-bg-info:            #D4DCDC;
-  --color-border-primary:     #D4D0C8;
-  --color-border-secondary:   #D4D0C8;
-  --color-border-tertiary:    #E0DCD4;
+  --color-border-primary:     #DCDCD5;
+  --color-border-secondary:   #DCDCD5;
+  --color-border-tertiary:    #E6E4DC;
   --color-border-danger:      #C4A098;
   --color-border-success:     #A3B8A8;
   --color-border-info:        #82979B;
@@ -33,12 +35,15 @@ html[data-theme="dark"] {
   --color-accent-hover:       #D4C4B4;
   --color-accent-soft:        #3A4446;
   --color-sea:                #8A9EA2;
+  --color-lilac:              #8A7E7C;
+  --color-cocoa-berry:        #C4A8A2;
+  --color-dutch-cocoa:        #B89890;
   --color-text-primary:       #E8E4DB;
   --color-text-secondary:     #A39E93;
   --color-text-tertiary:      #7A756C;
   --color-text-danger:        #C9897A;
   --color-text-success:       #8FB89A;
-  --color-text-warning:       #D4C4A0;
+  --color-text-warning:       #C4B4A4;
   --color-text-info:          #A8B8BA;
   --color-bg-page:            #1C1B19;
   --color-bg-primary:         #252422;
@@ -46,7 +51,7 @@ html[data-theme="dark"] {
   --color-bg-tertiary:        #3A3834;
   --color-bg-danger:          #3B2824;
   --color-bg-success:         #243028;
-  --color-bg-warning:         #3B3320;
+  --color-bg-warning:         #3B3328;
   --color-bg-info:            #2A3334;
   --color-border-primary:     #3A3834;
   --color-border-secondary:   #3A3834;
@@ -69,6 +74,10 @@ html[data-theme="dark"] .btn-primary {
   color: #1C1B19;
 }
 
+.a {
+  color: var(--color-sea);
+}
+
 a {
   color: var(--color-sea);
 }
@@ -84,4 +93,36 @@ html[data-theme="dark"] .substep-pill:hover {
 :focus-visible {
   outline: 2px solid var(--color-sea);
   outline-offset: 2px;
+}
+
+/* Status badges: drop saturated amber */
+.badge-high {
+  background: var(--color-lilac);
+  color: #5A4A48;
+}
+html[data-theme="dark"] .badge-high {
+  background: #3A3328;
+  color: var(--color-lilac);
+}
+
+.login-feature-icon {
+  color: var(--color-sea);
+}
+
+/* Default picker / stored category hexes → Harbor Lamp family */
+[style*="#e05252" i] { background-color: #8A5348 !important; }
+[style*="#e07a52" i] { background-color: #A08882 !important; }
+[style*="#d4a017" i] { background-color: #A08E7E !important; }
+[style*="#5a9e5a" i] { background-color: #4F6B5A !important; }
+[style*="#3a86c8" i] { background-color: #82979B !important; }
+[style*="#7b5ea7" i] { background-color: #8C706A !important; }
+[style*="#c4607a" i] { background-color: #8A706C !important; }
+[style*="#4aadad" i] { background-color: #5A6E72 !important; }
+[style*="#888888" i] { background-color: #6A6460 !important; }
+[style*="#2d2d2d" i] { background-color: #2C2A28 !important; }
+
+.cat-dot,
+.today-plan-dot,
+.color-opt {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-bg-primary) 22%, transparent);
 }
