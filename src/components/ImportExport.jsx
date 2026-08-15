@@ -3,13 +3,18 @@
  *
  * Props:
  *   appData   — standard appData bag
- *   menuMode  — if true, renders as .user-dropdown-item rows (for inside the user dropdown)
- *               if false/undefined, renders as the original compact toolbar strip
- *   onAction  — optional callback fired after any action (e.g. to close the dropdown)
+ *   menuMode  — if true, renders as .user-dropdown-item rows
+ *   onAction  — optional callback after any action
  */
 import React, { useRef, useState } from 'react';
+import {
+  buildNewTasksTemplate,
+  downloadJson,
+  parseNewTasksJson,
+  isBackupPayload,
+  extractTaskList,
+} from '../lib/taskBulkJson.js';
 
-/* ── ICS helpers ─────────────────────────────────────────────────────────── */
 function toICSDate(isoDate) {
   return isoDate.replace(/-/g, '');
 }
@@ -26,8 +31,6 @@ function tasksToICS(tasks, categories) {
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const stamp  = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
-  // Export dated work items: rolling tasks + series instances + one-offs.
-  // Skip series templates (meta-rows) and completed tasks.
   const vtodos = tasks
     .filter(t => !t.is_recurring_template && t.status !== 'done')
     .map(t => {
@@ -62,7 +65,6 @@ function tasksToICS(tasks, categories) {
   ].join('\r\n');
 }
 
-/* ── Download helper ─────────────────────────────────────────────────────── */
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url  = URL.createObjectURL(blob);
@@ -73,7 +75,6 @@ function download(filename, content, mime) {
   URL.revokeObjectURL(url);
 }
 
-/* ── Icons ───────────────────────────────────────────────────────────────── */
 const DownloadIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -94,18 +95,17 @@ const UploadIcon = () => (
   </svg>
 );
 
-/* ── Component ───────────────────────────────────────────────────────────── */
 export default function ImportExport({ appData, menuMode = false, onAction }) {
   const { categories, tasks, quickTasks, preferences, saveTask, saveCategory, saveQuickTask } = appData;
-  const fileRef   = useRef();
-  const [status, setStatus] = useState(null); // { ok: bool, text: string }
+  const fileRef = useRef();
+  const newTasksFileRef = useRef();
+  const [status, setStatus] = useState(null);
 
   const flash = (ok, text) => {
     setStatus({ ok, text });
-    setTimeout(() => setStatus(null), 3500);
+    setTimeout(() => setStatus(null), 4500);
   };
 
-  /* ── Export JSON ── */
   const exportJSON = () => {
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -146,7 +146,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     onAction?.();
   };
 
-  /* ── Export ICS ── */
   const exportICS = () => {
     const ics = tasksToICS(tasks, categories);
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -155,7 +154,37 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     onAction?.();
   };
 
-  /* ── Import JSON ── */
+  const exportTaskTemplate = () => {
+    downloadJson('commitments-new-tasks-template.json', buildNewTasksTemplate());
+    flash(true, 'Task template downloaded');
+    onAction?.();
+  };
+
+  const importNewTaskPayloads = async (payloads, errors) => {
+    let imported = 0;
+    for (const payload of payloads) {
+      await saveTask(payload);
+      imported += 1;
+    }
+    const extra = errors.length ? ` (${errors.length} skipped)` : '';
+    flash(true, `Created ${imported} task${imported !== 1 ? 's' : ''}${extra}`);
+    if (errors.length) console.warn('New-task JSON issues:', errors);
+  };
+
+  const handleNewTasksFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const data = JSON.parse(await file.text());
+      const { payloads, errors } = parseNewTasksJson(data, categories);
+      if (payloads.length === 0) throw new Error(errors[0] || 'No valid tasks');
+      await importNewTaskPayloads(payloads, errors);
+    } catch (err) {
+      flash(false, `Import failed: ${err.message}`);
+    }
+  };
+
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -163,10 +192,17 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+
+      if (!isBackupPayload(data) && extractTaskList(data)) {
+        const { payloads, errors } = parseNewTasksJson(data, categories);
+        if (payloads.length === 0) throw new Error(errors[0] || 'No valid tasks');
+        await importNewTaskPayloads(payloads, errors);
+        return;
+      }
+
       if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format: missing tasks array');
 
       let imported = 0;
-
       const catIdMap = {};
       (categories || []).forEach(c => { catIdMap[c.id] = c.id; });
 
@@ -209,7 +245,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
           recurring_until:             t.recurring_until || null,
           recurring_instances:         t.recurring_instances ?? null,
           is_recurring_template:       !!t.is_recurring_template,
-          // Do not re-link to old template ids from another DB
           recurring_template_id:       null,
           recurring_last_completed_at: t.recurring_last_completed_at || null,
           substeps:                    (t.substeps || []).map(s => ({
@@ -236,8 +271,27 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
   };
 
   const triggerImport = () => fileRef.current?.click();
+  const triggerNewTasks = () => newTasksFileRef.current?.click();
 
-  /* ── Menu mode (inside user dropdown) ── */
+  const hiddenInputs = (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={handleFile}
+      />
+      <input
+        ref={newTasksFileRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={handleNewTasksFile}
+      />
+    </>
+  );
+
   if (menuMode) {
     return (
       <>
@@ -249,17 +303,19 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
           title="Export tasks as ICS calendar file">
           <DownloadIcon /> Export ICS
         </button>
-        <button className="user-dropdown-item" role="menuitem" onClick={triggerImport}
-          title="Import from a previously exported JSON file">
-          <UploadIcon /> Import JSON
+        <button className="user-dropdown-item" role="menuitem" onClick={exportTaskTemplate}
+          title="Download a JSON template for creating multiple new tasks">
+          <DownloadIcon /> Download task template
         </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: 'none' }}
-          onChange={handleFile}
-        />
+        <button className="user-dropdown-item" role="menuitem" onClick={triggerNewTasks}
+          title="Create multiple new tasks from a JSON file">
+          <UploadIcon /> Import new tasks
+        </button>
+        <button className="user-dropdown-item" role="menuitem" onClick={triggerImport}
+          title="Import from a previously exported JSON backup">
+          <UploadIcon /> Import backup JSON
+        </button>
+        {hiddenInputs}
         {status && (
           <span className={`import-export-flash${status.ok ? '' : ' error'}`}>{status.text}</span>
         )}
@@ -267,7 +323,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     );
   }
 
-  /* ── Toolbar mode (legacy / standalone) ── */
   return (
     <div className="import-export-bar">
       <button className="btn btn-sm" onClick={exportJSON} title="Export all data as JSON">
@@ -276,16 +331,16 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
       <button className="btn btn-sm" onClick={exportICS} title="Export tasks as ICS calendar file">
         <DownloadIcon /> ICS
       </button>
+      <button className="btn btn-sm" onClick={exportTaskTemplate} title="Download multi-task JSON template">
+        <DownloadIcon /> Template
+      </button>
+      <button className="btn btn-sm" onClick={triggerNewTasks} title="Create tasks from JSON">
+        <UploadIcon /> New tasks
+      </button>
       <button className="btn btn-sm" onClick={triggerImport} title="Import from a previously exported JSON file">
         <UploadIcon /> Import JSON
       </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,application/json"
-        style={{ display: 'none' }}
-        onChange={handleFile}
-      />
+      {hiddenInputs}
       {status && (
         <span className={`import-export-flash${status.ok ? '' : ' error'}`}>{status.text}</span>
       )}
