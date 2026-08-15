@@ -1,7 +1,7 @@
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-  /* Collected Quartet on Crystalline / White Sail paper */
+  /* Collected Quartet on Sunny cream paper */
   --color-accent:             #658375;
   --color-accent-hover:       #4F6B5E;
   --color-accent-soft:        #C5D0D2;
@@ -17,17 +17,17 @@
   --color-text-success:       #3F5C50;
   --color-text-warning:       #8A6A20;
   --color-text-info:          #3A5874;
-  --color-bg-page:            #EBEBE7;
-  --color-bg-primary:         #F7F3EF;
-  --color-bg-secondary:       #F0EEE8;
-  --color-bg-tertiary:        #D8D0CA;
+  --color-bg-page:            #FFF8E8;
+  --color-bg-primary:         #FFFDF8;
+  --color-bg-secondary:       #F7F0DC;
+  --color-bg-tertiary:        #E4D9B8;
   --color-bg-danger:          #F6E4E2;
   --color-bg-success:         #E3EBE6;
-  --color-bg-warning:         #FFF8E8;
-  --color-bg-info:            #D4DCDC;
-  --color-border-primary:     #D8D0CA;
-  --color-border-secondary:   #D5D0CA;
-  --color-border-tertiary:    #E4DDD6;
+  --color-bg-warning:         #FFF3CC;
+  --color-bg-info:            #E8EEEF;
+  --color-border-primary:     #E4D9B8;
+  --color-border-secondary:   #E4D9B8;
+  --color-border-tertiary:    #F0E6C8;
   --color-border-danger:      #D4A09C;
   --color-border-success:     #A3B8A8;
   --color-border-info:        #82979B;
