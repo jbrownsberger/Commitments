@@ -13,6 +13,7 @@
  */
 import React, { useState, useMemo, useEffect } from 'react';
 import Modal from './Modal.jsx';
+import TaskJsonImport from './TaskJsonImport.jsx';
 import {
   parseCadenceString,
   serialiseCadence,
@@ -27,7 +28,6 @@ const STATUS_OPTS = [
   { val: 'in progress', label: 'In progress' },
   { val: 'done',        label: 'Done' },
 ];
-
 const PRESET_CADENCES = [
   { val: 'daily',   label: 'Daily'    },
   { val: 'weekday', label: 'Weekdays' },
@@ -41,7 +41,6 @@ const CUSTOM_UNITS = [
   { val: 'months', label: 'months' },
 ];
 
-// Mon first, Sun last — display order only.
 const DAYS_OF_WEEK = [
   { val: 1, label: 'Mon' },
   { val: 2, label: 'Tue' },
@@ -52,7 +51,6 @@ const DAYS_OF_WEEK = [
   { val: 0, label: 'Sun' },
 ];
 
-// ── Recurring section ──────────────────────────────────────────────────────────
 function RecurringSection({ task, isRecurring, setIsRecurring }) {
   const parsed = parseCadenceString(task?.recurring_cadence);
 
@@ -90,7 +88,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
     dom: needsDom ? selectedDom : null,
   }), [cadenceValue, needsDow, selectedDow, needsDom, selectedDom]);
 
-  // First due: prefer existing due / start; else snap from today.
   const defaultFirstDue = useMemo(() => {
     if (task?.due_date) return task.due_date;
     if (task?.recurring_start) return task.recurring_start;
@@ -99,8 +96,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
 
   const [firstDue, setFirstDue] = useState(defaultFirstDue);
 
-  // When pattern changes on a *new* task, re-snap first due to the next valid date.
-  // On edit, leave the user's due alone unless they change the pattern intentionally.
   const isNew = !task?.id;
   useEffect(() => {
     if (!isRecurring) return;
@@ -124,17 +119,13 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
   return (
     <div className="tm-recurring-wrap">
       <div className="tm-recurring-toggle">
-        <input
-          type="checkbox" id="tm-recurring-cb" name="recurring"
-          checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)}
-        />
+        <input type="checkbox" id="tm-recurring-cb" name="recurring"
+          checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
         <label htmlFor="tm-recurring-cb">Recurring task</label>
       </div>
 
-      {isRecurring && (
+      {isRecurring ? (
         <div className="tm-recurring-body">
-
-          {/* ── Cadence ── */}
           <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
             <span className="tm-rec-label" style={{ paddingTop: 6 }}>Repeats</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
@@ -181,16 +172,12 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
 
               {needsDom && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                    On day
-                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>On day</span>
                   <input type="number" min={1} max={31} value={selectedDom}
                     onChange={e => setSelectedDom(Math.min(31, Math.max(1, parseInt(e.target.value) || 1)))}
                     className="tm-rec-count-input"
                   />
-                  <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                    of each month
-                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>of each month</span>
                 </div>
               )}
             </div>
@@ -199,7 +186,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
             <input type="hidden" name="recurring_dom" value={needsDom ? selectedDom : ''} />
           </div>
 
-          {/* ── Behavior ── */}
           <div className="tm-rec-row" style={{ alignItems: 'flex-start' }}>
             <span className="tm-rec-label" style={{ paddingTop: 6 }}>Behavior</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
@@ -224,7 +210,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
             <input type="hidden" name="recurring_type" value={recType} />
           </div>
 
-          {/* ── First due (both modes) ── */}
           <div className="tm-rec-row">
             <span className="tm-rec-label">First due</span>
             <input type="date" name="recurring_first_due" value={firstDue}
@@ -232,7 +217,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
               className="tm-rec-date-input" required />
           </div>
 
-          {/* ── Series end ── */}
           {recType === 'expand' && (
             <div className="tm-rec-until">
               <div className="tm-rec-row" style={{ alignItems: 'flex-start', gap: 12 }}>
@@ -278,18 +262,14 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
             </>
           )}
 
-          {/* ── Preview ── */}
           {preview && (
             <div className="tm-rec-preview">
               <span className="tm-rec-preview-label">Next</span>
               <span>{preview}</span>
             </div>
           )}
-
         </div>
-      )}
-
-      {!isRecurring && (
+      ) : (
         <>
           <input type="hidden" name="recurring_type"      value="" />
           <input type="hidden" name="cadence"             value="" />
@@ -305,7 +285,6 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
 export default function TaskModal({ task, catId, categories = [], onSave, onClose }) {
   const isEdit = !!task;
   const [submitting, setSubmitting] = useState(false);
@@ -313,10 +292,10 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   const [selCatId, setSelCatId] = useState(
     catId ?? task?.category_id ?? categories[0]?.id ?? null
   );
-  const [substeps,    setSubsteps]   = useState(
+  const [substeps, setSubsteps] = useState(
     (task?.substeps || []).map(s => ({ ...s, weight: s.weight ?? 1 }))
   );
-  const [newStepText,   setNewStepText]   = useState('');
+  const [newStepText, setNewStepText] = useState('');
   const [newStepWeight, setNewStepWeight] = useState(1);
 
   const addSubstep = () => {
@@ -355,10 +334,8 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       ? parseInt(rawDom, 10)
       : null;
 
-    // Single due anchor: recurring uses First due; otherwise top-level due date.
     let due_date = recurringOn ? firstDue : topDueDate;
 
-    // Snap first due onto the pattern grid (weekly DOW / monthly DOM / weekdays).
     if (recurringOn && due_date) {
       due_date = firstOccurrenceOnOrAfter({
         cadence,
@@ -386,13 +363,11 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       recurring_until:       (recurringOn && recType === 'expand' && rawUntil)  ? rawUntil           : null,
       recurring_instances:   (recurringOn && recType === 'expand' && rawCount)  ? parseInt(rawCount, 10) : null,
       is_recurring_template: recurringOn && recType === 'expand',
-      // Series template itself is not work — keep it not-started
       ...(recurringOn && recType === 'expand' ? { status: 'not started', manual_progress: 0 } : {}),
       substeps,
       position:              task?.position ?? 0,
     };
 
-    // Clear recurrence linkage when turning off
     if (!recurringOn) {
       payload.recurring_template_id = task?.recurring_template_id ?? null;
       payload.recurring_last_completed_at = null;
@@ -411,12 +386,17 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
 
   return (
     <Modal title={isEdit ? 'Edit task' : 'Add task'} onClose={onClose} wide>
+      {!isEdit && (
+        <TaskJsonImport categories={categories} onSave={onSave} onClose={onClose} />
+      )}
       <form onSubmit={handleSubmit}>
         {categories.length > 0 && (
           <div className="form-field">
             <label>Category</label>
             <select value={selCatId || ''} onChange={e => setSelCatId(e.target.value)}>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
             </select>
           </div>
         )}
@@ -442,7 +422,6 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
           </select>
         </div>
 
-        {/* Non-recurring only: top-level due date. Recurring uses First due. */}
         {!isRecurring && (
           <div className="form-field">
             <label>Due date</label>
