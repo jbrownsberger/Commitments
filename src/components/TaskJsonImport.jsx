@@ -5,6 +5,26 @@ import {
   parseNewTasksJson,
 } from '../lib/taskBulkJson.js';
 
+const DownloadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const UploadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
 export default function TaskJsonImport({ categories, onSave, onClose }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -37,19 +57,46 @@ export default function TaskJsonImport({ categories, onSave, onClose }) {
   };
 
   return (
-    <div className="tm-json-bar">
-      <button type="button" className="btn btn-sm" onClick={downloadTemplate} disabled={busy}
-        title="Download a JSON template for multiple tasks">
-        Download template
-      </button>
-      <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()} disabled={busy}
-        title="Create multiple new tasks from JSON">
-        {busy ? 'Importing…' : 'Upload JSON'}
-      </button>
-      <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={handleFile} />
+    <div style={{
+      display: 'flex',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
+      margin: '-4px 0 12px',
+    }}>
       {status && (
-        <span className={`import-export-flash${status.ok ? '' : ' error'}`}>{status.text}</span>
+        <span className={`import-export-flash${status.ok ? '' : ' error'}`} style={{ marginRight: 'auto' }}>
+          {status.text}
+        </span>
       )}
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={downloadTemplate}
+        disabled={busy}
+        title="Download a JSON template for multiple tasks"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px' }}
+      >
+        <DownloadIcon /> Template
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        title="Create multiple new tasks from JSON"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px' }}
+      >
+        <UploadIcon /> {busy ? 'Importing…' : 'JSON'}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={handleFile}
+      />
     </div>
   );
 }
