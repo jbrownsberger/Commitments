@@ -1,19 +1,7 @@
 /**
- * ImportExport — JSON export, ICS export, JSON import.
- *
- * Props:
- *   appData   — standard appData bag
- *   menuMode  — if true, renders as .user-dropdown-item rows
- *   onAction  — optional callback after any action
+ * ImportExport — JSON export, ICS export, JSON backup import.
  */
 import React, { useRef, useState } from 'react';
-import {
-  buildNewTasksTemplate,
-  downloadJson,
-  parseNewTasksJson,
-  isBackupPayload,
-  extractTaskList,
-} from '../lib/taskBulkJson.js';
 
 function toICSDate(isoDate) {
   return isoDate.replace(/-/g, '');
@@ -98,7 +86,6 @@ const UploadIcon = () => (
 export default function ImportExport({ appData, menuMode = false, onAction }) {
   const { categories, tasks, quickTasks, preferences, saveTask, saveCategory, saveQuickTask } = appData;
   const fileRef = useRef();
-  const newTasksFileRef = useRef();
   const [status, setStatus] = useState(null);
 
   const flash = (ok, text) => {
@@ -154,37 +141,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     onAction?.();
   };
 
-  const exportTaskTemplate = () => {
-    downloadJson('commitments-new-tasks-template.json', buildNewTasksTemplate());
-    flash(true, 'Task template downloaded');
-    onAction?.();
-  };
-
-  const importNewTaskPayloads = async (payloads, errors) => {
-    let imported = 0;
-    for (const payload of payloads) {
-      await saveTask(payload);
-      imported += 1;
-    }
-    const extra = errors.length ? ` (${errors.length} skipped)` : '';
-    flash(true, `Created ${imported} task${imported !== 1 ? 's' : ''}${extra}`);
-    if (errors.length) console.warn('New-task JSON issues:', errors);
-  };
-
-  const handleNewTasksFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    try {
-      const data = JSON.parse(await file.text());
-      const { payloads, errors } = parseNewTasksJson(data, categories);
-      if (payloads.length === 0) throw new Error(errors[0] || 'No valid tasks');
-      await importNewTaskPayloads(payloads, errors);
-    } catch (err) {
-      flash(false, `Import failed: ${err.message}`);
-    }
-  };
-
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -192,14 +148,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-
-      if (!isBackupPayload(data) && extractTaskList(data)) {
-        const { payloads, errors } = parseNewTasksJson(data, categories);
-        if (payloads.length === 0) throw new Error(errors[0] || 'No valid tasks');
-        await importNewTaskPayloads(payloads, errors);
-        return;
-      }
-
       if (!data.tasks || !Array.isArray(data.tasks)) throw new Error('Invalid format: missing tasks array');
 
       let imported = 0;
@@ -271,25 +219,15 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
   };
 
   const triggerImport = () => fileRef.current?.click();
-  const triggerNewTasks = () => newTasksFileRef.current?.click();
 
   const hiddenInputs = (
-    <>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,application/json"
-        style={{ display: 'none' }}
-        onChange={handleFile}
-      />
-      <input
-        ref={newTasksFileRef}
-        type="file"
-        accept=".json,application/json"
-        style={{ display: 'none' }}
-        onChange={handleNewTasksFile}
-      />
-    </>
+    <input
+      ref={fileRef}
+      type="file"
+      accept=".json,application/json"
+      style={{ display: 'none' }}
+      onChange={handleFile}
+    />
   );
 
   if (menuMode) {
@@ -303,17 +241,9 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
           title="Export tasks as ICS calendar file">
           <DownloadIcon /> Export ICS
         </button>
-        <button className="user-dropdown-item" role="menuitem" onClick={exportTaskTemplate}
-          title="Download a JSON template for creating multiple new tasks">
-          <DownloadIcon /> Download task template
-        </button>
-        <button className="user-dropdown-item" role="menuitem" onClick={triggerNewTasks}
-          title="Create multiple new tasks from a JSON file">
-          <UploadIcon /> Import new tasks
-        </button>
         <button className="user-dropdown-item" role="menuitem" onClick={triggerImport}
           title="Import from a previously exported JSON backup">
-          <UploadIcon /> Import backup JSON
+          <UploadIcon /> Import JSON
         </button>
         {hiddenInputs}
         {status && (
@@ -330,12 +260,6 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
       </button>
       <button className="btn btn-sm" onClick={exportICS} title="Export tasks as ICS calendar file">
         <DownloadIcon /> ICS
-      </button>
-      <button className="btn btn-sm" onClick={exportTaskTemplate} title="Download multi-task JSON template">
-        <DownloadIcon /> Template
-      </button>
-      <button className="btn btn-sm" onClick={triggerNewTasks} title="Create tasks from JSON">
-        <UploadIcon /> New tasks
       </button>
       <button className="btn btn-sm" onClick={triggerImport} title="Import from a previously exported JSON file">
         <UploadIcon /> Import JSON
