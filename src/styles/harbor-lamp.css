@@ -1,64 +1,66 @@
-/* F4 Harbor Lamp overlay — html:root beats :root in shell.css */
+/* Collected Quartet overlay — beats :root in shell.css */
 html:root {
-  --color-accent:             #A08E7E;
-  --color-accent-hover:       #8C7A6A;
+  --color-accent:             #658375;
+  --color-accent-hover:       #4F6B5E;
   --color-accent-soft:        #C5D0D2;
   --color-sea:                #82979B;
-  --color-lilac:              #C0B6B4;
-  --color-cocoa-berry:        #A08882;
-  --color-dutch-cocoa:        #8C706A;
-  --color-text-primary:       #2C2A28;
-  --color-text-secondary:     #6A6460;
-  --color-text-tertiary:      #8A847E;
-  --color-text-danger:        #8A5348;
-  --color-text-success:       #4F6B5A;
-  --color-text-warning:       #8C706A;
-  --color-text-info:          #5A6E72;
+  --color-azure:              #466685;
+  --color-poppy:              #B85B57;
+  --color-sunny:              #E8B84A;
+  --color-juniper:            #658375;
+  --color-text-primary:       #2A3037;
+  --color-text-secondary:     #5E6662;
+  --color-text-tertiary:      #7A827E;
+  --color-text-danger:        #8A3E3B;
+  --color-text-success:       #3F5C50;
+  --color-text-warning:       #8A6A20;
+  --color-text-info:          #3A5874;
   --color-bg-page:            #EBEBE7;
-  --color-bg-primary:         #F7F7F4;
+  --color-bg-primary:         #F7F3EF;
   --color-bg-secondary:       #F0EEE8;
-  --color-bg-tertiary:        #DCDCD5;
-  --color-bg-danger:          #F0E4E0;
-  --color-bg-success:         #E4EBE4;
-  --color-bg-warning:         #E8E2D6;
+  --color-bg-tertiary:        #D8D0CA;
+  --color-bg-danger:          #F6E4E2;
+  --color-bg-success:         #E3EBE6;
+  --color-bg-warning:         #FFF8E8;
   --color-bg-info:            #D4DCDC;
-  --color-border-primary:     #DCDCD5;
-  --color-border-secondary:   #DCDCD5;
-  --color-border-tertiary:    #E6E4DC;
-  --color-border-danger:      #C4A098;
+  --color-border-primary:     #D8D0CA;
+  --color-border-secondary:   #D5D0CA;
+  --color-border-tertiary:    #E4DDD6;
+  --color-border-danger:      #D4A09C;
   --color-border-success:     #A3B8A8;
   --color-border-info:        #82979B;
 }
 
 html[data-theme="dark"] {
-  --color-accent:             #C4B4A4;
-  --color-accent-hover:       #D4C4B4;
-  --color-accent-soft:        #3A4446;
+  --color-accent:             #7A9A8A;
+  --color-accent-hover:       #8AAB9A;
+  --color-accent-soft:        #2F4962;
   --color-sea:                #8A9EA2;
-  --color-lilac:              #8A7E7C;
-  --color-cocoa-berry:        #C4A8A2;
-  --color-dutch-cocoa:        #B89890;
-  --color-text-primary:       #E8E4DB;
-  --color-text-secondary:     #A39E93;
-  --color-text-tertiary:      #7A756C;
-  --color-text-danger:        #C9897A;
+  --color-azure:              #6A8AAB;
+  --color-poppy:              #D76C6E;
+  --color-sunny:              #E8B84A;
+  --color-juniper:            #7A9A8A;
+  --color-text-primary:       #F3EEE8;
+  --color-text-secondary:     #C5D0D2;
+  --color-text-tertiary:      #8A9A96;
+  --color-text-danger:        #D76C6E;
   --color-text-success:       #8FB89A;
-  --color-text-warning:       #C4B4A4;
-  --color-text-info:          #A8B8BA;
-  --color-bg-page:            #1C1B19;
-  --color-bg-primary:         #252422;
-  --color-bg-secondary:       #2E2C29;
-  --color-bg-tertiary:        #3A3834;
-  --color-bg-danger:          #3B2824;
-  --color-bg-success:         #243028;
-  --color-bg-warning:         #3B3328;
-  --color-bg-info:            #2A3334;
-  --color-border-primary:     #3A3834;
-  --color-border-secondary:   #3A3834;
-  --color-border-tertiary:    #2E2C29;
-  --color-border-danger:      #6A4540;
+  --color-text-warning:       #E8B84A;
+  --color-text-info:          #A8C0D0;
+  --color-bg-page:            #2A3334;
+  --color-bg-primary:         #334044;
+  --color-bg-secondary:       #3A4A4E;
+  --color-bg-tertiary:        #466685;
+  --color-bg-danger:          #4A3030;
+  --color-bg-success:         #2A3A32;
+  --color-bg-warning:         #3B3320;
+  --color-bg-info:            #2F4962;
+  --color-border-primary:     #547494;
+  --color-border-secondary:   #466685;
+  --color-border-tertiary:    #3A4A4E;
+  --color-border-danger:      #8A4A48;
   --color-border-success:     #3A5544;
-  --color-border-info:        #4A5A5C;
+  --color-border-info:        #547494;
 }
 
 html, body {
@@ -67,27 +69,44 @@ html, body {
 }
 
 .btn-primary {
+  background: var(--color-juniper);
+  border-color: var(--color-juniper);
   color: #F6F2EA;
+}
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 html[data-theme="dark"] .btn-primary {
   color: #1C1B19;
 }
 
-.a {
-  color: var(--color-sea);
-}
-
 a {
-  color: var(--color-sea);
+  color: var(--color-azure);
 }
 
+.tab.active {
+  color: var(--color-juniper);
+  border-bottom-color: var(--color-juniper);
+}
+
+.task-check.in-progress {
+  background: var(--color-bg-info);
+  border-color: var(--color-azure);
+}
+
+.progress-fill {
+  background: var(--color-juniper);
+}
+
+.substep-pill {
+  background: var(--color-bg-info);
+  color: var(--color-text-info);
+  border-color: var(--color-sea);
+}
 .substep-pill:hover {
   background: var(--color-accent-soft);
-}
-
-html[data-theme="dark"] .substep-pill:hover {
-  background: var(--color-bg-info);
 }
 
 :focus-visible {
@@ -95,34 +114,35 @@ html[data-theme="dark"] .substep-pill:hover {
   outline-offset: 2px;
 }
 
-/* Status badges: drop saturated amber */
-.badge-high {
-  background: var(--color-lilac);
-  color: #5A4A48;
+.badge-low {
+  background: var(--color-bg-success);
+  color: var(--color-text-success);
 }
-html[data-theme="dark"] .badge-high {
-  background: #3A3328;
-  color: var(--color-lilac);
+.badge-med {
+  background: var(--color-bg-info);
+  color: var(--color-azure);
+}
+.badge-high {
+  background: var(--color-bg-warning);
+  color: var(--color-text-warning);
+}
+.badge-critical {
+  background: var(--color-bg-danger);
+  color: var(--color-poppy);
 }
 
 .login-feature-icon {
-  color: var(--color-sea);
+  color: var(--color-azure);
 }
 
-/* Default picker / stored category hexes → Harbor Lamp family */
-[style*="#e05252" i] { background-color: #8A5348 !important; }
-[style*="#e07a52" i] { background-color: #A08882 !important; }
-[style*="#d4a017" i] { background-color: #A08E7E !important; }
-[style*="#5a9e5a" i] { background-color: #4F6B5A !important; }
-[style*="#3a86c8" i] { background-color: #82979B !important; }
-[style*="#7b5ea7" i] { background-color: #8C706A !important; }
-[style*="#c4607a" i] { background-color: #8A706C !important; }
-[style*="#4aadad" i] { background-color: #5A6E72 !important; }
-[style*="#888888" i] { background-color: #6A6460 !important; }
-[style*="#2d2d2d" i] { background-color: #2C2A28 !important; }
-
-.cat-dot,
-.today-plan-dot,
-.color-opt {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-bg-primary) 22%, transparent);
-}
+/* Default picker hexes → official SW companions */
+[style*="#e05252" i] { background-color: #B85B57 !important; }
+[style*="#e07a52" i] { background-color: #C46A4A !important; }
+[style*="#d4a017" i] { background-color: #E8B84A !important; }
+[style*="#5a9e5a" i] { background-color: #658375 !important; }
+[style*="#3a86c8" i] { background-color: #466685 !important; }
+[style*="#7b5ea7" i] { background-color: #3A5874 !important; }
+[style*="#c4607a" i] { background-color: #B85B57 !important; }
+[style*="#4aadad" i] { background-color: #82979B !important; }
+[style*="#888888" i] { background-color: #6A706C !important; }
+[style*="#2d2d2d" i] { background-color: #2A3037 !important; }
