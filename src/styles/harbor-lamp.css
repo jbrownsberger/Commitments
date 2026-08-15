@@ -8,6 +8,7 @@ html:root {
   --color-poppy:              #B85B57;
   --color-sunny:              #E8B84A;
   --color-juniper:            #658375;
+  --color-error:              #B85B57;
   --color-text-primary:       #2A3037;
   --color-text-secondary:     #5E6662;
   --color-text-tertiary:      #7A827E;
@@ -40,6 +41,7 @@ html[data-theme="dark"] {
   --color-poppy:              #D76C6E;
   --color-sunny:              #E8B84A;
   --color-juniper:            #7A9A8A;
+  --color-error:              #D76C6E;
   --color-text-primary:       #F3EEE8;
   --color-text-secondary:     #C5D0D2;
   --color-text-tertiary:      #8A9A96;
@@ -137,6 +139,30 @@ a { color: var(--color-azure); }
 }
 
 .login-feature-icon { color: var(--color-azure); }
+
+/* Overdue: Wild Poppy, not fuchsia #a12c7b */
+.focus-card--overdue {
+  border-color: rgba(184, 91, 87, 0.35) !important;
+  background: #F6E4E2 !important;
+}
+.focus-card--overdue:hover {
+  background: #F0D8D4 !important;
+}
+html[data-theme="dark"] .focus-card--overdue {
+  border-color: rgba(215, 108, 110, 0.35) !important;
+  background: #4A3030 !important;
+}
+html[data-theme="dark"] .focus-card--overdue:hover {
+  background: #553636 !important;
+}
+.focus-card-overdue-badge {
+  color: #8A3E3B !important;
+  background: rgba(184, 91, 87, 0.16) !important;
+}
+html[data-theme="dark"] .focus-card-overdue-badge {
+  color: #D76C6E !important;
+  background: rgba(215, 108, 110, 0.18) !important;
+}
 
 /* Old picker hexes + rgb() (Safari: no attribute i-flag) */
 [style*="#e05252"], [style*="#E05252"], [style*="rgb(224, 82, 82)"] { background-color: #B85B57 !important; }
