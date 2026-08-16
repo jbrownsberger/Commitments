@@ -1,0 +1,31 @@
+/* Unscheduled / sidebar task cards: inherit auto-contrast from JS */
+.sidebar-card[data-contrast="light"],
+.agenda-unsch[data-contrast="light"],
+.agenda-unsch-card[data-contrast="light"] {
+  color: #FFFDF8;
+}
+
+.sidebar-card[data-contrast="light"] .sidebar-card-name,
+.sidebar-card[data-contrast="light"] .sidebar-card-meta,
+.sidebar-card[data-contrast="light"] .sidebar-card-meta span,
+.sidebar-card[data-contrast="light"] .sidebar-day-chip,
+.sidebar-card[data-contrast="light"] .sidebar-day-chip button,
+.sidebar-card[data-contrast="light"] .sidebar-schedule-btn,
+.agenda-unsch[data-contrast="light"] .agenda-unsch-name,
+.agenda-unsch[data-contrast="light"] .agenda-unsch-meta,
+.agenda-unsch-card[data-contrast="light"] .agenda-unsch-name,
+.agenda-unsch-card[data-contrast="light"] .agenda-unsch-meta {
+  color: inherit;
+}
+
+.sidebar-card[data-contrast="light"] .sidebar-card-meta,
+.agenda-unsch[data-contrast="light"] .agenda-unsch-meta,
+.agenda-unsch-card[data-contrast="light"] .agenda-unsch-meta {
+  opacity: 0.88;
+}
+
+.sidebar-card[data-contrast="dark"],
+.agenda-unsch[data-contrast="dark"],
+.agenda-unsch-card[data-contrast="dark"] {
+  color: #1C1B19;
+}
