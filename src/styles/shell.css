@@ -180,6 +180,8 @@ body {
 
 .user-dropdown-menu--wide {
   min-width: 240px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
 }
 
 .user-dropdown-section-label {

@@ -20,6 +20,8 @@ import TaskModal    from './TaskModal.jsx';
 import TaskPanel    from './TaskPanel.jsx';
 import ImportExport from './ImportExport.jsx';
 import Search       from './Search.jsx';
+import Modal        from './Modal.jsx';
+import McpConnect   from './McpConnect.jsx';
 import '../styles/shell.css';
 
 // ── Tab definitions with inline SVG icons ────────────────────────────────────
@@ -146,6 +148,17 @@ const IconBell = () => (
   </svg>
 );
 
+const IconBot = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="10" rx="2" />
+    <path d="M12 7v4" />
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="16" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 const LEAD_DAY_OPTIONS = [
   { value: 0, label: 'None' },
   { value: 1, label: '1 day' },
@@ -164,6 +177,7 @@ function UserDropdown({
   canUndo, canRedo, onUndo, onRedo, appData,
 }) {
   const [open, setOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const ref = useRef(null);
 
   const [pushStatus, setPushStatus] = useState({
@@ -441,6 +455,19 @@ function UserDropdown({
 
           <div className="user-dropdown-divider" />
 
+          <div className="user-dropdown-section-label">
+            <IconBot /> AI assistants
+          </div>
+          <button
+            className="user-dropdown-item"
+            role="menuitem"
+            onClick={() => { setMcpOpen(true); setOpen(false); }}
+          >
+            <IconBot /> Connect AI assistant
+          </button>
+
+          <div className="user-dropdown-divider" />
+
           <button
             className="user-dropdown-item user-dropdown-item--danger"
             role="menuitem"
@@ -449,6 +476,12 @@ function UserDropdown({
             Sign out
           </button>
         </div>
+      )}
+
+      {mcpOpen && (
+        <Modal title="Connect AI assistant" onClose={() => setMcpOpen(false)} wide>
+          <McpConnect embedded />
+        </Modal>
       )}
     </div>
   );
