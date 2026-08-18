@@ -492,14 +492,11 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
       : null;
 
   return (
-    <div className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`} onClick={onOpen}>
-
-      {/* Category color strip — left edge */}
-      <div
-        className="focus-card-cat-strip"
-        style={{ background: task.catColor || 'var(--color-border-tertiary)' }}
-        aria-hidden="true"
-      />
+    <div
+      className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`}
+      style={{ '--focus-category-color': task.catColor || '#82979B' }}
+      onClick={onOpen}
+    >
 
       {/* Inner column: body row + urgency bar flush to bottom */}
       <div className="focus-card-inner">
