@@ -497,6 +497,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
       style={{ '--focus-category-color': task.catColor || '#82979B' }}
       onClick={onOpen}
     >
+      <div className="focus-card-cat-strip" aria-hidden="true" />
 
       {/* Inner column: body row + urgency bar flush to bottom */}
       <div className="focus-card-inner">

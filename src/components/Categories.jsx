@@ -2,12 +2,8 @@ import React, { useState } from 'react';
 import Modal from './Modal.jsx';
 import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, formatDate, cadenceLabel } from './TaskPanel.jsx';
 import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
+import { CATEGORY_COLORS } from '../lib/palette.js';
 import '../styles/categories.css';
-
-const COLORS = [
-  '#e05252','#e07a52','#d4a017','#5a9e5a','#3a86c8',
-  '#7b5ea7','#c4607a','#4aadad','#888888','#2d2d2d',
-];
 
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
 const STATUS_OPTS = [
@@ -175,7 +171,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
             </div>
             <div className="form-field">
               <label>Color</label>
-              <ColorPicker name="color" defaultValue={catModal !== 'add' ? catModal.color : COLORS[0]} />
+              <ColorPicker name="color" defaultValue={catModal !== 'add' ? catModal.color : CATEGORY_COLORS[0]} />
             </div>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setCatModal(null)}>Cancel</button>
@@ -258,12 +254,12 @@ function TaskRow({ task, cat, onCycle, onOpen, badge }) {
 // ── ColorPicker ───────────────────────────────────────────────────────────────
 
 function ColorPicker({ name, defaultValue }) {
-  const [selected, setSelected] = useState(defaultValue || COLORS[0]);
+  const [selected, setSelected] = useState(defaultValue || CATEGORY_COLORS[0]);
   return (
     <div>
       <input type="hidden" name={name} value={selected} />
       <div className="color-row">
-        {COLORS.map(c => (
+        {CATEGORY_COLORS.map(c => (
           <div
             key={c}
             className={`color-opt${selected === c ? ' selected' : ''}`}
