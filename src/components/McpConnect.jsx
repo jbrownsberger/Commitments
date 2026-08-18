@@ -28,6 +28,7 @@ export default function McpConnect({ embedded = false }) {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         'Content-Type': 'application/json',
       },
       body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,

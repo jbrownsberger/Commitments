@@ -121,3 +121,63 @@ curl -X POST "https://<project-ref>.supabase.co/functions/v1/push-reminders" \
 - Push requires a real browser permission and an HTTPS origin (production Vercel URL, not plain `localhost`, for Apple’s push service in many setups).
 - Re-add the site to the Dock after shipping the web app manifest if you want the updated icon/name.
 - Dead subscriptions (404/410 from the push service) are deleted automatically.
+
+## MCP connector
+
+The app can expose each user’s tasks to an MCP-compatible assistant through a
+personal, revocable bearer token. Tokens are only stored as SHA-256 hashes.
+
+### Deploy
+
+```bash
+supabase db push
+supabase functions deploy mcp-token
+supabase functions deploy mcp
+```
+
+The `mcp-token` function uses the signed-in Supabase user JWT. The `mcp`
+function deliberately disables Supabase JWT verification because it authenticates
+the generated `cmt_…` personal token itself.
+
+Native and server-side MCP clients work without any extra configuration. To
+allow a browser-based MCP client, explicitly allow-list its origin (comma-separated
+when there is more than one):
+
+```bash
+supabase secrets set MCP_ALLOWED_ORIGINS="https://your-mcp-client.example"
+```
+
+### Connect and verify
+
+1. In the app, open the user menu → **Connect AI assistant**.
+2. Copy the displayed server URL and generate a token. Copy the token immediately;
+   it cannot be retrieved later.
+3. Configure the MCP client with the URL and token as a Bearer token.
+4. Verify the deployed server with the following, replacing the placeholders:
+
+```bash
+curl "https://<project-ref>.supabase.co/functions/v1/mcp" \
+  -X POST \
+  -H "Authorization: Bearer <cmt_token>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1.0.0"}}}'
+```
+
+The response should be a JSON-RPC `result` containing `serverInfo.name` of
+`commitments` and `capabilities.tools`. Send `notifications/initialized`, then
+call `tools/list`; the server exposes task CRUD plus category listing. Revoke the
+token from the same app panel to confirm access is immediately denied.
+
+### Read versus write approvals
+
+The MCP tool definitions advertise standard risk annotations so compatible
+clients can invoke reads without confirmation while keeping writes gated:
+
+- Read-only: `list_tasks`, `get_task`, `list_categories`
+- Additive write: `create_task`
+- Updating or destructive writes: `update_task`, `delete_task`
+
+These are MCP `readOnlyHint` / `destructiveHint` metadata. The MCP client
+ultimately controls its own approval policy, but it now receives the information
+needed to auto-approve the read-only tools.

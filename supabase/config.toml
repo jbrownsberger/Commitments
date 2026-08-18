@@ -408,6 +408,14 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 [functions.push-reminders]
 verify_jwt = false
 
+# Personal MCP tokens — authenticated via Supabase user JWT inside the function.
+[functions.mcp-token]
+verify_jwt = true
+
+# Remote MCP server — authenticated via personal cmt_… tokens inside the function.
+[functions.mcp]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]
