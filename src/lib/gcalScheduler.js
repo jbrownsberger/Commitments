@@ -1,6 +1,6 @@
 import { loadFreeBusySnapshot } from './gcalAvailability.js';
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
@@ -18,6 +18,7 @@ const LS_TOKEN_EXPIRY_KEY = 'gcal_token_expiry';
 const LS_TOKEN_SCOPE_KEY = 'gcal_token_scope';
 const LS_ACCOUNT_HINT_KEY = 'gcal_account_hint';
 const MIN_CHUNK_HOURS = 0.5;
+const MAX_FREE_BUSY_CALENDARS = 50;
 
 export const DEFAULT_SETTINGS = {
   workWindows: [{ start: 8, end: 20 }],
@@ -89,6 +90,35 @@ function clearCachedToken() {
 
 function getAccountHint() {
   return localStorage.getItem(LS_ACCOUNT_HINT_KEY) || '';
+}
+
+export function toLocalISODate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return offsetDate.toISOString().slice(0, 10);
+}
+
+export function localDayBounds(isoDate) {
+  const start = new Date(`${isoDate}T00:00:00`);
+  const end = new Date(`${isoDate}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+export function intervalLocalDates(startValue, endValue) {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const last = new Date(end.getTime() - 1);
+  last.setHours(0, 0, 0, 0);
+  const dates = [];
+  while (cursor <= last) {
+    dates.push(toLocalISODate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
 }
 
 export function setAccountHint(email) {
@@ -282,7 +312,7 @@ export async function gcalFetch(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     clearCachedToken();
     throw new Error('Google Calendar sign-in required');
   }
@@ -295,49 +325,88 @@ export async function gcalFetch(path, opts = {}) {
 }
 
 export async function fetchCalendarList() {
-  return gcalFetch('/users/me/calendarList?maxResults=50');
+  const items = [];
+  let pageToken = null;
+  do {
+    const params = new URLSearchParams({ maxResults: '250' });
+    if (pageToken) params.set('pageToken', pageToken);
+    const page = await gcalFetch(`/users/me/calendarList?${params}`);
+    items.push(...(page.items || []));
+    pageToken = page.nextPageToken || null;
+  } while (pageToken);
+  return { items };
 }
 export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
-  return gcalFetch('/freeBusy', {
+  const uniqueIds = [...new Set(calendarIds.filter(Boolean))];
+  if (!uniqueIds.length) return { calendars: {} };
+  const batches = [];
+  for (let i = 0; i < uniqueIds.length; i += MAX_FREE_BUSY_CALENDARS) {
+    batches.push(uniqueIds.slice(i, i + MAX_FREE_BUSY_CALENDARS));
+  }
+  const responses = await Promise.all(batches.map(items => gcalFetch('/freeBusy', {
     method: 'POST',
     body: JSON.stringify({
       timeMin, timeMax,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      items: calendarIds.map(id => ({ id })),
+      items: items.map(id => ({ id })),
     }),
-  });
+  })));
+  return responses.reduce((merged, response) => {
+    Object.assign(merged.calendars, response.calendars || {});
+    return merged;
+  }, { calendars: {} });
 }
 
 export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   const calId = loadWriteCalId();
   const blocksByDay = {};
-  let pageToken = null;
-  do {
-    const params = new URLSearchParams({
-      timeMin, timeMax, singleEvents: 'true', maxResults: '250',
-      ...(pageToken ? { pageToken } : {}),
-    });
-    params.append('privateExtendedProperty', 'commitments_task_id=true');
-    const resp = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
-    for (const ev of (resp.items || [])) {
-      if (!ev.start?.dateTime) continue;
-      const iso = new Date(ev.start.dateTime).toISOString().slice(0, 10);
-      (blocksByDay[iso] ??= []).push({
-        startMs: new Date(ev.start.dateTime).getTime(),
-        endMs: new Date(ev.end.dateTime).getTime(),
+  const seenEventIds = new Set();
+  // Include v1 events so users do not suddenly see old work blocks as free time.
+  for (const property of ['commitments_work_block=true', 'commitments_task_id=true']) {
+    let pageToken = null;
+    do {
+      const params = new URLSearchParams({
+        timeMin, timeMax, singleEvents: 'true', maxResults: '250',
+        ...(pageToken ? { pageToken } : {}),
       });
-    }
-    pageToken = resp.nextPageToken || null;
-  } while (pageToken);
+      params.append('privateExtendedProperty', property);
+      const resp = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
+      for (const ev of (resp.items || [])) {
+        if (!ev.start?.dateTime || seenEventIds.has(ev.id)) continue;
+        seenEventIds.add(ev.id);
+        const iso = toLocalISODate(ev.start.dateTime);
+        (blocksByDay[iso] ??= []).push({
+          startMs: new Date(ev.start.dateTime).getTime(),
+          endMs: new Date(ev.end.dateTime).getTime(),
+          taskId: ev.extendedProperties?.private?.commitments_task_id || null,
+          eventId: ev.id,
+        });
+      }
+      pageToken = resp.nextPageToken || null;
+    } while (pageToken);
+  }
   return blocksByDay;
 }
 
 export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
   if (!blockIntervals || !blockIntervals.length) return busyIntervals;
-  return busyIntervals.filter(b => {
-    const bs = new Date(b.start).getTime();
-    const be = new Date(b.end).getTime();
-    return !blockIntervals.some(bl => bl.startMs < be && bl.endMs > bs);
+  return busyIntervals.flatMap(interval => {
+    const startMs = new Date(interval.start).getTime();
+    const endMs = new Date(interval.end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return [];
+    const overlappingBlocks = blockIntervals
+      .filter(block => block.startMs < endMs && block.endMs > startMs)
+      .sort((a, b) => a.startMs - b.startMs);
+    let cursor = startMs;
+    const remaining = [];
+    for (const block of overlappingBlocks) {
+      const blockStart = Math.max(startMs, block.startMs);
+      const blockEnd = Math.min(endMs, block.endMs);
+      if (blockStart > cursor) remaining.push({ start: new Date(cursor).toISOString(), end: new Date(blockStart).toISOString() });
+      cursor = Math.max(cursor, blockEnd);
+    }
+    if (cursor < endMs) remaining.push({ start: new Date(cursor).toISOString(), end: new Date(endMs).toISOString() });
+    return remaining;
   });
 }
 
@@ -351,13 +420,21 @@ export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
       e: new Date(`${isoDate}T${String(w.end).padStart(2,'0')}:00:00`).getTime(),
     }));
   if (windows.length === 0) return [];
-  const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
-  const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
+  const { start: dayStart, end: dayEnd } = localDayBounds(isoDate);
+  const timeMin = dayStart.toISOString();
+  const timeMax = dayEnd.toISOString();
   const writeCalId = loadWriteCalId();
   const fbCalIds = calIds.filter(id => id !== writeCalId);
-  const fbResp = await fetchFreeBusy(fbCalIds, timeMin, timeMax).catch(() => ({ calendars: {} }));
+  const [fbResp, blocksByDay] = await Promise.all([
+    fetchFreeBusy(fbCalIds, timeMin, timeMax),
+    fetchCommitmentsBlockIntervals(timeMin, timeMax),
+  ]);
   let busy = [];
   for (const id of fbCalIds) busy.push(...(fbResp.calendars?.[id]?.busy || []));
+  busy.push(...(blocksByDay[isoDate] || []).map(block => ({
+    start: new Date(block.startMs).toISOString(),
+    end: new Date(block.endMs).toISOString(),
+  })));
   const bufMs = bufferMins * 60_000;
   const minChunkMs = MIN_CHUNK_HOURS * 3_600_000;
   const gaps = [];
@@ -410,26 +487,33 @@ export async function createChunkedWorkBlocks(task, isoDate, durationHours, notB
   const gaps = await findFreeSlots(isoDate, notBeforeMs, s, ids);
   let remainingMs = durationHours * 3_600_000;
   const events = [];
-  for (const gap of gaps) {
-    if (remainingMs <= 0) break;
-    const availableMs = gap.endMs - gap.startMs;
-    const chunkMs = Math.min(availableMs, remainingMs);
-    const start = new Date(gap.startMs);
-    const end = new Date(gap.startMs + chunkMs);
-    const suffix = durationHours > (gap.endMs - gap.startMs) / 3_600_000 ? ` (part ${events.length + 1})` : '';
-    const ev = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
-      method: 'POST',
-      body: JSON.stringify({
-        summary: `Work on: ${task.name}${suffix}`,
-        description: task.description || '',
-        start: { dateTime: start.toISOString(), timeZone: tz },
-        end: { dateTime: end.toISOString(), timeZone: tz },
-        colorId: '2',
-        extendedProperties: { private: { commitments_task_id: 'true' } },
-      }),
-    });
-    events.push(ev);
-    remainingMs -= chunkMs;
+  try {
+    for (const gap of gaps) {
+      if (remainingMs <= 0) break;
+      const availableMs = gap.endMs - gap.startMs;
+      const chunkMs = Math.min(availableMs, remainingMs);
+      const start = new Date(gap.startMs);
+      const end = new Date(gap.startMs + chunkMs);
+      const suffix = durationHours > (gap.endMs - gap.startMs) / 3_600_000 ? ` (part ${events.length + 1})` : '';
+      const ev = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
+        method: 'POST',
+        body: JSON.stringify({
+          summary: `Work on: ${task.name}${suffix}`,
+          description: task.description || '',
+          start: { dateTime: start.toISOString(), timeZone: tz },
+          end: { dateTime: end.toISOString(), timeZone: tz },
+          colorId: '2',
+          extendedProperties: { private: { commitments_work_block: 'true', commitments_task_id: String(task.id) } },
+        }),
+      });
+      events.push(ev);
+      remainingMs -= chunkMs;
+    }
+  } catch (error) {
+    await Promise.allSettled(events.map(event =>
+      gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${event.id}`, { method: 'DELETE' })
+    ));
+    throw error;
   }
   const hoursPlaced = (durationHours * 3_600_000 - remainingMs) / 3_600_000;
   return { events, hoursPlaced };
@@ -477,8 +561,15 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 export async function deleteTaskWorkBlock(taskId, isoDate) {
   const calId = loadWriteCalId();
   const entry = getPushEntry(taskId, isoDate);
-  if (!entry) return 0;
-  const idsToDelete = entry.eventIds || [entry.eventId].filter(Boolean);
+  let idsToDelete = entry?.eventIds || [entry?.eventId].filter(Boolean);
+  if (!idsToDelete.length) {
+    const { start, end } = localDayBounds(isoDate);
+    const params = new URLSearchParams({ timeMin: start.toISOString(), timeMax: end.toISOString(), singleEvents: 'true', maxResults: '250' });
+    params.append('privateExtendedProperty', `commitments_task_id=${String(taskId)}`);
+    const response = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
+    idsToDelete = (response.items || []).map(event => event.id);
+  }
+  if (!idsToDelete.length) return 0;
   await Promise.allSettled(
     idsToDelete.map(id =>
       gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${id}`, { method: 'DELETE' })
@@ -490,12 +581,13 @@ export async function deleteTaskWorkBlock(taskId, isoDate) {
 
 export async function deleteWorkBlock(isoDate) {
   const calId = loadWriteCalId();
-  const timeMin = new Date(`${isoDate}T00:00:00`).toISOString();
-  const timeMax = new Date(`${isoDate}T23:59:59`).toISOString();
+  const { start, end } = localDayBounds(isoDate);
+  const timeMin = start.toISOString();
+  const timeMax = end.toISOString();
   const params = new URLSearchParams({ timeMin, timeMax, singleEvents: 'true', maxResults: '50' });
-  params.append('privateExtendedProperty', 'commitments_task_id=true');
+  params.append('privateExtendedProperty', 'commitments_work_block=true');
   const resp = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
-  const matches = (resp.items || []).filter(ev => ev.extendedProperties?.private?.commitments_task_id === 'true');
+  const matches = (resp.items || []).filter(ev => ev.extendedProperties?.private?.commitments_work_block === 'true');
   await Promise.all(matches.map(ev => gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${ev.id}`, { method: 'DELETE' })));
   const reg = getPushRegistry();
   for (const key of Object.keys(reg)) if (key.endsWith(`|${isoDate}`)) delete reg[key];

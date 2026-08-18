@@ -29,6 +29,9 @@ import {
   loadWriteCalId,
   saveWriteCalId,
   clearWriteCalId,
+  intervalLocalDates,
+  localDayBounds,
+  toLocalISODate,
 } from '../lib/gcalScheduler.js';
 import '../styles/gcal.css';
 
@@ -38,7 +41,7 @@ const LOOK_AHEAD_DAYS = 28;
 const DAY_NAMES       = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────────────
-function toISO(d) { return d.toISOString().slice(0, 10); }
+function toISO(d) { return toLocalISODate(d); }
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() + n);
@@ -395,17 +398,20 @@ export default function GCalSync({ appData }) {
 
     // Then do a live fetch to catch blocks pushed from other sessions/devices.
     const endISO  = addDays(todayISO, 28);
-    const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
-    const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
+    const { start } = localDayBounds(todayISO);
+    const { end } = localDayBounds(endISO);
+    const timeMin = start.toISOString();
+    const timeMax = end.toISOString();
     fetchCommitmentsBlockIntervals(timeMin, timeMax)
       .then(blocksByDay => {
         setBlockStatus(prev => {
           const next = { ...prev };
-          for (const iso of Object.keys(blocksByDay)) {
-            scheduled.forEach(task => {
-              const key = `${task.id}-${iso}`;
-              if (!next[key]) next[key] = 'done';
-            });
+          for (const [iso, blocks] of Object.entries(blocksByDay)) {
+            for (const block of blocks) {
+              if (!block.taskId || block.taskId === 'true') continue; // Legacy blocks cannot be safely attributed.
+              const task = scheduled.find(candidate => String(candidate.id) === String(block.taskId));
+              if (task) next[`${task.id}-${iso}`] = 'done';
+            }
           }
           return next;
         });
@@ -419,8 +425,10 @@ export default function GCalSync({ appData }) {
     setLoadingFB(true); setError(null); setSubtractingBlocks(false);
     try {
       const endISO  = addDays(todayISO, LOOK_AHEAD_DAYS);
-      const timeMin = new Date(todayISO + 'T00:00:00').toISOString();
-      const timeMax = new Date(endISO   + 'T23:59:59').toISOString();
+      const { start } = localDayBounds(todayISO);
+      const { end } = localDayBounds(endISO);
+      const timeMin = start.toISOString();
+      const timeMax = end.toISOString();
 
       const currentWriteCalId = loadWriteCalId();
       const currentSelCals    = selCals.size > 0 ? selCals : loadSelectedCals();
@@ -433,18 +441,22 @@ export default function GCalSync({ appData }) {
       const isFallback = currentWriteCalId === 'primary';
 
       const [fbResp, blocksByDay] = await Promise.all([
-        fetchFreeBusy(calIds, timeMin, timeMax).catch(() => ({ calendars: {} })),
+        fetchFreeBusy(calIds, timeMin, timeMax),
         isFallback
           ? (setSubtractingBlocks(true),
-             fetchCommitmentsBlockIntervals(timeMin, timeMax).catch(() => ({})))
+             fetchCommitmentsBlockIntervals(timeMin, timeMax))
           : Promise.resolve({}),
       ]);
       setSubtractingBlocks(false);
 
       const busyByDay = {};
-      for (const calId of calIds)
-        for (const interval of (fbResp.calendars?.[calId]?.busy || []))
-          (busyByDay[interval.start.slice(0, 10)] ??= []).push(interval);
+      for (const calId of calIds) {
+        for (const interval of (fbResp.calendars?.[calId]?.busy || [])) {
+          for (const iso of intervalLocalDates(interval.start, interval.end)) {
+            (busyByDay[iso] ??= []).push(interval);
+          }
+        }
+      }
 
       const result = {};
       for (let i = 0; i < LOOK_AHEAD_DAYS; i++) {
@@ -481,17 +493,14 @@ export default function GCalSync({ appData }) {
     try {
       await connectGcal(forceConsent);
       setConnStatus('connected');
-      setConnecting(false);
-      handleFetchFreeBusy();
-    } catch (e) {
-      setError(e.message);
-      setConnecting(false);
-    }
+      await handleFetchFreeBusy();
+    } catch (e) { setError(e.message || 'Unable to connect to Google Calendar.'); }
+    finally { setConnecting(false); }
   }, [handleFetchFreeBusy]);
 
   // ── Disconnect ────────────────────────────────────────────────────────────────────
-  const handleDisconnect = useCallback(() => {
-    revokeToken();
+  const handleDisconnect = useCallback(async () => {
+    await revokeToken().catch(() => {});
     localStorage.removeItem(LS_CALS_KEY);
     clearWriteCalId();
     setConnStatus('disconnected');
