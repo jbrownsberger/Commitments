@@ -24,15 +24,13 @@ import {
   loadSelectedCals,
   saveSelectedCals,
   DEFAULT_SETTINGS,
-  LS_CALS_KEY,
-  ensureCommitmentsCalendar,
   loadWriteCalId,
   saveWriteCalId,
-  clearWriteCalId,
   intervalLocalDates,
   localDayBounds,
   toLocalISODate,
 } from '../lib/gcalScheduler.js';
+import { GCAL_PREFS_CHANGED_EVENT, waitForGcalPrefs } from '../lib/gcalPrefs.js';
 import '../styles/gcal.css';
 
 const CLIENT_ID       = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -334,6 +332,8 @@ export default function GCalSync({ appData }) {
   const [calendars,  setCalendars]  = useState([]);
   const [selCals,    setSelCals]    = useState(loadSelectedCals);
   const [writeCalId, setWriteCalId] = useState(loadWriteCalId);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const [calendarListStatus, setCalendarListStatus] = useState('idle');
 
   // ── Free/busy data ────────────────────────────────────────────────────────────────
   const [freeBusy,          setFreeBusy]          = useState(() => gcalFreeBusySnapshot?.data || null);
@@ -354,32 +354,59 @@ export default function GCalSync({ appData }) {
     ? new Date(snapshotFetchedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
     : null;
 
+  // Supabase hydration is asynchronous. Reflect it in this mounted component
+  // before applying browser-local defaults or loading calendar choices.
+  useEffect(() => {
+    let active = true;
+    const syncFromLocal = () => {
+      if (!active) return;
+      setSettings(loadGcalSettings());
+      setSelCals(loadSelectedCals());
+      setWriteCalId(loadWriteCalId());
+    };
+    window.addEventListener(GCAL_PREFS_CHANGED_EVENT, syncFromLocal);
+    waitForGcalPrefs().finally(() => {
+      syncFromLocal();
+      if (active) setPrefsReady(true);
+    });
+    return () => {
+      active = false;
+      window.removeEventListener(GCAL_PREFS_CHANGED_EVENT, syncFromLocal);
+    };
+  }, []);
+
+  const loadCalendarList = useCallback(async () => {
+    if (!connected || !CLIENT_ID || !prefsReady) return;
+    setCalendarListStatus('loading');
+    try {
+      const list = await fetchCalendarList();
+      const cals = (list.items || []).filter(c => !c.hidden);
+      setCalendars(cals);
+      setSelCals(prev => {
+        if (prev.size > 0) return prev;
+        const all = new Set(cals.map(c => c.id));
+        saveSelectedCals(all);
+        return all;
+      });
+      setWriteCalId(prev => {
+        const ids = cals.map(c => c.id);
+        if (prev !== 'primary' && !ids.includes(prev)) {
+          saveWriteCalId('primary');
+          return 'primary';
+        }
+        return prev;
+      });
+      setCalendarListStatus('loaded');
+    } catch (err) {
+      setCalendarListStatus('error');
+      setError(`Could not load your calendar choices: ${err.message || 'please reconnect and try again.'}`);
+    }
+  }, [connected, prefsReady]);
+
   // ── Load calendar list when connected ─────────────────────────────────────────────
   useEffect(() => {
-    if (!connected || !CLIENT_ID) return;
-    fetchCalendarList()
-      .then(list => {
-        const cals = (list.items || []).filter(c => !c.hidden);
-        setCalendars(cals);
-        setSelCals(prev => {
-          if (prev.size > 0) return prev;
-          const all = new Set(cals.map(c => c.id));
-          saveSelectedCals(all);
-          return all;
-        });
-        setWriteCalId(prev => {
-          const ids = cals.map(c => c.id);
-          if (prev !== 'primary' && !ids.includes(prev)) {
-            saveWriteCalId('primary');
-            return 'primary';
-          }
-          return prev;
-        });
-      })
-      .catch(() => {});
-    ensureCommitmentsCalendar().catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+    loadCalendarList();
+  }, [loadCalendarList]);
 
   // ── Seed blockStatus from the push registry on mount / task change ────────────────
   // This ensures that tasks already pushed via the Planner show as 'done' here
@@ -501,12 +528,11 @@ export default function GCalSync({ appData }) {
   // ── Disconnect ────────────────────────────────────────────────────────────────────
   const handleDisconnect = useCallback(async () => {
     await revokeToken().catch(() => {});
-    localStorage.removeItem(LS_CALS_KEY);
-    clearWriteCalId();
+    // Connection credentials are browser-local, but scheduling preferences are
+    // user-scoped in Supabase and should survive reconnecting on any device.
     setConnStatus('disconnected');
     setCalendars([]);
-    setSelCals(new Set());
-    setWriteCalId('primary');
+    setCalendarListStatus('idle');
     setFreeBusy(null);
     setBlockStatus({});
     setSubtractingBlocks(false);
@@ -813,13 +839,27 @@ export default function GCalSync({ appData }) {
 
               </div>
 
-              {calendars.length > 0 && (
-                <div className="gcal-write-cal-section">
-                  <div className="gcal-section-label">
-                    Work blocks calendar
-                    <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
-                  </div>
+              <div className="gcal-write-cal-section">
+                <div className="gcal-section-label">
+                  Work blocks calendar
+                  <span className="gcal-setting-hint"> (where scheduled work blocks are written)</span>
+                </div>
 
+                {!connected ? (
+                  <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
+                    <IconWarning size={13} />
+                    <span>Reconnect Google Calendar to load and change this choice.</span>
+                  </div>
+                ) : calendarListStatus === 'loading' || !prefsReady ? (
+                  <div className="gcal-info">Loading your calendar choices…</div>
+                ) : calendarListStatus === 'error' ? (
+                  <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
+                    <IconWarning size={13} />
+                    <span>Calendar choices could not be loaded.</span>
+                    <button className="btn btn-sm" onClick={loadCalendarList}>Try again</button>
+                  </div>
+                ) : (
+                  <>
                   <div className="gcal-write-cal-tip">
                     <span className="gcal-write-cal-tip-icon">💡</span>
                     <span>
@@ -829,7 +869,7 @@ export default function GCalSync({ appData }) {
                       <a href="https://calendar.google.com/calendar/r/settings/createcalendar"
                         target="_blank" rel="noopener noreferrer">Create one now ↗</a>
                       <span className="gcal-write-cal-refresh-hint">
-                        After creating, refresh this page so the new calendar appears in the list.
+                        After creating, use the refresh button below so the new calendar appears in the list.
                       </span>
                     </span>
                   </div>
@@ -846,6 +886,11 @@ export default function GCalSync({ appData }) {
                     }
                   </select>
 
+                  <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={loadCalendarList}>
+                    <IconRefresh size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                    Refresh calendar choices
+                  </button>
+
                   {usingPrimaryFallback ? (
                     <div className="gcal-write-cal-notice gcal-write-cal-notice--warn">
                       <IconWarning size={13} />
@@ -857,10 +902,11 @@ export default function GCalSync({ appData }) {
                       <span>Work blocks go to this calendar only, and it's excluded from your availability calculation automatically.</span>
                     </div>
                   )}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
 
-              {calendars.length > 0 && (
+              {calendarListStatus === 'loaded' && calendars.length > 0 && (
                 <div className="gcal-setting-group" style={{ marginTop: 16 }}>
                   <div className="gcal-section-label">Calendars to include
                     <span className="gcal-setting-hint"> (read for availability)</span>

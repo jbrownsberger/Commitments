@@ -10,6 +10,7 @@ import {
   loadGcalSettings,
   loadSelectedCals,
 } from './lib/gcalScheduler.js';
+import { GCAL_PREFS_CHANGED_EVENT } from './lib/gcalPrefs.js';
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -218,6 +219,15 @@ function LoginPage() {
 // ── Authed shell ───────────────────────────────────────────────────────────────────────────────────
 function AuthedApp({ userId, userEmail }) {
   const appData = useAppData(userId);
+
+  // Settings live in localStorage for fast access, then hydrate from Supabase.
+  // Re-render the planner and overview when either source updates them.
+  const [, refreshGcalPrefs] = useState(0);
+  useEffect(() => {
+    const refresh = () => refreshGcalPrefs(version => version + 1);
+    window.addEventListener(GCAL_PREFS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(GCAL_PREFS_CHANGED_EVENT, refresh);
+  }, []);
 
   const [darkMode, setDarkMode] = useState(false);
 
