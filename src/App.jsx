@@ -11,6 +11,7 @@ import {
   loadSelectedCals,
 } from './lib/gcalScheduler.js';
 import { GCAL_PREFS_CHANGED_EVENT } from './lib/gcalPrefs.js';
+import './styles/login.css';
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -75,10 +76,9 @@ const IconBolt = () => (
 
 // ── Feature list ─────────────────────────────────────────────────────────────────────────
 const FEATURES = [
-  { Icon: IconCalendar, text: 'Track tasks with due dates, priorities, and progress' },
-  { Icon: IconClock,    text: 'Schedule work across your calendar with a smart planner' },
-  { Icon: IconBarChart, text: 'See real free time each day via Google Calendar sync' },
-  { Icon: IconBolt,     text: 'Quick tasks for anything that only takes a few minutes' },
+  { Icon: IconCalendar, title: 'See the whole week', text: 'Bring deadlines, scheduled work, and calendar availability into one clear plan.' },
+  { Icon: IconClock,    title: 'Make time for what matters', text: 'Turn a long task list into realistic blocks of work that fit your actual days.' },
+  { Icon: IconBarChart, title: 'Stay ahead of deadlines', text: 'Track progress and spot overloaded weeks before they become a last-minute scramble.' },
 ];
 
 // ── Login page ───────────────────────────────────────────────────────────────────────────────────
@@ -116,22 +116,38 @@ function LoginPage() {
 
   return (
     <div className="login-page">
-      {/* ── Left: hero ── */}
+      {/* ── Intro ── */}
       <div className="login-hero">
         <div className="login-hero-inner">
-          <div className="login-logo">
+          <div className="login-brand">
             <img src="/logo.jpg" alt="Commitments logo" className="login-logo-img" />
+            <span>Commitments</span>
           </div>
-          <h1 className="login-hero-title">Commitments</h1>
+          <p className="login-eyebrow">A calmer way to plan</p>
+          <h1 className="login-hero-title">Keep every promise<br />in view.</h1>
           <p className="login-hero-tagline">
-            A personal planning system that keeps your deadlines, tasks,
-            and calendar in one honest view.
+            Commitments is a workload-aware planner for the things you need to get done.
+            It pairs your tasks and deadlines with the time you really have, so your plan
+            stays useful when life gets busy.
           </p>
+          <div className="login-preview" aria-hidden="true">
+            <div className="login-preview-topbar">
+              <span className="login-preview-dot" />
+              <span>Today’s plan</span>
+              <span className="login-preview-date">Tue, Aug 19</span>
+            </div>
+            <div className="login-preview-body">
+              <div className="login-preview-task complete"><span>✓</span> Draft project brief <small>Done</small></div>
+              <div className="login-preview-task"><span /> Prepare client review <small>2h · Thu</small></div>
+              <div className="login-preview-task"><span /> Research next steps <small>45m · Today</small></div>
+              <div className="login-preview-focus"><span>Focus time</span><strong>2h 45m available</strong></div>
+            </div>
+          </div>
           <ul className="login-features">
-            {FEATURES.map(({ Icon, text }) => (
+            {FEATURES.map(({ Icon, title, text }) => (
               <li key={text} className="login-feature-item">
                 <span className="login-feature-icon"><Icon /></span>
-                <span>{text}</span>
+                <span><strong>{title}</strong>{text}</span>
               </li>
             ))}
           </ul>
