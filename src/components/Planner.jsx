@@ -2,7 +2,9 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import TaskPanel from './TaskPanel.jsx';
 import {
   upsertWorkBlock,
-  clearPushEntry,
+  deleteTaskWorkBlock,
+  deleteWorkBlock,
+  getPushEntry,
   seedPushStatusFromRegistry,
 } from '../lib/gcalScheduler.js';
 import { isSeriesTemplate as isExpandTemplate } from '../lib/recurrence.js';
@@ -98,6 +100,15 @@ function IconCalendarPush({ size = 11, style }) {
       <path d="M1 5.5h12" stroke="currentColor" strokeWidth="1.1"/>
       <path d="M4.5 0.5v2M9.5 0.5v2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
       <path d="M7 12V7M5 9l2-2 2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+function IconTrash({ size = 13, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 13 13" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+      <path d="M2 3.5h9M5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M10.5 3.5l-.6 7a.5.5 0 0 1-.5.5H3.6a.5.5 0 0 1-.5-.5l-.6-7"
+        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -362,7 +373,7 @@ function AgendaView({
   sortByDue,
   onOpenPanel, onSchedule, onRemoveDay,
   onOpenAutoFillModal, handleClearAll,
-  gcalConnected, onPushDayToGCal, gcalPushStatus,
+  gcalConnected, onPushDayToGCal, onDeleteDayFromGCal, gcalPushStatus,
 }) {
   const [unschOpen, setUnschOpen] = useState(true);
   const allUnscheduled = sortByDue([...trueUnscheduled, ...scheduledEarlier, ...scheduledLater]);
@@ -451,14 +462,21 @@ function AgendaView({
                 <span className={`agenda-load-badge${over ? ' over' : ''}`}>{load.toFixed(1)}h</span>
               )}
               {gcalConnected && hasTasks && (
-                <button
-                  className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
-                  onClick={() => onPushDayToGCal(iso)}
-                  disabled={pushSt === 'pushing'}
-                  title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
-                >
-                  {pushSt === 'pushing' ? '\u2026' : pushSt === 'done' ? '\u2713' : <IconCalendarPush size={13} />}
-                </button>
+                <>
+                  <button
+                    className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
+                    onClick={() => onPushDayToGCal(iso)}
+                    disabled={pushSt === 'pushing'}
+                    title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
+                  >
+                    {pushSt === 'pushing' ? '\u2026' : pushSt === 'done' ? '\u2713' : <IconCalendarPush size={13} />}
+                  </button>
+                  {pushSt === 'done' && (
+                    <button className="day-gcal-btn day-gcal-delete-btn" onClick={() => onDeleteDayFromGCal(iso)} title="Remove this day's work blocks from Google Calendar" aria-label="Remove this day's work blocks from Google Calendar">
+                      <IconTrash size={12} />
+                    </button>
+                  )}
+                </>
               )}
             </div>
             {dues.map(t => (
@@ -638,6 +656,20 @@ export default function Planner({ appData, userId, onEditTask }) {
     }
   }, [scheduledOnDay, todayISO, gcalSettings, gcalSelCals]);
 
+  const handleDeleteDayFromGCal = useCallback(async (iso) => {
+    if (!window.confirm(`Remove all Commitments work blocks from ${fmtAgendaDay(iso)}? Your Planner assignments will remain.`)) return;
+    setGcalPushStatus(s => ({ ...s, [iso]: 'deleting' }));
+    try {
+      await deleteWorkBlock(iso);
+      setGcalPushStatus(s => {
+        const { [iso]: _deleted, ...rest } = s;
+        return rest;
+      });
+    } catch {
+      setGcalPushStatus(s => ({ ...s, [iso]: 'error' }));
+    }
+  }, []);
+
   const onDragStart = (e, task) => { dragging.current = task; e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd   = () => { dragging.current = null; };
 
@@ -757,13 +789,15 @@ export default function Planner({ appData, userId, onEditTask }) {
   }, [dayPickerTask, setTaskSchedule]);
 
   const removeDay = useCallback(async (task, iso) => {
+    // Removing a planned assignment should not orphan an already-created
+    // calendar event. Only call Google when this browser knows the task was pushed.
+    if (getPushEntry(task.id, iso)) await deleteTaskWorkBlock(task.id, iso);
     const days   = (task.scheduled_days || []).filter(d => d !== iso);
     const dayHrs = { ...(task.scheduled_day_hours || {}) };
     delete dayHrs[iso];
     await setTaskSchedule(task.id, days);
     if (JSON.stringify(task.scheduled_day_hours) !== JSON.stringify(dayHrs))
       await saveTask({ ...task, scheduled_day_hours: dayHrs });
-    clearPushEntry(task.id, iso);
     setGcalPushStatus(prev => {
       const { [iso]: _removed, ...rest } = prev;
       return rest;
@@ -822,6 +856,7 @@ export default function Planner({ appData, userId, onEditTask }) {
           handleClearAll={handleClearAll}
           gcalConnected={gcalConnected}
           onPushDayToGCal={handlePushDayToGCal}
+          onDeleteDayFromGCal={handleDeleteDayFromGCal}
           gcalPushStatus={gcalPushStatus}
         />
       ) : (
@@ -938,16 +973,23 @@ export default function Planner({ appData, userId, onEditTask }) {
                             {DAY_NAMES[i]}
                             <span className="planner-day-date">{fmtShort(iso)}</span>
                             {gcalConnected && hasTasks && (
-                              <button
-                                className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
-                                onClick={() => handlePushDayToGCal(iso)}
-                                disabled={pushSt === 'pushing'}
-                                title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
-                              >
-                                {pushSt === 'pushing' ? '\u2026'
-                                  : pushSt === 'done'  ? '\u2713'
-                                  : <IconCalendarPush size={10} />}
-                              </button>
+                              <>
+                                <button
+                                  className={`day-gcal-btn${pushSt === 'done' ? ' done' : pushSt === 'error' ? ' error' : ''}`}
+                                  onClick={() => handlePushDayToGCal(iso)}
+                                  disabled={pushSt === 'pushing'}
+                                  title={pushSt === 'done' ? 'Pushed to GCal' : 'Auto-schedule this day in Google Calendar'}
+                                >
+                                  {pushSt === 'pushing' ? '\u2026'
+                                    : pushSt === 'done'  ? '\u2713'
+                                    : <IconCalendarPush size={10} />}
+                                </button>
+                                {pushSt === 'done' && (
+                                  <button className="day-gcal-btn day-gcal-delete-btn" onClick={() => handleDeleteDayFromGCal(iso)} title="Remove this day's work blocks from Google Calendar" aria-label="Remove this day's work blocks from Google Calendar">
+                                    <IconTrash size={10} />
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         );

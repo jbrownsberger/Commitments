@@ -386,11 +386,11 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
         </div>
       )}
 
-      {normaliseTaskLinks(local.links).length > 0 && (
+      {(normaliseTaskLinks(cat?.links).length > 0 || normaliseTaskLinks(local.links).length > 0) && (
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>Links</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {normaliseTaskLinks(local.links).map((link, i) => {
+            {[...normaliseTaskLinks(cat?.links).map(link => ({ ...link, source: 'Category' })), ...normaliseTaskLinks(local.links)].map((link, i) => {
               const href = taskLinkHref(link);
               const typeLabel = LINK_TYPES.find(t => t.value === link.type)?.label || 'Link';
               return href && (
@@ -398,7 +398,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
                   target={link.type === 'web' ? '_blank' : undefined}
                   rel={link.type === 'web' ? 'noreferrer' : undefined}
                   style={{ alignSelf:'flex-start', color:'var(--color-accent)', fontSize:13 }}>
-                  {typeLabel}: {link.label}
+                  {link.source ? `${link.source} · ` : ''}{typeLabel}: {link.label}
                 </a>
               );
             })}

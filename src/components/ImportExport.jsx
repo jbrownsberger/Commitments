@@ -98,7 +98,7 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
       exportedAt: new Date().toISOString(),
       version: 1,
       preferences,
-      categories: categories.map(({ id, name, color }) => ({ id, name, color })),
+      categories: categories.map(({ id, name, color, links }) => ({ id, name, color, links: links || [] })),
       tasks: tasks.map(t => ({
         id:                          t.id,
         category_id:                 t.category_id,
@@ -163,7 +163,7 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
           if (existing) {
             catIdMap[cat.id] = existing.id;
           } else {
-            const saved = await saveCategory({ name: cat.name, color: cat.color });
+            const saved = await saveCategory({ name: cat.name, color: cat.color, links: cat.links || [] });
             catIdMap[cat.id] = saved.id;
           }
         }

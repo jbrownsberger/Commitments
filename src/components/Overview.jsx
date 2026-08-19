@@ -426,7 +426,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
       {panelTask && (
         <TaskPanel
           task={panelTask}
-          cat={{ name: panelTask.catName, color: panelTask.catColor }}
+          cat={{ name: panelTask.catName, color: panelTask.catColor, links: catMap[panelTask.category_id]?.links || [] }}
           onClose={() => setPanelTask(null)}
           onSave={handlePanelSave}
           onDelete={async (id) => { await removeTask(id); setPanelTask(null); }}

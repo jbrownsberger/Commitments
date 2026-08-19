@@ -63,6 +63,21 @@ function remainingHours(task) {
   return Math.max(0, (parseFloat(task.estimated_hours) || 1) * (1 - prog / 100));
 }
 
+// Keep the Google Calendar tab's block length identical to the Planner's
+// per-day allocation, including any manual per-day hour overrides.
+function hoursOnDay(task, iso, todayISO) {
+  const rem = remainingHours(task);
+  const futureDays = (task.scheduled_days || []).filter(day => day >= todayISO);
+  if (!futureDays.length) return 0;
+  const dayHours = task.scheduled_day_hours || {};
+  const explicitTotal = futureDays.reduce((sum, day) => sum + (dayHours[day] || 0), 0);
+  const unweighted = futureDays.filter(day => dayHours[day] === undefined);
+  const perUnweighted = unweighted.length
+    ? Math.max(rem - explicitTotal, 0) / unweighted.length
+    : 0;
+  return dayHours[iso] !== undefined ? dayHours[iso] : perUnweighted;
+}
+
 function effectiveFreeMinutes(isoDate, busyIntervals, settings) {
   const { workWindows, deductMins, bufferMins, efficiency, nonWorkDays } = settings;
   const dowIndex = new Date(isoDate + 'T00:00:00').getDay();
@@ -548,9 +563,9 @@ export default function GCalSync({ appData }) {
 
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
 
-  // Uses upsertWorkBlock — same path as the Planner push button.
-  // notBeforeMs = 0 so blocks are placed from the start of the work window
-  // (no cross-task chaining here; that is only needed when pushing a whole day at once).
+  // Uses the same placement path as Planner. The scheduler includes existing
+  // Commitments blocks as busy time and serializes same-day writes, so each
+  // individually added block follows the previous one with the configured buffer.
   const handleCreateBlock = useCallback(async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
     setBlockStatus(s => ({ ...s, [key]: 'pending' }));
@@ -634,9 +649,7 @@ export default function GCalSync({ appData }) {
   const renderDayRow = (task, iso) => {
     const key             = `${task.id}-${iso}`;
     const status          = blockStatus[key];
-    const totalHrs        = remainingHours(task);
-    const futureDaysCount = task.futureDays?.length || 1;
-    const hrs             = totalHrs / futureDaysCount;
+    const hrs             = hoursOnDay(task, iso, todayISO);
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-day-label">{fmtShort(iso)}</span>
@@ -664,9 +677,7 @@ export default function GCalSync({ appData }) {
   const renderTaskRowForDate = (task, iso) => {
     const key             = `${task.id}-${iso}`;
     const status          = blockStatus[key];
-    const totalHrs        = remainingHours(task);
-    const futureDaysCount = task.futureDays?.length || 1;
-    const hrs             = totalHrs / futureDaysCount;
+    const hrs             = hoursOnDay(task, iso, todayISO);
     return (
       <div key={`${task.id}-${iso}`} className="gcal-day-row">
         <span className="gcal-task-name-inline">{task.name}</span>

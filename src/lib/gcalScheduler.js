@@ -31,6 +31,19 @@ export const DEFAULT_SETTINGS = {
 let gisLoaderPromise = null;
 let tokenClient = null;
 let pendingTokenRequest = null;
+// Calendar writes are asynchronous. Serialize writes for a given day so two
+// quick "Add block" clicks cannot both inspect the same free slot before the
+// first event has been created.
+const daySchedulingQueues = new Map();
+
+function queueDayScheduling(isoDate, work) {
+  const previous = daySchedulingQueues.get(isoDate) || Promise.resolve();
+  const current = previous.catch(() => {}).then(work);
+  daySchedulingQueues.set(isoDate, current);
+  return current.finally(() => {
+    if (daySchedulingQueues.get(isoDate) === current) daySchedulingQueues.delete(isoDate);
+  });
+}
 
 function getGoogleOauth() {
   return window.google?.accounts?.oauth2 || null;
@@ -530,6 +543,7 @@ export async function createWorkBlock(task, isoDate, durationHours, settings, ca
 }
 
 export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs, settings, calIds) {
+  return queueDayScheduling(isoDate, async () => {
   const s = settings || loadGcalSettings();
   const ids = calIds || [...loadSelectedCals()];
   const calId = loadWriteCalId();
@@ -551,6 +565,7 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
   const lastEv = events[events.length - 1];
   const endMs = new Date(lastEv.end.dateTime).getTime();
   return { events, hoursPlaced, created: true, endMs };
+  });
 }
 
 /**

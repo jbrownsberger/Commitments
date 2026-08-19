@@ -3,6 +3,7 @@ import Modal from './Modal.jsx';
 import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, formatDate, cadenceLabel } from './TaskPanel.jsx';
 import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import { CATEGORY_COLORS } from '../lib/palette.js';
+import { LINK_TYPES, normaliseTaskLink, normaliseTaskLinks } from '../lib/taskLinks.js';
 import '../styles/categories.css';
 
 const PRIORITY_LABELS = { low:'Low', med:'Medium', high:'High', critical:'Critical' };
@@ -20,6 +21,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
   const [panelTask,   setPanelTask]   = useState(null);
   const [openCats,    setOpenCats]    = useState({});
   const [openCompl,   setOpenCompl]   = useState({});
+  const [categoryLinks, setCategoryLinks] = useState([]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const tasksFor = (catId) => (tasks || [])
@@ -34,6 +36,10 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
 
   const toggleCat   = (id) => setOpenCats(p  => ({ ...p, [id]: !p[id] }));
   const toggleCompl = (id) => setOpenCompl(p => ({ ...p, [id]: !p[id] }));
+  const openCategoryModal = (category) => {
+    setCategoryLinks(normaliseTaskLinks(category === 'add' ? [] : category.links));
+    setCatModal(category);
+  };
 
   const norm = (t) => ({
     ...t,
@@ -62,7 +68,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
     const existing = catModal !== 'add' ? catModal : null;
     await saveCategory({
       ...(existing || {}),
-      name, color,
+      name, color, links: categoryLinks,
       position: existing ? existing.position : (categories.length),
     });
     setCatModal(null);
@@ -73,7 +79,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
     <div>
       <div className="cat-list">
         <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
-          <button className="btn btn-sm" onClick={() => setCatModal('add')}>+ Add category</button>
+          <button className="btn btn-sm" onClick={() => openCategoryModal('add')}>+ Add category</button>
         </div>
 
         {categories.length === 0 && (
@@ -149,7 +155,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
                       className="btn btn-sm"
                       onClick={() => onAddTask && onAddTask(cat.id)}
                     >+ Add task</button>
-                    <button className="btn btn-sm" onClick={() => setCatModal(cat)}>Edit</button>
+                    <button className="btn btn-sm" onClick={() => openCategoryModal(cat)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => {
                       if (window.confirm(`Delete "${cat.name}" and all its tasks?`)) removeCategory(cat.id);
                     }}>Delete</button>
@@ -173,6 +179,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
               <label>Color</label>
               <ColorPicker name="color" defaultValue={catModal !== 'add' ? catModal.color : CATEGORY_COLORS[0]} />
             </div>
+            <CategoryLinksEditor links={categoryLinks} onChange={setCategoryLinks} />
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setCatModal(null)}>Cancel</button>
               <button type="submit" className="btn btn-primary">Save</button>
@@ -268,6 +275,57 @@ function ColorPicker({ name, defaultValue }) {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function CategoryLinksEditor({ links, onChange }) {
+  const [type, setType] = useState('web');
+  const [label, setLabel] = useState('');
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+
+  const add = () => {
+    const link = normaliseTaskLink({ type, label, value });
+    if (!link) {
+      setError(type === 'email' ? 'Enter a valid email address.' : type === 'shortcut' ? 'Enter the Shortcut name.' : 'Enter a valid web address.');
+      return;
+    }
+    onChange([...links, link]);
+    setLabel('');
+    setValue('');
+    setError('');
+  };
+
+  return (
+    <div className="form-field">
+      <label>Default links</label>
+      <div style={{ marginBottom: 6, color: 'var(--color-text-tertiary)', fontSize: 12 }}>
+        These appear automatically on every task in this category.
+      </div>
+      {links.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
+          {links.map((link, i) => (
+            <div key={`${link.type}-${link.value}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <span style={{ color: 'var(--color-text-tertiary)', minWidth: 80 }}>{LINK_TYPES.find(item => item.value === link.type)?.label}</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.label}</span>
+              <button type="button" className="btn btn-sm btn-danger" style={{ padding: '1px 8px', fontSize: 11 }}
+                aria-label={`Remove ${link.label}`} onClick={() => onChange(links.filter((_, idx) => idx !== i))}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <select value={type} onChange={e => { setType(e.target.value); setError(''); }} style={{ width: 116 }}>
+          {LINK_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Label (optional)" style={{ flex: '1 1 120px' }} />
+        <input value={value} onChange={e => { setValue(e.target.value); setError(''); }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder={type === 'email' ? 'name@example.com' : type === 'shortcut' ? 'Shortcut name' : 'https://example.com'} style={{ flex: '2 1 180px' }} />
+        <button type="button" className="btn btn-sm" onClick={add}>Add link</button>
+      </div>
+      {error && <div style={{ marginTop: 5, color: 'var(--color-text-danger)', fontSize: 12 }}>{error}</div>}
     </div>
   );
 }

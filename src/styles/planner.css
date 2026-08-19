@@ -792,6 +792,15 @@ body.is-touch-dragging .sidebar-card {
   color: var(--color-text-success);
   cursor: pointer;
 }
+.day-gcal-delete-btn {
+  margin-left: 3px;
+  color: var(--color-text-danger);
+}
+.day-gcal-delete-btn:hover:not(:disabled) {
+  background: var(--color-bg-danger);
+  border-color: var(--color-border-danger);
+  color: var(--color-text-danger);
+}
 .day-gcal-btn.error {
   background: var(--color-bg-danger);
   border-color: transparent;
