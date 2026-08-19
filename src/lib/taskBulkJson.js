@@ -15,6 +15,7 @@ export function buildNewTasksTemplate() {
         estimatedHours: 8,
         category: '',
         notes: '',
+        links: [{ type: 'web', label: 'Research', value: 'https://example.com' }],
         status: 'not started',
         priority: 'med',
         substeps: [
@@ -28,6 +29,7 @@ export function buildNewTasksTemplate() {
         estimatedHours: 2,
         category: '',
         notes: '',
+        links: [],
         status: 'not started',
         priority: 'med',
         substeps: [],
@@ -158,6 +160,7 @@ export function parseNewTasksJson(data, categories) {
       due_date: pickDue(raw),
       estimatedHours: pickHours(raw),
       notes: raw.notes ? String(raw.notes) : '',
+      links: Array.isArray(raw.links) ? raw.links : [],
       manual_progress: 0,
       recurring: false,
       substeps: pickSubsteps(raw),

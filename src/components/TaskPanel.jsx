@@ -19,6 +19,7 @@ import {
   isSeriesInstance,
   isSeriesTemplate,
 } from '../lib/recurrence.js';
+import { LINK_TYPES, normaliseTaskLinks, taskLinkHref } from '../lib/taskLinks.js';
 
 const STATUS_CYCLE = ['not started', 'in progress', 'done'];
 
@@ -382,6 +383,26 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Notes</div>
           <div style={{ fontSize:13, color:'var(--color-text-secondary)', fontStyle:'italic' }}>{local.notes}</div>
+        </div>
+      )}
+
+      {normaliseTaskLinks(local.links).length > 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>Links</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {normaliseTaskLinks(local.links).map((link, i) => {
+              const href = taskLinkHref(link);
+              const typeLabel = LINK_TYPES.find(t => t.value === link.type)?.label || 'Link';
+              return href && (
+                <a key={`${link.type}-${link.value}-${i}`} href={href}
+                  target={link.type === 'web' ? '_blank' : undefined}
+                  rel={link.type === 'web' ? 'noreferrer' : undefined}
+                  style={{ alignSelf:'flex-start', color:'var(--color-accent)', fontSize:13 }}>
+                  {typeLabel}: {link.label}
+                </a>
+              );
+            })}
+          </div>
         </div>
       )}
 

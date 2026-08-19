@@ -21,6 +21,7 @@ import {
   previewOccurrences,
   todayStr,
 } from '../lib/recurrence.js';
+import { LINK_TYPES, normaliseTaskLinks, normaliseTaskLink } from '../lib/taskLinks.js';
 
 const PRIORITY_LABELS = { low: 'Low', med: 'Medium', high: 'High', critical: 'Critical' };
 const STATUS_OPTS = [
@@ -297,6 +298,11 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   );
   const [newStepText, setNewStepText] = useState('');
   const [newStepWeight, setNewStepWeight] = useState(1);
+  const [links, setLinks] = useState(() => normaliseTaskLinks(task?.links));
+  const [newLinkType, setNewLinkType] = useState('web');
+  const [newLinkLabel, setNewLinkLabel] = useState('');
+  const [newLinkValue, setNewLinkValue] = useState('');
+  const [linkError, setLinkError] = useState('');
 
   const addSubstep = () => {
     const text = newStepText.trim();
@@ -311,6 +317,22 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   const updateSubstepWeight = (i, val) => {
     const w = Math.max(1, parseInt(val) || 1);
     setSubsteps(prev => prev.map((s, idx) => idx === i ? { ...s, weight: w } : s));
+  };
+
+  const addLink = () => {
+    const link = normaliseTaskLink({ type: newLinkType, label: newLinkLabel, value: newLinkValue });
+    if (!link) {
+      setLinkError(newLinkType === 'email'
+        ? 'Enter a valid email address.'
+        : newLinkType === 'shortcut'
+          ? 'Enter the Shortcut name.'
+          : 'Enter a valid web address.');
+      return;
+    }
+    setLinks(prev => [...prev, link]);
+    setNewLinkLabel('');
+    setNewLinkValue('');
+    setLinkError('');
   };
 
   const handleSubmit = async (e) => {
@@ -353,6 +375,7 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
       due_date,
       estimated_hours:       parseFloat(fd.get('estimated_hours')) || 1,
       notes:                 fd.get('notes') || null,
+      links,
       manual_progress:       task?.manual_progress ?? 0,
       recurring:             recurringOn,
       recurring_type:        recurringOn ? recType : null,
@@ -439,6 +462,37 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
         <div className="form-field">
           <label>Notes</label>
           <textarea name="notes" defaultValue={task?.notes || ''} />
+        </div>
+
+        <div className="form-field">
+          <label>Links</label>
+          {links.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
+              {links.map((link, i) => (
+                <div key={`${link.type}-${link.value}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <span style={{ color: 'var(--color-text-tertiary)', minWidth: 80 }}>{LINK_TYPES.find(t => t.value === link.type)?.label}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.label}</span>
+                  <button type="button" className="btn btn-sm btn-danger" style={{ padding: '1px 8px', fontSize: 11 }}
+                    aria-label={`Remove ${link.label}`} onClick={() => setLinks(prev => prev.filter((_, idx) => idx !== i))}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <select value={newLinkType} onChange={e => { setNewLinkType(e.target.value); setLinkError(''); }} style={{ width: 116 }}>
+              {LINK_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+            </select>
+            <input value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="Label (optional)" style={{ flex: '1 1 120px' }} />
+            <input value={newLinkValue} onChange={e => { setNewLinkValue(e.target.value); setLinkError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }}
+              placeholder={newLinkType === 'email' ? 'name@example.com' : newLinkType === 'shortcut' ? 'Shortcut name' : 'https://example.com'}
+              style={{ flex: '2 1 180px' }} />
+            <button type="button" className="btn btn-sm" onClick={addLink}>Add link</button>
+          </div>
+          {linkError && <div style={{ marginTop: 5, color: 'var(--color-text-danger)', fontSize: 12 }}>{linkError}</div>}
+          <div style={{ marginTop: 5, color: 'var(--color-text-tertiary)', fontSize: 12 }}>
+            Shortcuts run locally on your Mac when opened from the app.
+          </div>
         </div>
 
         <div className="form-field">

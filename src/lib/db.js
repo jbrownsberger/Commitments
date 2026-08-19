@@ -128,6 +128,7 @@ function dbTaskToApp(t) {
       typeof r === 'string' ? r : r.day_date
     ).sort(),
     scheduled_day_hours: t.scheduled_day_hours || {},
+    links:               Array.isArray(t.links) ? t.links : [],
     substeps:            (t.substeps || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
     recurring:                     rest.recurring                     ?? false,
     recurring_type:                rest.recurring_type                ?? null,
@@ -360,6 +361,7 @@ export async function materializeSeries(template, userId, options = {}) {
     priority:              template.priority || 'med',
     estimated_hours:       template.estimated_hours || 1,
     notes:                 template.notes || null,
+    links:                 Array.isArray(template.links) ? template.links : [],
     progress:              0,
     position:              (template.position ?? 0) + i + 1,
     due_date,
