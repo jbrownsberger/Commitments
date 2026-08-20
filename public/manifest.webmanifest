@@ -1,7 +1,7 @@
 {
   "name": "Commitments",
   "short_name": "Commitments",
-  "description": "A personal planning system for deadlines, tasks, and calendar.",
+  "description": "Commitments is a personal task and calendar planning app for deadlines, recurring work, and realistic weekly plans.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

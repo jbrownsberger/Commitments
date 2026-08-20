@@ -76,7 +76,7 @@ const IconBolt = () => (
 
 // ── Feature list ─────────────────────────────────────────────────────────────────────────
 const FEATURES = [
-  { Icon: IconCalendar, title: 'See the whole week', text: 'Bring deadlines, scheduled work, and calendar availability into one clear plan.' },
+  { Icon: IconCalendar, title: 'Plan around your calendar', text: 'Optionally connect Google Calendar to factor in your availability and add planned work blocks.' },
   { Icon: IconClock,    title: 'Make time for what matters', text: 'Turn a long task list into realistic blocks of work that fit your actual days.' },
   { Icon: IconBarChart, title: 'Stay ahead of deadlines', text: 'Track progress and spot overloaded weeks before they become a last-minute scramble.' },
 ];
@@ -123,12 +123,16 @@ function LoginPage() {
             <span className="login-brand-mark"><img src="/logo.png" alt="Commitments logo" className="login-logo-img" /></span>
             <span>Commitments</span>
           </div>
-          <p className="login-eyebrow">A calmer way to plan</p>
-          <h1 className="login-hero-title">Keep every promise<br />in view.</h1>
+          <p className="login-eyebrow">Personal task and calendar planner</p>
+          <h1 className="login-hero-title">Keep every commitment<br />in view.</h1>
           <p className="login-hero-tagline">
-            Commitments is a workload-aware planner for the things you need to get done.
-            It pairs your tasks and deadlines with the time you really have, so your plan
-            stays useful when life gets busy.
+            <strong>Commitments</strong> is a personal planning app for tracking tasks,
+            deadlines, and recurring work. It helps you turn those commitments into a
+            realistic weekly plan based on the time you have available.
+          </p>
+          <p className="login-google-note">
+            Google Calendar is optional: connect it to see your free time and add
+            Commitments work blocks to a calendar you choose.
           </p>
           <div className="login-preview" aria-hidden="true">
             <div className="login-preview-topbar">
