@@ -120,7 +120,7 @@ function LoginPage() {
       <div className="login-hero">
         <div className="login-hero-inner">
           <div className="login-brand">
-            <span className="login-brand-mark"><img src="/logo.jpg" alt="Commitments logo" className="login-logo-img" /></span>
+            <span className="login-brand-mark"><img src="/logo.png" alt="Commitments logo" className="login-logo-img" /></span>
             <span>Commitments</span>
           </div>
           <p className="login-eyebrow">A calmer way to plan</p>
@@ -132,7 +132,7 @@ function LoginPage() {
           </p>
           <div className="login-preview" aria-hidden="true">
             <div className="login-preview-topbar">
-              <img src="/logo.jpg" alt="" className="login-preview-logo" />
+              <img src="/logo.png" alt="" className="login-preview-logo" />
               <span>Today’s plan</span>
               <span className="login-preview-date">Tue, Aug 19</span>
             </div>

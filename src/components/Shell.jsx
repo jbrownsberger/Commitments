@@ -576,7 +576,10 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
       <div className="app">
         {/* ── Header ── */}
         <div className="header">
-          <h1>Commitments</h1>
+          <h1 className="app-brand">
+            <img src="/logo.png" alt="" className="app-brand-logo" />
+            <span>Commitments</span>
+          </h1>
           <div className="header-actions">
             <button
               className="btn btn-icon"

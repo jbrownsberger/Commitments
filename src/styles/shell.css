@@ -260,6 +260,24 @@ body {
   font-size: 18px;
   font-weight: 600;
 }
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+}
+.app-brand-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(32, 55, 51, 0.12);
+}
+[data-theme="dark"] .app-brand-logo {
+  background: #f5f7f4;
+}
 .header-actions {
   display: flex;
   align-items: center;
