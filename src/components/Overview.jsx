@@ -4,6 +4,11 @@ import QuickTasks from './QuickTasks.jsx';
 import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import '../styles/overview.css';
 
+const PRIORITIES = [
+  ['critical', 'Critical'], ['high', 'High'], ['med', 'Medium'], ['low', 'Low'],
+];
+const PRIORITY_RANK = { critical: 4, high: 3, med: 2, low: 1 };
+
 /* ── Inline capacity editor ──────────────────────────────────────────────────── */
 function CapacityEditor({ weeklyHours, onSave, onCancel }) {
   const [val, setVal] = useState(String(weeklyHours));
@@ -129,6 +134,16 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const [panelTask, setPanelTask] = useState(null);
   const [editingCapacity, setEditingCapacity] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [dueFilter, setDueFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('urgency');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchCategory, setBatchCategory] = useState('');
+  const [batchPriority, setBatchPriority] = useState('');
+  const [batchStatus, setBatchStatus] = useState('');
+  const [batchDueDate, setBatchDueDate] = useState('');
 
   const [capacityMode, setCapacityMode] = useState(
     () => localStorage.getItem(CAP_MODE_KEY) || 'manual'
@@ -151,13 +166,15 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     ? gcalResult.hours
     : manualWeeklyHours;
 
-  const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
+  const categoryList = categories || [];
+  const catMap = Object.fromEntries(categoryList.map(c => [c.id, c]));
 
   const enrich = (t) => ({
     ...t,
     catName:         catMap[t.category_id]?.name  || '',
     catColor:        catMap[t.category_id]?.color || '#888',
     due_date:        t.due_date        ?? null,
+    priority:        t.priority        ?? 'med',
     estimated_hours: t.estimated_hours ?? 1,
     manual_progress: t.manual_progress ?? 0,
     substeps:        t.substeps        ?? [],
@@ -204,18 +221,31 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     : capPct >= 75 ? '#BA7517'
     : 'var(--color-text-success)';
 
-  // Sort the focus queue: overdue → upcoming deadline → no-due
-  const overdue    = allInc.filter(t => t.due_date && daysUntil(t.due_date) < 0)
-    .sort((a, b) => daysUntil(a.due_date) - daysUntil(b.due_date));
-  const upcoming   = allInc.filter(t => t.due_date && daysUntil(t.due_date) >= 0)
-    .sort((a, b) => urgencyScore(b) - urgencyScore(a));
-  const noDue      = allInc
-    .filter(t => !t.due_date)
+  const taskScore = (task) => task.recurring ? recurringUrgency(task) : urgencyScore(task);
+  const focusQueue = allInc
+    .filter(t => categoryFilter === 'all' || t.category_id === categoryFilter)
+    .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
+    .filter(t => {
+      if (dueFilter === 'all') return true;
+      if (dueFilter === 'none') return !t.due_date;
+      if (!t.due_date) return false;
+      const days = daysUntil(t.due_date);
+      if (dueFilter === 'overdue') return days < 0;
+      if (dueFilter === 'today') return days === 0;
+      return days >= 0 && days <= 7;
+    })
     .sort((a, b) => {
-      const score = (task) => task.recurring ? recurringUrgency(task) : urgencyScore(task);
-      return score(b) - score(a);
+      if (sortBy === 'due-asc') return (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31');
+      if (sortBy === 'due-desc') return (b.due_date || '').localeCompare(a.due_date || '');
+      if (sortBy === 'priority') return PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] || taskScore(b) - taskScore(a);
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      // Urgency keeps overdue tasks first, then work with due dates, then undated work.
+      const aBucket = !a.due_date ? 2 : daysUntil(a.due_date) < 0 ? 0 : 1;
+      const bBucket = !b.due_date ? 2 : daysUntil(b.due_date) < 0 ? 0 : 1;
+      return aBucket - bBucket || (aBucket === 0
+        ? daysUntil(a.due_date) - daysUntil(b.due_date)
+        : taskScore(b) - taskScore(a));
     });
-  const focusQueue = [...overdue, ...upcoming, ...noDue];
   const maxFocusScore = Math.max(
     ...focusQueue.map(t => t.recurring ? recurringUrgency(t) : urgencyScore(t)),
     1
@@ -263,6 +293,33 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     setEditingCapacity(false);
   };
 
+  const toggleSelected = (id) => setSelectedIds(current => {
+    const next = new Set(current);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleSelectionMode = () => {
+    setSelectionMode(current => !current);
+    setSelectedIds(new Set());
+  };
+  const selectAllVisible = () => setSelectedIds(current => {
+    const visible = focusQueue.map(t => t.id);
+    const allSelected = visible.length > 0 && visible.every(id => current.has(id));
+    return allSelected ? new Set() : new Set(visible);
+  });
+  const applyBatchChanges = async () => {
+    const changes = {
+      ...(batchCategory && { category_id: batchCategory }),
+      ...(batchPriority && { priority: batchPriority }),
+      ...(batchStatus && { status: batchStatus, manual_progress: batchStatus === 'done' ? 100 : batchStatus === 'not started' ? 0 : undefined }),
+      ...(batchDueDate && { due_date: batchDueDate }),
+    };
+    if (!Object.keys(changes).length || !selectedIds.size) return;
+    await Promise.all(allInc.filter(t => selectedIds.has(t.id)).map(t => saveTask({ ...t, ...changes })));
+    setSelectedIds(new Set());
+    setBatchCategory(''); setBatchPriority(''); setBatchStatus(''); setBatchDueDate('');
+  };
+
   const weekISOs = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
@@ -270,8 +327,8 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const gcalNoData = capacityMode === 'gcal' && gcalResult === null;
 
   const windowLabel = capacityMode === 'gcal'
-    ? `GCal free time ${fmtDate(todayISO)}–${fmtDate(weekEnd)} · tasks ranked by urgency · click to open`
-    : `Next 7 days (${fmtDate(todayISO)}–${fmtDate(weekEnd)}) · tasks ranked by urgency · click to open`;
+    ? `GCal free time ${fmtDate(todayISO)}–${fmtDate(weekEnd)} · click a task to open`
+    : `Next 7 days (${fmtDate(todayISO)}–${fmtDate(weekEnd)}) · click a task to open`;
 
   return (
     <div className="plan-layout">
@@ -366,7 +423,29 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
         {focusQueue.length > 0 ? (
           <div>
-            <div className="section-label">Suggested focus</div>
+            <div className="focus-heading">
+              <div className="section-label" style={{ marginBottom: 0 }}>Suggested focus</div>
+              <button className={`btn btn-sm${selectionMode ? ' btn-primary' : ''}`} onClick={toggleSelectionMode}>
+                {selectionMode ? 'Done selecting' : 'Select tasks'}
+              </button>
+            </div>
+            <div className="focus-controls" aria-label="Task filters and sorting">
+              <label>Category<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option value="all">All categories</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label>Importance<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="all">All importance</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>Due date<select value={dueFilter} onChange={e => setDueFilter(e.target.value)}><option value="all">Any due date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="none">No due date</option></select></label>
+              <label>Sort<select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="urgency">Urgency</option><option value="due-asc">Due date (soonest)</option><option value="due-desc">Due date (latest)</option><option value="priority">Importance (highest)</option><option value="name">Name</option></select></label>
+            </div>
+            {selectionMode && (
+              <div className="batch-toolbar">
+                <button className="btn btn-sm" onClick={selectAllVisible}>{focusQueue.every(t => selectedIds.has(t.id)) ? 'Clear visible' : 'Select visible'}</button>
+                <span>{selectedIds.size} selected</span>
+                <select aria-label="New category" value={batchCategory} onChange={e => setBatchCategory(e.target.value)}><option value="">Category…</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                <select aria-label="New importance" value={batchPriority} onChange={e => setBatchPriority(e.target.value)}><option value="">Importance…</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                <select aria-label="New status" value={batchStatus} onChange={e => setBatchStatus(e.target.value)}><option value="">Status…</option><option value="not started">Not started</option><option value="in progress">In progress</option><option value="done">Done</option></select>
+                <input aria-label="New due date" type="date" value={batchDueDate} onChange={e => setBatchDueDate(e.target.value)} />
+                <button className="btn btn-sm btn-primary" onClick={applyBatchChanges} disabled={!selectedIds.size || !(batchCategory || batchPriority || batchStatus || batchDueDate)}>Apply</button>
+              </div>
+            )}
             {focusQueue.map(t => (
               <FocusCard
                 key={t.id}
@@ -376,9 +455,14 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 onCycle={cycleStatus}
                 onOpen={() => setPanelTask(t)}
                 onToggleNextSubstep={toggleNextSubstep}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(t.id)}
+                onSelect={() => toggleSelected(t.id)}
               />
             ))}
           </div>
+        ) : allInc.length > 0 ? (
+          <div className="focus-empty"><p className="focus-empty-title">No tasks match these filters.</p><button className="btn btn-sm" onClick={() => { setCategoryFilter('all'); setPriorityFilter('all'); setDueFilter('all'); }}>Clear filters</button></div>
         ) : (
           <div className="focus-empty">
             <div className="focus-empty-icon">✅</div>
@@ -447,7 +531,7 @@ function Metric({ label, val, danger }) {
 }
 
 /* ── FocusCard ──────────────────────────────────────────────────────────────────── */
-function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep }) {
+function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep, selectionMode, selected, onSelect }) {
   const score     = task.recurring && !task.due_date
     ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
     : urgencyScore(task);
@@ -507,15 +591,11 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
           {/* Left: check bubble */}
           <div className="focus-card-left">
-            <span
-              className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}
-              onClick={e => { e.stopPropagation(); onCycle(task); }}
-              title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
-              role="button"
-              aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}
-            >
-              {isDone ? '✓' : isInProg ? '◑' : ''}
-            </span>
+            {selectionMode ? (
+              <input className="focus-card-select" type="checkbox" checked={selected} onChange={onSelect} onClick={e => e.stopPropagation()} aria-label={`Select ${task.name}`} />
+            ) : (
+              <span className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`} onClick={e => { e.stopPropagation(); onCycle(task); }} title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'} role="button" aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}>{isDone ? '✓' : isInProg ? '◑' : ''}</span>
+            )}
             {score > 0 && (
               <span className="focus-card-score-bubble" style={{ color }}>
                 {score}
