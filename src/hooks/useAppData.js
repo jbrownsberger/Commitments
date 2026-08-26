@@ -20,6 +20,15 @@ import {
 } from '../lib/db.js';
 
 const UNDO_LIMIT = 30;
+const JWT_FUTURE_RETRY_DELAYS_MS = [500, 1_000, 2_000];
+
+function isJwtIssuedInFutureError(error) {
+  return error?.code === 'PGRST303' || /jwt issued at future/i.test(error?.message || '');
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function normaliseTaskFields(task) {
   const out = { ...task };
@@ -47,22 +56,43 @@ export function useAppData(userId) {
   const [quickTasks,  setQuickTasks]  = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
+  const [loadVersion, setLoadVersion] = useState(0);
 
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
+  const retryLoad = useCallback(() => {
+    setLoadVersion(version => version + 1);
+  }, []);
+
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
+    let cancelled = false;
     (async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const [cats, tsks, subs, prefs, qts] = await Promise.all([
-          fetchCategories(userId),
-          fetchTasks(userId),
-          fetchSubsteps(userId),
-          fetchPreferences(userId),
-          fetchQuickTasks(userId),
-        ]);
+        let loaded;
+        for (let attempt = 0; attempt <= JWT_FUTURE_RETRY_DELAYS_MS.length; attempt += 1) {
+          try {
+            loaded = await Promise.all([
+              fetchCategories(userId),
+              fetchTasks(userId),
+              fetchSubsteps(userId),
+              fetchPreferences(userId),
+              fetchQuickTasks(userId),
+            ]);
+            break;
+          } catch (loadError) {
+            const delay = JWT_FUTURE_RETRY_DELAYS_MS[attempt];
+            if (!isJwtIssuedInFutureError(loadError) || delay === undefined) throw loadError;
+            await wait(delay);
+          }
+        }
+
+        if (cancelled || !loaded) return;
+        const [cats, tsks, subs, prefs, qts] = loaded;
 
         const tasksWithSubs = tsks.map(t => ({
           ...t,
@@ -76,18 +106,20 @@ export function useAppData(userId) {
 
         const finalTasks = mergeUpdatedTasks(tasksWithSubs, resetTasks);
 
+        if (cancelled) return;
         setCategories(cats || []);
         setTasks(finalTasks || []);
         setSubsteps(subs || []);
         setPreferences(prefs || {});
         setQuickTasks(qts || []);
       } catch (e) {
-        setError(e.message);
+        if (!cancelled) setError(e.message || 'Unable to load your data.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [userId]);
+    return () => { cancelled = true; };
+  }, [userId, loadVersion]);
 
   // ── Undo / redo ─────────────────────────────────────────────────────────────
   const snapshot = useCallback(() => ({
@@ -307,7 +339,7 @@ export function useAppData(userId) {
 
   return {
     categories, tasks, substeps, preferences, quickTasks,
-    loading, error,
+    loading, error, retryLoad,
     saveCategory, removeCategory,
     saveTask, removeTask,
     saveSubstep, removeSubstep,

@@ -300,6 +300,11 @@ function AuthedApp({ userId, userEmail }) {
     <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 1.5rem',
       color: 'var(--color-text-danger)', fontSize: 13 }}>
       <strong>Error loading data:</strong> {appData.error}
+      <div style={{ marginTop: 16 }}>
+        <button className="btn btn-primary" onClick={appData.retryLoad}>
+          Try again
+        </button>
+      </div>
     </div>
   );
 
