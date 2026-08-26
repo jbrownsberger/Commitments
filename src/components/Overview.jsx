@@ -138,6 +138,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState('all');
   const [sortBy, setSortBy] = useState('urgency');
+  const [showFilters, setShowFilters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchCategory, setBatchCategory] = useState('');
@@ -302,6 +303,17 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     setSelectionMode(current => !current);
     setSelectedIds(new Set());
   };
+  const toggleFilters = () => {
+    setShowFilters(current => {
+      if (current) {
+        setCategoryFilter('all');
+        setPriorityFilter('all');
+        setDueFilter('all');
+        setSortBy('urgency');
+      }
+      return !current;
+    });
+  };
   const selectAllVisible = () => setSelectedIds(current => {
     const visible = focusQueue.map(t => t.id);
     const allSelected = visible.length > 0 && visible.every(id => current.has(id));
@@ -425,16 +437,23 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <div>
             <div className="focus-heading">
               <div className="section-label" style={{ marginBottom: 0 }}>Suggested focus</div>
-              <button className={`btn btn-sm${selectionMode ? ' btn-primary' : ''}`} onClick={toggleSelectionMode}>
-                {selectionMode ? 'Done selecting' : 'Select tasks'}
-              </button>
+              <div className="focus-heading-actions">
+                <button className={`btn btn-sm${showFilters ? ' btn-primary' : ''}`} onClick={toggleFilters}>
+                  {showFilters ? 'Done filtering' : 'Filter & sort'}
+                </button>
+                <button className={`btn btn-sm${selectionMode ? ' btn-primary' : ''}`} onClick={toggleSelectionMode}>
+                  {selectionMode ? 'Done selecting' : 'Select tasks'}
+                </button>
+              </div>
             </div>
-            <div className="focus-controls" aria-label="Task filters and sorting">
-              <label>Category<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option value="all">All categories</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-              <label>Importance<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="all">All importance</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label>Due date<select value={dueFilter} onChange={e => setDueFilter(e.target.value)}><option value="all">Any due date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="none">No due date</option></select></label>
-              <label>Sort<select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="urgency">Urgency</option><option value="due-asc">Due date (soonest)</option><option value="due-desc">Due date (latest)</option><option value="priority">Importance (highest)</option><option value="name">Name</option></select></label>
-            </div>
+            {showFilters && (
+              <div className="focus-controls" aria-label="Task filters and sorting">
+                <label>Category<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option value="all">All categories</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+                <label>Importance<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="all">All importance</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label>Due date<select value={dueFilter} onChange={e => setDueFilter(e.target.value)}><option value="all">Any due date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="none">No due date</option></select></label>
+                <label>Sort<select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="urgency">Urgency</option><option value="due-asc">Due date (soonest)</option><option value="due-desc">Due date (latest)</option><option value="priority">Importance (highest)</option><option value="name">Name</option></select></label>
+              </div>
+            )}
             {selectionMode && (
               <div className="batch-toolbar">
                 <button className="btn btn-sm" onClick={selectAllVisible}>{focusQueue.every(t => selectedIds.has(t.id)) ? 'Clear visible' : 'Select visible'}</button>

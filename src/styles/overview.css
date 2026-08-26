@@ -64,6 +64,11 @@
   gap: 12px;
   margin-bottom: 8px;
 }
+.focus-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .focus-controls,
 .batch-toolbar {
   display: flex;
