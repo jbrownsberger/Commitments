@@ -331,6 +331,12 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     setSelectedIds(new Set());
     setBatchCategory(''); setBatchPriority(''); setBatchStatus(''); setBatchDueDate('');
   };
+  const deleteSelected = async () => {
+    const count = selectedIds.size;
+    if (!count || !window.confirm(`Delete ${count} selected task${count === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    await Promise.all([...selectedIds].map(id => removeTask(id)));
+    setSelectedIds(new Set());
+  };
 
   const weekISOs = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
@@ -463,6 +469,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 <select aria-label="New status" value={batchStatus} onChange={e => setBatchStatus(e.target.value)}><option value="">Status…</option><option value="not started">Not started</option><option value="in progress">In progress</option><option value="done">Done</option></select>
                 <input aria-label="New due date" type="date" value={batchDueDate} onChange={e => setBatchDueDate(e.target.value)} />
                 <button className="btn btn-sm btn-primary" onClick={applyBatchChanges} disabled={!selectedIds.size || !(batchCategory || batchPriority || batchStatus || batchDueDate)}>Apply</button>
+                <button className="btn btn-sm btn-danger" onClick={deleteSelected} disabled={!selectedIds.size}>Delete selected</button>
               </div>
             )}
             {focusQueue.map(t => (
