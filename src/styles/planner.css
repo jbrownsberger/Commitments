@@ -816,35 +816,16 @@ body.is-touch-dragging .sidebar-card {
   cursor: wait;
 }
 
-/* ── Calendar grid treatment ────────────────────────────────────────────── */
-.planner-controls { padding: 1px 0 14px; background: transparent; }
-.planner-nav { align-items: center; gap: 8px; }
-.planner-nav-arrows { display: inline-flex; gap: 1px; padding: 2px; border-radius: 8px; background: var(--color-bg-tertiary); }
-.planner-nav-arrows .btn { min-width: 25px; padding: 3px 7px; border-color: transparent; background: transparent; box-shadow: none; }
-.planner-nav-arrows .btn:hover { background: var(--color-bg-primary); }
-.planner-range-label { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
-.planner-layout { grid-template-columns: 220px 1fr; gap: 16px; }
-.planner-sidebar { border: 1px solid var(--color-border-primary); padding: 12px 10px; }
-.sidebar-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-tertiary); }
-.sidebar-count { font-size: 10px; background: transparent; }
-.sidebar-card { border-left: none; background: transparent; border-radius: 7px; padding: 7px 28px 7px 16px; margin-bottom: 2px; }
-.sidebar-card::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--task-color, #888); left: 5px; top: 11px; }
-.sidebar-card:hover { background: color-mix(in srgb, var(--task-color, #888) 8%, transparent); }
-.planner-weeks { gap: 16px; }
-.planner-week { border: 1px solid var(--color-border-primary); border-radius: var(--radius-lg); overflow: hidden; background: var(--color-bg-primary); }
-.planner-week-grid { gap: 0; }
-.planner-day-header { justify-content: flex-start; padding: 8px 9px 7px; border-bottom: 1px solid var(--color-border-primary); border-right: 1px solid var(--color-border-primary); }
-.planner-day-header.today { color: var(--color-accent); border-bottom-color: var(--color-border-primary); }
-.planner-day-date { font-weight: 600; font-size: 12px; }
-.planner-day-header.today .planner-day-date { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--color-accent); color: #fff; }
-.planner-col { border-radius: 0; padding: 6px 5px; background: var(--color-bg-primary); border: 0; border-right: 1px solid var(--color-border-primary); }
-.planner-col.past { background: color-mix(in srgb, var(--color-bg-secondary) 45%, var(--color-bg-primary)); opacity: 0.72; }
-.due-chip { color: var(--task-color, var(--color-text-secondary)); background: color-mix(in srgb, var(--task-color, #888) 13%, transparent) !important; }
-.planner-task-card { background: color-mix(in srgb, var(--task-color, #888) 15%, transparent) !important; border-radius: 6px; padding: 5px 7px 5px 10px; color: var(--color-text-primary); }
-.planner-task-card::before { content: ''; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 3px; border-radius: 3px; background: var(--task-color, #888); }
+/* ── Calendar-inspired color treatment; dimensions stay intentionally unchanged. */
+.planner-controls { background: var(--color-bg-page); }
+.planner-sidebar { border-color: var(--color-border-primary); }
+.sidebar-card { border-left-color: var(--task-color, #888); background: color-mix(in srgb, var(--task-color, #888) 7%, var(--color-bg-secondary)); }
+.sidebar-card:hover { background: color-mix(in srgb, var(--task-color, #888) 12%, var(--color-bg-secondary)); }
+.planner-col { background: var(--color-bg-secondary); border-color: var(--color-border-primary); }
+.planner-col.drag-over { background: var(--color-bg-info); }
+.due-chip { color: var(--task-color, var(--color-text-secondary)); background: color-mix(in srgb, var(--task-color, #888) 14%, var(--color-bg-primary) 86%) !important; }
+.planner-task-card { background: color-mix(in srgb, var(--task-color, #888) 18%, var(--color-bg-primary) 82%) !important; color: var(--color-text-primary); border-left: 3px solid var(--task-color, #888); }
 .card-name { font-weight: 600; }
 .card-remove { color: var(--color-text-tertiary); }
 .card-remove:hover { color: var(--color-text-danger); }
 .hrs-badge { background: color-mix(in srgb, var(--task-color, #888) 16%, transparent); color: var(--task-color, var(--color-text-primary)); }
-.hrs-badge:hover { background: color-mix(in srgb, var(--task-color, #888) 26%, transparent); }
-@media (max-width: 700px) { .planner-range-label { order: 3; flex-basis: 100%; } }

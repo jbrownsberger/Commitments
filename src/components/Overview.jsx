@@ -521,15 +521,16 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             {todayPlan.map(t => {
               const hrs    = hoursToday(t);
               const isDone = t.status === 'done';
+              const isInProgress = t.status === 'in progress';
               return (
-                <div key={t.id} className="today-plan-item" onClick={() => setPanelTask(t)}>
+                <div key={t.id} className="today-plan-item" style={{ '--today-task-color': t.catColor || '#888' }} onClick={() => setPanelTask(t)}>
                   <div className="today-plan-dot" style={{ background: t.catColor || '#888' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className={`today-plan-name${isDone ? ' done' : ''}`}>{t.name}</div>
-                    <div className="today-plan-meta">{hrs.toFixed(1)}h planned today</div>
+                    <div className={`today-plan-meta${isInProgress ? ' in-progress' : ''}`}>{isInProgress ? 'In progress · ' : ''}{hrs.toFixed(1)}h planned today</div>
                   </div>
                   <span
-                    className={`task-check${isDone ? ' done' : ''}`}
+                    className={`task-check${isDone ? ' done' : isInProgress ? ' in-progress' : ''}`}
                     style={{ flexShrink: 0, width: 18, height: 18 }}
                     onClick={e => { e.stopPropagation(); cycleStatus(t); }}
                   >{isDone ? '✓' : ''}</span>
@@ -647,10 +648,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
 
             {/* Sub-label: category · timing */}
             {subLeft && (
-              <div className={`focus-card-sub${isOverdue ? ' overdue' : ''}`}>
-                {isOverdue && <span className="focus-card-sub-warn">⚠ </span>}
-                {subLeft}
-              </div>
+              <div className={`focus-card-sub${isOverdue ? ' overdue' : ''}`}>{subLeft}</div>
             )}
 
             {/* Recurring / series badge (only if category already shown above) */}
@@ -669,18 +667,15 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
               </div>
             )}
 
-            {/* Next substep pill */}
-            {nextSub && (
-              <div
-                className="focus-card-substep"
-                onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }}
-                title="Mark this substep done"
-              >
-                next: {nextSub.text}
-              </div>
-            )}
           </div>
         </div>
+
+        {nextSub && (
+          <div className="focus-card-substep" onClick={e => { e.stopPropagation(); onToggleNextSubstep(task); }} title="Mark this substep done">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 3l6 5-6 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span><b>Next:</b> {nextSub.text}</span>
+          </div>
+        )}
 
         {/* Urgency bar — pinned flush to card bottom */}
         <div className="focus-card-urgency-bar-track">

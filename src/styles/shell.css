@@ -588,3 +588,7 @@ body {
 .tab { padding: 6px 12px; font-size: 12px; border-bottom: none; margin-bottom: 0; border-radius: 7px; }
 .tab.active { color: var(--color-text-primary); background: var(--color-bg-primary); box-shadow: 0 1px 2px rgba(45, 41, 31, 0.10); }
 @media (max-width: 480px) { .tabs { display: flex; } }
+
+.header, .tabs-wrapper { background: var(--color-bg-page); }
+.btn-primary { background: var(--color-bg-primary); border-color: var(--color-accent); color: var(--color-accent); }
+.btn-primary:hover { background: var(--color-bg-secondary); border-color: var(--color-accent-hover); color: var(--color-accent-hover); }

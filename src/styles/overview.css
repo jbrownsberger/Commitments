@@ -553,3 +553,20 @@
 .focus-card-cat-strip { width: 4px; background: var(--focus-category-color); margin: 5px 0 5px 4px; border-radius: 3px; }
 .today-plan-panel { border: 1px solid var(--color-border-primary); }
 @media (max-width: 540px) { .overview-date-full { display: none; } }
+
+/* Mockup task-card details */
+.focus-card { border: 0; border-radius: 8px; background: color-mix(in srgb, var(--focus-category-color) 8%, var(--color-bg-primary)); }
+.focus-card--overdue { border: 0; }
+.focus-card--overdue:hover { border: 0; }
+.focus-card-body { padding: 9px 12px 4px 10px; }
+.focus-card-check { width: 12px; height: 12px; border: 2px solid var(--focus-category-color); background: transparent; font-size: 0; }
+.focus-card-check.done { background: var(--focus-category-color); border-color: var(--focus-category-color); font-size: 8px; }
+.focus-card-check.in-progress { background: color-mix(in srgb, var(--focus-category-color) 55%, transparent); border-color: var(--focus-category-color); color: transparent; }
+.focus-card-sub.overdue { color: var(--color-text-danger); font-weight: 600; }
+.focus-card-substep { display: inline-flex; align-items: center; gap: 5px; align-self: auto; max-width: calc(100% - 42px); margin: 0 12px 8px 42px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--color-text-secondary); }
+.focus-card-substep b { color: var(--color-text-tertiary); font-weight: 500; }
+.focus-card-substep svg { flex-shrink: 0; color: color-mix(in srgb, var(--focus-category-color) 70%, transparent); transition: color .12s, transform .12s; }
+.focus-card-substep:hover { border: 0; background: transparent; color: var(--color-text-primary); }
+.focus-card-substep:hover svg { color: var(--focus-category-color); transform: translateX(2px); }
+.today-plan-meta.in-progress { color: var(--color-text-secondary); }
+.today-plan-item .task-check.in-progress { border-color: var(--today-task-color); background: color-mix(in srgb, var(--today-task-color) 55%, transparent); }

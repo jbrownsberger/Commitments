@@ -864,17 +864,12 @@ export default function Planner({ appData, userId, onEditTask }) {
           {/* ── Sticky top nav bar ── */}
           <div className="planner-controls">
             <div className="planner-nav">
-              <div className="planner-nav-arrows">
-                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)} aria-label="Previous four weeks">&laquo;</button>
-                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">&#8249;</button>
-              </div>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
               <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
                 disabled={weekOffset === 0} style={{ minWidth: 52 }}>Today</button>
-              <span className="planner-range-label">{fmtShort(windowStart)} – {fmtShort(windowEnd)}</span>
-              <div className="planner-nav-arrows">
-                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">&#8250;</button>
-                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)} aria-label="Next four weeks">&raquo;</button>
-              </div>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
+              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
             </div>
             <div className="planner-actions">
               <button className="btn btn-sm" onClick={handleOpenAutoFillModal}>&#9889; Auto-fill</button>
