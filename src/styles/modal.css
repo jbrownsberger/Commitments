@@ -36,6 +36,19 @@
   margin: 0;
   line-height: 1.3;
 }
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.task-json-actions { display: inline-flex; align-items: center; gap: 5px; }
+.task-json-status { margin: -8px 0 12px; }
+@media (max-width: 480px) {
+  .modal-header { gap: 7px; }
+  .modal-header-actions .btn { padding: 3px 6px !important; }
+  .modal-header-actions .btn svg { display: none; }
+}
 .modal-close {
   flex-shrink: 0;
   display: flex;

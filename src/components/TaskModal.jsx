@@ -289,6 +289,7 @@ function RecurringSection({ task, isRecurring, setIsRecurring }) {
 export default function TaskModal({ task, catId, categories = [], onSave, onClose }) {
   const isEdit = !!task;
   const [submitting, setSubmitting] = useState(false);
+  const [jsonStatus, setJsonStatus] = useState(null);
   const [isRecurring, setIsRecurring] = useState(!!task?.recurring);
   const [selCatId, setSelCatId] = useState(
     catId ?? task?.category_id ?? categories[0]?.id ?? null
@@ -408,10 +409,13 @@ export default function TaskModal({ task, catId, categories = [], onSave, onClos
   };
 
   return (
-    <Modal title={isEdit ? 'Edit task' : 'Add task'} onClose={onClose} wide>
-      {!isEdit && (
-        <TaskJsonImport categories={categories} onSave={onSave} onClose={onClose} />
-      )}
+    <Modal
+      title={isEdit ? 'Edit task' : 'Add task'}
+      onClose={onClose}
+      wide
+      headerActions={!isEdit && <TaskJsonImport categories={categories} onSave={onSave} onClose={onClose} onStatus={setJsonStatus} />}
+    >
+      {jsonStatus && <div className={`import-export-flash${jsonStatus.ok ? '' : ' error'} task-json-status`}>{jsonStatus.text}</div>}
       <form onSubmit={handleSubmit}>
         {categories.length > 0 && (
           <div className="form-field">

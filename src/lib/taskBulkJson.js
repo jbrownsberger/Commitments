@@ -2,6 +2,7 @@
  * New-task JSON template + parser.
  * Distinct from backup import: always creates new tasks (new ids).
  */
+import { normaliseTaskLinks } from './taskLinks.js';
 
 const STATUSES = new Set(['not started', 'in progress', 'done', 'not-started', 'in-progress']);
 const PRIORITIES = new Set(['low', 'med', 'medium', 'high', 'critical']);
@@ -15,7 +16,11 @@ export function buildNewTasksTemplate() {
         estimatedHours: 8,
         category: '',
         notes: '',
-        links: [{ type: 'web', label: 'Research', value: 'https://example.com' }],
+        links: [
+          { type: 'web', label: 'Research', value: 'https://example.com' },
+          { type: 'email', label: 'Project contact', value: 'person@example.com' },
+          { type: 'shortcut', label: 'Open research notes', value: 'Research Notes' },
+        ],
         status: 'not started',
         priority: 'med',
         substeps: [
@@ -160,7 +165,7 @@ export function parseNewTasksJson(data, categories) {
       due_date: pickDue(raw),
       estimatedHours: pickHours(raw),
       notes: raw.notes ? String(raw.notes) : '',
-      links: Array.isArray(raw.links) ? raw.links : [],
+      links: normaliseTaskLinks(raw.links),
       manual_progress: 0,
       recurring: false,
       substeps: pickSubsteps(raw),

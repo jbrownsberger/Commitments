@@ -25,14 +25,14 @@ const UploadIcon = () => (
   </svg>
 );
 
-export default function TaskJsonImport({ categories, onSave, onClose }) {
+export default function TaskJsonImport({ categories, onSave, onClose, onStatus }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(null);
+  const report = (next) => onStatus?.(next);
 
   const downloadTemplate = () => {
     downloadJson('commitments-new-tasks-template.json', buildNewTasksTemplate());
-    setStatus({ ok: true, text: 'Template downloaded' });
+    report({ ok: true, text: 'Template downloaded' });
   };
 
   const handleFile = async (e) => {
@@ -40,43 +40,31 @@ export default function TaskJsonImport({ categories, onSave, onClose }) {
     if (!file) return;
     e.target.value = '';
     setBusy(true);
-    setStatus(null);
+    report(null);
     try {
       const data = JSON.parse(await file.text());
       const { payloads, errors } = parseNewTasksJson(data, categories);
       if (payloads.length === 0) throw new Error(errors[0] || 'No valid tasks');
       for (const payload of payloads) await onSave(payload);
       const extra = errors.length ? ` (${errors.length} skipped)` : '';
-      setStatus({ ok: true, text: `Created ${payloads.length} task${payloads.length === 1 ? '' : 's'}${extra}` });
+      report({ ok: true, text: `Created ${payloads.length} task${payloads.length === 1 ? '' : 's'}${extra}` });
       onClose?.();
     } catch (err) {
-      setStatus({ ok: false, text: err.message || 'Import failed' });
+      report({ ok: false, text: err.message || 'Import failed' });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      gap: 6,
-      flexWrap: 'wrap',
-      margin: '-4px 0 12px',
-    }}>
-      {status && (
-        <span className={`import-export-flash${status.ok ? '' : ' error'}`} style={{ marginRight: 'auto' }}>
-          {status.text}
-        </span>
-      )}
+    <div className="task-json-actions">
       <button
         type="button"
         className="btn btn-sm"
         onClick={downloadTemplate}
         disabled={busy}
         title="Download a JSON template for multiple tasks"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px' }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px' }}
       >
         <DownloadIcon /> Template
       </button>
@@ -86,7 +74,7 @@ export default function TaskJsonImport({ categories, onSave, onClose }) {
         onClick={() => fileRef.current?.click()}
         disabled={busy}
         title="Create multiple new tasks from JSON"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px' }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px' }}
       >
         <UploadIcon /> {busy ? 'Importing…' : 'JSON'}
       </button>

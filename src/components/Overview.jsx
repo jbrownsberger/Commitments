@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyColor, cadenceLabel } from './TaskPanel.jsx';
+import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, cadenceLabel } from './TaskPanel.jsx';
 import QuickTasks from './QuickTasks.jsx';
 import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import '../styles/overview.css';
@@ -247,11 +247,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
         ? daysUntil(a.due_date) - daysUntil(b.due_date)
         : taskScore(b) - taskScore(a));
     });
-  const maxFocusScore = Math.max(
-    ...focusQueue.map(t => t.recurring ? recurringUrgency(t) : urgencyScore(t)),
-    1
-  );
-
   const todayPlan = allTasks.map(enrich)
     .filter(t => t.status !== 'done' && t.scheduled_days?.includes(todayISO))
     .sort((a, b) => hoursToday(b) - hoursToday(a));
@@ -483,7 +478,6 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
               <FocusCard
                 key={t.id}
                 task={t}
-                maxScore={maxFocusScore}
                 weekISOs={weekISOs}
                 onCycle={cycleStatus}
                 onOpen={() => setPanelTask(t)}
@@ -565,11 +559,10 @@ function Metric({ label, val, danger }) {
 }
 
 /* ── FocusCard ──────────────────────────────────────────────────────────────────── */
-function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubstep, selectionMode, selected, onSelect }) {
+function FocusCard({ task, weekISOs, onCycle, onOpen, onToggleNextSubstep, selectionMode, selected, onSelect }) {
   const score     = task.recurring && !task.due_date
     ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
     : urgencyScore(task);
-  const color     = urgencyColor(score);
   const isDone    = task.status === 'done';
   const isInProg  = task.status === 'in progress';
   const days      = daysUntil(task.due_date);
@@ -579,7 +572,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
     : days === 0 ? 'today'
     : `${days}d left`;
 
-  const pct = Math.round((score / Math.max(maxScore, 1)) * 100);
+  const urgencyTint = Math.round(6 + Math.min(score, 100) * 0.16);
 
   const hrsWeek = weekISOs.reduce((s, iso) => {
     if (!task.scheduled_days?.includes(iso)) return s;
@@ -612,7 +605,7 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
   return (
     <div
       className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`}
-      style={{ '--focus-category-color': task.catColor || '#82979B' }}
+      style={{ '--focus-category-color': task.catColor || '#82979B', '--focus-urgency-tint': `${urgencyTint}%` }}
       onClick={onOpen}
     >
       <div className="focus-card-cat-strip" aria-hidden="true" />
@@ -630,20 +623,16 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
             ) : (
               <span className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`} onClick={e => { e.stopPropagation(); onCycle(task); }} title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'} role="button" aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}>{isDone ? '✓' : isInProg ? '◑' : ''}</span>
             )}
-            {score > 0 && (
-              <span className="focus-card-score-bubble" style={{ color }}>
-                {score}
-              </span>
-            )}
           </div>
 
           {/* Centre: name + sub-label row */}
           <div className="focus-card-content">
             <div className="focus-card-name-row">
               <span className={`focus-card-name${isDone ? ' done' : ''}`}>{task.name}</span>
-              {rightPill && (
-                <span className="focus-card-hours-pill">{rightPill}</span>
-              )}
+              <span className="focus-card-title-actions">
+                {rightPill && <span className="focus-card-hours-pill">{rightPill}</span>}
+                {score > 0 && <span className={`focus-card-urgency-badge${score >= 75 ? ' hot' : ''}`}>{score}</span>}
+              </span>
             </div>
 
             {/* Sub-label: category · timing */}
@@ -676,14 +665,6 @@ function FocusCard({ task, maxScore, weekISOs, onCycle, onOpen, onToggleNextSubs
             <span><b>Next:</b> {nextSub.text}</span>
           </div>
         )}
-
-        {/* Urgency bar — pinned flush to card bottom */}
-        <div className="focus-card-urgency-bar-track">
-          <div
-            className="focus-card-urgency-bar"
-            style={{ width: `${pct}%`, background: color }}
-          />
-        </div>
 
       </div>{/* /focus-card-inner */}
 

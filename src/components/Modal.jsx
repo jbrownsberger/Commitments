@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import '../styles/modal.css';
 
-export default function Modal({ title, children, onClose, wide }) {
+export default function Modal({ title, children, onClose, wide, headerActions }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -18,6 +18,7 @@ export default function Modal({ title, children, onClose, wide }) {
         {title && (
           <div className="modal-header">
             <h2 className="modal-title">{title}</h2>
+            {headerActions && <div className="modal-header-actions">{headerActions}</div>}
             <button
               className="modal-close"
               onClick={onClose}
