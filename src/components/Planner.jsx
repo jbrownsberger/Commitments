@@ -864,12 +864,17 @@ export default function Planner({ appData, userId, onEditTask }) {
           {/* ── Sticky top nav bar ── */}
           <div className="planner-controls">
             <div className="planner-nav">
-              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)}>&laquo;</button>
-              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)}>&#8249;</button>
+              <div className="planner-nav-arrows">
+                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - SHOW_WEEKS)} aria-label="Previous four weeks">&laquo;</button>
+                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">&#8249;</button>
+              </div>
               <button className="btn btn-sm" onClick={() => setWeekOffset(0)}
                 disabled={weekOffset === 0} style={{ minWidth: 52 }}>Today</button>
-              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)}>&#8250;</button>
-              <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)}>&raquo;</button>
+              <span className="planner-range-label">{fmtShort(windowStart)} – {fmtShort(windowEnd)}</span>
+              <div className="planner-nav-arrows">
+                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">&#8250;</button>
+                <button className="btn btn-sm" onClick={() => setWeekOffset(o => o + SHOW_WEEKS)} aria-label="Next four weeks">&raquo;</button>
+              </div>
             </div>
             <div className="planner-actions">
               <button className="btn btn-sm" onClick={handleOpenAutoFillModal}>&#9889; Auto-fill</button>
@@ -1013,7 +1018,7 @@ export default function Planner({ appData, userId, onEditTask }) {
                             )}
                             {dueOnDay[iso]?.map(t => (
                               <div key={t.id} className="due-chip"
-                                style={{ background: catMap[t.category_id]?.color || '#888' }}
+                                style={{ '--task-color': catMap[t.category_id]?.color || '#888' }}
                                 title={`Due: ${t.name}`}>
                                 <IconCalendar size={9} style={{ marginRight: 3, verticalAlign: 'middle', opacity: 0.85 }} />
                                 {t.name.slice(0, 12)}{t.name.length > 12 ? '\u2026' : ''}
@@ -1107,7 +1112,7 @@ function PlannerTaskCard({
   return (
     <div
       className="planner-task-card"
-      style={{ background: color }}
+      style={{ '--task-color': color }}
       draggable
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}
@@ -1153,7 +1158,7 @@ function SidebarCard({ task, cat, allISOs, onDragStart, onDragEnd, onTouchStart,
   return (
     <div
       className="sidebar-card"
-      style={{ borderLeftColor: color }}
+      style={{ '--task-color': color }}
       draggable
       onDragStart={e => onDragStart(e, task)}
       onDragEnd={onDragEnd}

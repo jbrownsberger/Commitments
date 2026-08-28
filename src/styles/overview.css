@@ -537,3 +537,19 @@
 }
 .urgent-bar-fill  { height: 100%; border-radius: 0; transition: width 0.3s; }
 .urgent-bar-days  { font-size: 11px; white-space: nowrap; padding-top: 2px; }
+
+/* Calendar-style visual system */
+.overview-date-header { display: flex; align-items: center; gap: 10px; margin: 1px 0 15px; }
+.overview-date-marker { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--color-accent); color: #fff; font-size: 16px; font-weight: 600; }
+.overview-date-weekday { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
+.overview-date-month { font-size: 11px; color: var(--color-text-secondary); margin-top: 1px; }
+.overview-date-full { margin-left: auto; font-size: 11px; color: var(--color-text-tertiary); }
+.capacity-block { margin-bottom: 1.5rem; padding: 13px 14px 12px; border: 1px solid var(--color-border-primary); border-radius: var(--radius-lg); background: var(--color-bg-primary); }
+.overview-metric { border: 1px solid var(--color-border-primary); box-shadow: none; }
+.capacity-mode-toggle { border: 1px solid var(--color-border-primary); border-radius: 8px; }
+.capacity-mode-toggle button.active { color: var(--color-text-primary); border-radius: 6px; }
+.focus-card { border: 1px solid color-mix(in srgb, var(--focus-category-color) 22%, var(--color-border-primary)); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--focus-category-color) 7%, var(--color-bg-primary)); box-shadow: none; }
+.focus-card:hover { background: color-mix(in srgb, var(--focus-category-color) 11%, var(--color-bg-primary)); }
+.focus-card-cat-strip { width: 4px; background: var(--focus-category-color); margin: 5px 0 5px 4px; border-radius: 3px; }
+.today-plan-panel { border: 1px solid var(--color-border-primary); }
+@media (max-width: 540px) { .overview-date-full { display: none; } }

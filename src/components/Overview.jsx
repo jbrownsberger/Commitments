@@ -351,7 +351,14 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   return (
     <div className="plan-layout">
       <div>
-        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>{today}</div>
+        <div className="overview-date-header">
+          <div className="overview-date-marker">{new Date().getDate()}</div>
+          <div>
+            <div className="overview-date-weekday">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</div>
+            <div className="overview-date-month">{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</div>
+          </div>
+          <span className="overview-date-full">{today}</span>
+        </div>
 
         <div className="overview-grid" style={{ marginBottom: '1.5rem' }}>
           <Metric label="Total tasks"   val={total} />
@@ -360,7 +367,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           <Metric label="Overdue"       val={overdueCount} danger={overdueCount > 0} />
         </div>
 
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div className="capacity-block">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <div className="section-label" style={{ marginBottom: 0 }}>This week's focus</div>
 

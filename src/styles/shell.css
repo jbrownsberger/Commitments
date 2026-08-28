@@ -576,3 +576,15 @@ body {
 .empty-icon  { font-size: 28px; margin-bottom: 8px; }
 .empty-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; color: var(--color-text-primary); }
 .empty-sub   { font-size: 12px; }
+
+/* Calendar-style application chrome */
+.app { padding: 1rem 0 2rem; }
+.header { padding: 0.5rem 0 1rem; margin-bottom: 0.15rem; }
+.app-brand-logo { width: 36px; height: 36px; border-radius: 10px; }
+.btn { background: var(--color-bg-primary); border: 1px solid var(--color-border-primary); border-radius: 8px; padding: 6px 12px; box-shadow: 0 1px 1px rgba(47, 42, 30, 0.03); }
+.btn:hover { background: var(--color-bg-secondary); border-color: var(--color-border-secondary); }
+.tabs-wrapper::after { background: linear-gradient(to right, transparent, var(--color-bg-page)); }
+.tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--color-bg-tertiary); border: 1px solid var(--color-border-primary); border-radius: 10px; }
+.tab { padding: 6px 12px; font-size: 12px; border-bottom: none; margin-bottom: 0; border-radius: 7px; }
+.tab.active { color: var(--color-text-primary); background: var(--color-bg-primary); box-shadow: 0 1px 2px rgba(45, 41, 31, 0.10); }
+@media (max-width: 480px) { .tabs { display: flex; } }
