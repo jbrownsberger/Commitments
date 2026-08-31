@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import '../styles/modal.css';
 
-export default function Modal({ title, children, onClose, wide, headerActions }) {
+export default function Modal({ title, children, onClose, wide, headerActions, className = '' }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -11,7 +11,7 @@ export default function Modal({ title, children, onClose, wide, headerActions })
   return (
     <div className="modal-bg" onClick={onClose}>
       <div
-        className="modal"
+        className={`modal${className ? ` ${className}` : ''}`}
         style={wide ? { maxWidth: 520 } : {}}
         onClick={e => e.stopPropagation()}
       >

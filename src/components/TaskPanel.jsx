@@ -20,6 +20,7 @@ import {
   isSeriesTemplate,
 } from '../lib/recurrence.js';
 import { LINK_TYPES, normaliseTaskLinks, taskLinkHref } from '../lib/taskLinks.js';
+import '../styles/task-panel.css';
 
 const STATUS_CYCLE = ['not started', 'in progress', 'done'];
 
@@ -210,10 +211,6 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       manual_progress: next === 'done' ? 100 : next === 'not started' ? 0 : local.manual_progress,
     });
   };
-  const statusBtnLabel = isDone ? 'Reopen'
-    : local.status === 'in progress' ? 'Mark done'
-    : '\u25ba Start';
-
   // ── Substep toggle
   const toggleSubstep = (idx) => {
     const substeps = local.substeps.map((s, i) => i === idx ? { ...s, done: !s.done } : s);
@@ -250,22 +247,22 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
   const priorityStyle = PRIORITY_STYLES[local.priority] || {};
 
   return (
-    <Modal title="" onClose={onClose} wide>
+    <Modal title="" onClose={onClose} wide className="task-panel-modal">
+      <div className="task-panel" style={{ '--task-panel-color': cat?.color || '#82979B' }}>
+      <div className="task-panel-strip" />
+      <div className="task-panel-body">
       {/* ── Header ── */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:16 }}>
+      <div className="task-panel-header">
         <div style={{ flex:1, minWidth:0 }}>
-          <h2 style={{ fontSize:22, fontWeight:700, marginBottom:6, lineHeight:1.2 }}>{local.name}</h2>
-          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <h2 className="task-panel-title">{local.name}</h2>
+          <div className="task-panel-meta">
             {cat?.name && (
-              <span style={{ fontSize:13, color:'var(--color-text-secondary)' }}>{cat.name}</span>
+              <span className="task-panel-category"><span />{cat.name}</span>
             )}
             {(local.due_date ?? local.dueDate) && (
-              <span style={{
-                fontSize:13,
-                color: isOverdue ? 'var(--color-text-danger)' : days !== null && days <= 3 ? '#BA7517' : 'var(--color-text-secondary)'
-              }}>
+              <span className={`task-panel-due${isOverdue ? ' overdue' : ''}${days !== null && days <= 3 && !isOverdue ? ' soon' : ''}`}>
                 {formatDate(local.due_date ?? local.dueDate)}
-                {daysStr && <span style={{ marginLeft:4 }}>({daysStr})</span>}
+                {daysStr && <span> · {daysStr}</span>}
               </span>
             )}
             {local.priority && local.priority !== 'med' && (
@@ -276,37 +273,37 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
           </div>
           <RecurringMeta task={local} />
         </div>
-        <button className="btn" style={{ whiteSpace:'nowrap', flexShrink:0 }} onClick={cycleStatus}>
-          {statusBtnLabel}
-        </button>
+        <button className="task-panel-close" type="button" onClick={onClose} aria-label="Close">✕</button>
       </div>
 
+      <button className={`task-panel-status ${local.status || 'not-started'}`} onClick={cycleStatus}>{isDone ? '✓ Reopen' : local.status === 'in progress' ? '● In progress — mark done' : '○ Not started — start'}</button>
+
       {/* ── Meta row ── */}
-      <div style={{ display:'flex', gap:24, marginBottom:20, borderTop:'0.5px solid var(--color-border-tertiary)', borderBottom:'0.5px solid var(--color-border-tertiary)', padding:'12px 0' }}>
+      <div className="task-panel-stats">
         {(local.estimated_hours ?? local.estimatedHours) && (
-          <div>
-            <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Estimated</div>
-            <div style={{ fontSize:15, fontWeight:600 }}>{local.estimated_hours ?? local.estimatedHours}h</div>
+          <div className="task-panel-stat">
+            <div className="task-panel-stat-label">Estimated</div>
+            <div className="task-panel-stat-value">{local.estimated_hours ?? local.estimatedHours}h</div>
           </div>
         )}
-        <div>
-          <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Remaining</div>
-          <div style={{ fontSize:15, fontWeight:600 }}>{rem.toFixed(1)}h</div>
+        <div className="task-panel-stat">
+          <div className="task-panel-stat-label">Remaining</div>
+          <div className="task-panel-stat-value">{rem.toFixed(1)}h</div>
         </div>
-        <div>
-          <div style={{ fontSize:11, color:'var(--color-text-secondary)', marginBottom:2 }}>Status</div>
-          <div style={{ fontSize:15, fontWeight:600, textTransform:'capitalize' }}>{local.status || 'not started'}</div>
+        <div className="task-panel-stat">
+          <div className="task-panel-stat-label">Status</div>
+          <div className="task-panel-stat-value task-panel-status-value">{local.status || 'not started'}</div>
         </div>
       </div>
 
       {/* ── Progress ── */}
-      <div style={{ marginBottom:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'var(--color-text-secondary)', marginBottom:6 }}>
+      <div className="task-panel-progress-section">
+        <div className="task-panel-section-heading">
           <span>Progress</span>
           <span>{prog}%</span>
         </div>
-        <div className="progress-track" style={{ height:6, borderRadius:3 }}>
-          <div className="progress-fill" style={{ width:`${prog}%` }} />
+        <div className="progress-track task-panel-progress-track">
+          <div className="progress-fill" style={{ width:`${prog}%`, background:'var(--task-panel-color)' }} />
         </div>
         {!hasSubsteps && (
           <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:10 }}>
@@ -326,20 +323,15 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
 
       {/* ── Substeps ── */}
       {hasSubsteps && (
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+        <div className="task-panel-substeps">
+          <div className="task-panel-section-title">
             Substeps
             <span style={{ fontSize:12, fontWeight:400, color:'var(--color-text-tertiary)' }}>— drag to reorder</span>
           </div>
           {local.substeps.map((s, i) => (
             <div
               key={i}
-              style={{
-                display:'flex', alignItems:'center', gap:8,
-                padding:'6px 0',
-                borderBottom:'0.5px solid var(--color-border-tertiary)',
-                cursor:'default',
-              }}
+              className="task-panel-substep-row"
               draggable
               onDragStart={e => {
                 dragIdx.current = i;
@@ -350,20 +342,16 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
               onDrop={e => { e.preventDefault(); moveSubstep(dragIdx.current, i); }}
             >
               {/* drag handle */}
-              <span style={{ color:'var(--color-text-tertiary)', cursor:'grab', fontSize:14, userSelect:'none' }}>⠇</span>
+              <span className="task-panel-drag-handle">⠇</span>
               {/* checkbox */}
               <input
                 type="checkbox"
                 checked={!!s.done}
                 onChange={() => toggleSubstep(i)}
-                style={{ width:16, height:16, cursor:'pointer', flexShrink:0 }}
+                className="task-panel-substep-check"
               />
               {/* text */}
-              <span style={{
-                flex:1, fontSize:14,
-                textDecoration: s.done ? 'line-through' : 'none',
-                color: s.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-              }}>{s.text}</span>
+              <span className={`task-panel-substep-text${s.done ? ' done' : ''}`}>{s.text}</span>
               {/* weight — read-only display; edit via Edit button → TaskModal */}
               {(s.weight ?? 1) !== 1 && (
                 <span
@@ -380,16 +368,16 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
 
       {/* ── Notes ── */}
       {local.notes && (
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Notes</div>
-          <div style={{ fontSize:13, color:'var(--color-text-secondary)', fontStyle:'italic' }}>{local.notes}</div>
+        <div className="task-panel-notes">
+          <div className="task-panel-section-title">Notes</div>
+          <div className="task-panel-notes-text">{local.notes}</div>
         </div>
       )}
 
       {(normaliseTaskLinks(cat?.links).length > 0 || normaliseTaskLinks(local.links).length > 0) && (
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>Links</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        <div className="task-panel-links">
+          <div className="task-panel-section-title">Links</div>
+          <div className="task-panel-links-list">
             {[...normaliseTaskLinks(cat?.links).map(link => ({ ...link, source: 'Category' })), ...normaliseTaskLinks(local.links)].map((link, i) => {
               const href = taskLinkHref(link);
               const typeLabel = LINK_TYPES.find(t => t.value === link.type)?.label || 'Link';
@@ -397,7 +385,7 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
                 <a key={`${link.type}-${link.value}-${i}`} href={href}
                   target={link.type === 'web' ? '_blank' : undefined}
                   rel={link.type === 'web' ? 'noreferrer' : undefined}
-                  style={{ alignSelf:'flex-start', color:'var(--color-accent)', fontSize:13 }}>
+                  className="task-panel-link">
                   {link.source ? `${link.source} · ` : ''}{typeLabel}: {link.label}
                 </a>
               );
@@ -407,8 +395,8 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       )}
 
       {/* ── Snooze ── */}
-      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:20 }}>
-        <span style={{ fontSize:12, color:'var(--color-text-secondary)' }}>Snooze:</span>
+      <div className="task-panel-snooze">
+        <span>Snooze:</span>
         {(local.due_date ?? local.dueDate) ? (
           <>
             <button className="btn btn-sm" onClick={() => snooze(1)}>+1 day</button>
@@ -429,6 +417,8 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
             if (window.confirm(`Delete "${local.name}"?`)) { onDelete(local.id); onClose(); }
           }}
         >Delete</button>
+      </div>
+      </div>
       </div>
     </Modal>
   );

@@ -98,7 +98,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
           const complOpen  = !!openCompl[cat.id];
 
           return (
-            <div key={cat.id} className="cat-card">
+            <div key={cat.id} className="cat-card" style={{ '--category-color': cat.color }}>
               <div className="cat-header" onClick={() => toggleCat(cat.id)}>
                 <span className="cat-dot" style={{ background: cat.color }} />
                 <span className="cat-title">{cat.name}</span>
@@ -150,7 +150,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
                     </div>
                   )}
 
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
+                  <div className="cat-actions">
                     <button
                       className="btn btn-sm"
                       onClick={() => onAddTask && onAddTask(cat.id)}
@@ -225,7 +225,7 @@ function TaskRow({ task, cat, onCycle, onOpen, badge }) {
     : `${days}d`;
 
   return (
-    <div className="task-item">
+    <div className="task-item" style={{ '--category-color': cat.color }}>
       <div className="task-row" onClick={() => onOpen(task, cat)}>
         <span
           className={`task-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`}

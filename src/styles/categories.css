@@ -106,3 +106,27 @@
 .empty-icon  { font-size: 36px; }
 .empty-title { font-size: 15px; font-weight: 500; }
 .empty-sub   { font-size: 13px; color: var(--color-text-secondary); max-width: 300px; }
+
+/* ── Calendar-style category cards ─────────────────────────────────────── */
+.cat-list { gap: 10px; }
+.cat-card { border: 1px solid var(--color-border-primary); border-radius: var(--radius-lg); }
+.cat-header { padding: 13px 16px; }
+.cat-header:hover { background: var(--color-bg-secondary); }
+.cat-dot { width: 11px; height: 11px; }
+.cat-title { font-size: 14.5px; font-weight: 600; letter-spacing: -0.005em; }
+.cat-meta { font-size: 11.5px; }
+.cat-body { background: var(--color-bg-secondary); border-top: 1px solid var(--color-border-primary); padding: 12px 16px; }
+.task-list { gap: 6px; margin-bottom: 10px; }
+.task-item { position: relative; border: 0; border-radius: var(--radius-md); background: color-mix(in srgb, var(--category-color, #82979B) 8%, var(--color-bg-primary)); overflow: hidden; }
+.task-item::before { content: ''; position: absolute; left: 3px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--category-color, #82979B); }
+.task-row { padding: 8px 10px 8px 16px; gap: 9px; }
+.task-row:hover { background: color-mix(in srgb, var(--category-color, #82979B) 5%, transparent); }
+.task-item .task-check { width: 15px; height: 15px; border: 2px solid var(--category-color, #82979B); background: transparent; color: transparent; }
+.task-item .task-check.done { background: var(--category-color, #82979B); border-color: var(--category-color, #82979B); color: #fff; }
+.task-item .task-check.in-progress { background: color-mix(in srgb, var(--category-color, #82979B) 55%, transparent); border-color: var(--category-color, #82979B); color: transparent; }
+.task-name { font-weight: 500; }
+.task-due { font-size: 11px; }
+.task-item .progress-track { margin: 0 10px 8px 16px !important; background: color-mix(in srgb, var(--category-color, #82979B) 15%, transparent); }
+.task-item .progress-fill { background: var(--category-color, #82979B); border: 0; }
+.cat-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.cat-actions .btn:first-child { border-style: dashed; color: var(--color-text-secondary); }

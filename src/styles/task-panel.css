@@ -1,0 +1,39 @@
+.task-panel-modal { max-width: 520px !important; padding: 0; overflow: hidden; border: 1px solid var(--color-border-primary); }
+.task-panel-strip { height: 4px; background: var(--task-panel-color); }
+.task-panel-body { padding: 22px 24px 20px; }
+.task-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.task-panel-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+.task-panel-close { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: var(--color-bg-tertiary); color: var(--color-text-secondary); font-size: 14px; cursor: pointer; flex-shrink: 0; }
+.task-panel-close:hover { background: var(--color-bg-secondary); color: var(--color-text-primary); }
+.task-panel-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.task-panel-category { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; background: color-mix(in srgb, var(--task-panel-color) 12%, transparent); color: var(--task-panel-color); font-size: 12px; font-weight: 600; }
+.task-panel-category span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.task-panel-due { color: var(--color-text-secondary); font-size: 12.5px; }
+.task-panel-due.overdue { color: var(--color-text-danger); font-weight: 600; }
+.task-panel-due.soon { color: var(--color-text-warning); font-weight: 600; }
+.task-panel-status { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 20px; padding: 5px 12px; margin: 10px 0 17px; font: 600 12.5px var(--font-sans); cursor: pointer; background: var(--color-bg-tertiary); color: var(--color-text-secondary); }
+.task-panel-status.in-progress { background: color-mix(in srgb, var(--task-panel-color) 14%, transparent); color: var(--task-panel-color); }
+.task-panel-status.done { background: var(--color-bg-success); color: var(--color-text-success); }
+.task-panel-stats { display: flex; margin: 0 0 18px; border-top: 1px solid var(--color-border-primary); border-bottom: 1px solid var(--color-border-primary); }
+.task-panel-stat { flex: 1; padding: 11px 6px; text-align: center; border-right: 1px solid var(--color-border-primary); }
+.task-panel-stat:last-child { border-right: 0; }
+.task-panel-stat-label { margin-bottom: 3px; color: var(--color-text-tertiary); font-size: 10px; letter-spacing: .03em; text-transform: uppercase; }
+.task-panel-stat-value { font-size: 15px; font-weight: 700; }
+.task-panel-status-value { font-size: 13px; text-transform: capitalize; }
+.task-panel-progress-section, .task-panel-substeps, .task-panel-notes, .task-panel-links { margin-bottom: 18px; }
+.task-panel-section-heading { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--color-text-secondary); font-size: 13px; }
+.task-panel-section-title { margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+.task-panel-progress-track { height: 6px; border-radius: 3px; background: var(--color-bg-tertiary); }
+.task-panel-substep-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--color-border-primary); cursor: default; }
+.task-panel-substep-row:last-child { border-bottom: 0; }
+.task-panel-drag-handle { color: var(--color-text-tertiary); cursor: grab; font-size: 14px; user-select: none; }
+.task-panel-substep-check { width: 15px; height: 15px; margin: 0; accent-color: var(--task-panel-color); cursor: pointer; flex-shrink: 0; }
+.task-panel-substep-text { flex: 1; font-size: 13px; }
+.task-panel-substep-text.done { color: var(--color-text-tertiary); text-decoration: line-through; }
+.task-panel-notes-text { color: var(--color-text-secondary); font-size: 13px; font-style: italic; line-height: 1.45; }
+.task-panel-links-list { display: flex; flex-direction: column; gap: 6px; }
+.task-panel-link { align-self: flex-start; color: var(--color-accent); font-size: 13px; }
+.task-panel-snooze { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.task-panel-snooze > span { color: var(--color-text-secondary); font-size: 12px; }
+.task-panel-body .modal-actions { border-top-color: var(--color-border-primary); }
+@media (max-width: 480px) { .task-panel-body { padding: 18px 16px; } .task-panel-title { font-size: 18px; } }
