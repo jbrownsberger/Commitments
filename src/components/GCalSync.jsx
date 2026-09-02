@@ -727,20 +727,13 @@ export default function GCalSync({ appData }) {
             {error && <div className="gcal-error" style={{ marginTop: 12 }}>{error}</div>}
           </div>
           <div className="gcal-setup">
-            <h3>Setup (one-time)</h3>
+            <h3>How to connect</h3>
             <ol>
-              <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create or select a project.</li>
-              <li>Enable the <strong>Google Calendar API</strong>.</li>
-              <li>Under <em>Credentials</em>, create an <strong>OAuth 2.0 Web Client ID</strong>.</li>
-              <li>Add your app origin to <em>Authorized JavaScript origins</em> (e.g. <code>http://localhost:5173</code> and your deployed URL).</li>
-              <li>Add <code>VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com</code> to your <code>.env</code> file and redeploy.</li>
+              <li>Click the <strong>Connect Google Calendar</strong> button above.</li>
+              <li>Sign in with your Google account.</li>
+              <li>Grant Commitments permission to view and edit your calendar.</li>
+              <li>Your availability will automatically sync, and you can schedule work blocks directly to your calendar!</li>
             </ol>
-            {!CLIENT_ID && (
-              <div className="gcal-warning">
-                <IconWarning size={13} style={{ marginRight: 5, verticalAlign: 'middle' }} />
-                <code>VITE_GOOGLE_CLIENT_ID</code> is not set.
-              </div>
-            )}
           </div>
         </>
       )}
