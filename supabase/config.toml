@@ -418,7 +418,7 @@ verify_jwt = false
 
 # Stripe checkout — requires user JWT to identify the buyer.
 [functions.create-checkout]
-verify_jwt = true
+verify_jwt = false
 
 # Stripe webhook — verified internally via Stripe-Signature header, not JWT.
 [functions.stripe-webhook]
