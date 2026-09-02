@@ -24,7 +24,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined || !session) return <LoginPage />;
+  if (session === undefined) return <Splash text="Loading…" />;
+  if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
 
