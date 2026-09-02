@@ -469,6 +469,18 @@ function UserDropdown({
           </button>
 
           <div className="user-dropdown-divider" />
+          
+          <a
+            href="mailto:jbrownsberger@gmail.com?subject=Commitments%20Feedback"
+            className="user-dropdown-item"
+            role="menuitem"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+            onClick={() => setOpen(false)}
+          >
+            Help & Feedback
+          </a>
+
+          <div className="user-dropdown-divider" />
 
           <button
             className="user-dropdown-item user-dropdown-item--danger"
