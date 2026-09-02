@@ -416,6 +416,14 @@ verify_jwt = true
 [functions.mcp]
 verify_jwt = false
 
+# Stripe checkout — requires user JWT to identify the buyer.
+[functions.create-checkout]
+verify_jwt = true
+
+# Stripe webhook — verified internally via Stripe-Signature header, not JWT.
+[functions.stripe-webhook]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

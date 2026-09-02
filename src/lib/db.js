@@ -76,6 +76,12 @@ export const signOut = () => supabase.auth.signOut();
 export const getSession   = () => supabase.auth.getSession();
 export const onAuthChange = (cb) =>
   supabase.auth.onAuthStateChange((_event, session) => cb(session));
+export const resetPasswordForEmail = (email) =>
+  supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}?recovery=1`,
+  });
+export const updatePassword = (newPassword) =>
+  supabase.auth.updateUser({ password: newPassword });
 
 // ── Preferences ───────────────────────────────────────────────────────────────
 export async function fetchPreferences(userId) {

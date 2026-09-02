@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './lib/supabase.js';
-import { signInWithMagicLink, signInWithPassword, signUpWithPassword } from './lib/db.js';
+import {
+  signInWithMagicLink,
+  signInWithPassword,
+  signUpWithPassword,
+  resetPasswordForEmail,
+  updatePassword,
+} from './lib/db.js';
 import { useAppData } from './hooks/useAppData.js';
 import Shell from './components/Shell.jsx';
 import { loadFreeBusySnapshot, loadFreeBusy, saveFreeBusy, clearFreeBusy } from './lib/gcalAvailability.js';
@@ -14,17 +20,27 @@ import { GCAL_PREFS_CHANGED_EVENT } from './lib/gcalPrefs.js';
 import './styles/login.css';
 
 export default function App() {
-  const [session, setSession] = useState(undefined);
+  const [session,          setSession]          = useState(undefined);
+  const [isRecoveryMode,   setIsRecoveryMode]   = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, s) => setSession(s)
+      (event, s) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setSession(s);
+          setIsRecoveryMode(true);
+        } else {
+          setIsRecoveryMode(false);
+          setSession(s);
+        }
+      }
     );
     return () => subscription.unsubscribe();
   }, []);
 
   if (session === undefined) return <Splash text="Loading…" />;
+  if (isRecoveryMode && session) return <ResetPasswordPage />;
   if (!session) return <LoginPage />;
   return <AuthedApp userId={session.user.id} userEmail={session.user.email} />;
 }
@@ -83,6 +99,7 @@ const FEATURES = [
 
 // ── Login page ───────────────────────────────────────────────────────────────────────────────────
 function LoginPage() {
+  // mode: 'magic' | 'password' | 'signup' | 'forgot'
   const [mode,    setMode]    = useState('magic');
   const [email,   setEmail]   = useState('');
   const [pw,      setPw]      = useState('');
@@ -101,11 +118,18 @@ function LoginPage() {
       } else if (mode === 'password') {
         const { error } = await signInWithPassword(email, pw);
         if (error) throw error;
-      } else {
+      } else if (mode === 'signup') {
         const { error } = await signUpWithPassword(email, pw);
         if (error) throw error;
-        setMsg({ type: 'success', text: 'Account created! Check your email to confirm, then sign in.' });
+        setMsg({
+          type: 'success',
+          text: 'Account created! Please check your email and click the confirmation link before signing in.',
+        });
         setMode('password');
+      } else if (mode === 'forgot') {
+        const { error } = await resetPasswordForEmail(email);
+        if (error) throw error;
+        setMsg({ type: 'success', text: 'Password reset email sent — check your inbox.' });
       }
     } catch (err) {
       setMsg({ type: 'error', text: err.message });
@@ -113,6 +137,13 @@ function LoginPage() {
       setLoading(false);
     }
   };
+
+  const modeLabel = {
+    magic:    'Sign in',
+    password: 'Sign in',
+    signup:   'Create account',
+    forgot:   'Reset password',
+  }[mode];
 
   return (
     <div className="login-page">
@@ -137,7 +168,7 @@ function LoginPage() {
           <div className="login-preview" aria-hidden="true">
             <div className="login-preview-topbar">
               <img src="/logo.png" alt="" className="login-preview-logo" />
-              <span>Today’s plan</span>
+              <span>Today's plan</span>
               <span className="login-preview-date">Tue, Aug 19</span>
             </div>
             <div className="login-preview-body">
@@ -162,18 +193,20 @@ function LoginPage() {
       <div className="login-card-wrap">
         <div className="login-card">
           <h2 className="login-card-title">
-            {mode === 'signup' ? 'Create account' : 'Sign in'}
+            {modeLabel}
           </h2>
 
-          <div className="login-mode-tabs">
-            {[['magic','Magic link'], ['password','Password'], ['signup','Sign up']].map(([m, label]) => (
-              <button
-                key={m}
-                className={`login-mode-tab${mode === m ? ' active' : ''}`}
-                onClick={() => { setMode(m); setMsg(null); }}
-              >{label}</button>
-            ))}
-          </div>
+          {mode !== 'forgot' && (
+            <div className="login-mode-tabs">
+              {[['magic','Magic link'], ['password','Password'], ['signup','Sign up']].map(([m, label]) => (
+                <button
+                  key={m}
+                  className={`login-mode-tab${mode === m ? ' active' : ''}`}
+                  onClick={() => { setMode(m); setMsg(null); }}
+                >{label}</button>
+              ))}
+            </div>
+          )}
 
           <form onSubmit={submit} className="login-form">
             <div className="login-field">
@@ -207,17 +240,41 @@ function LoginPage() {
               className="btn btn-primary login-submit"
               disabled={loading}
             >
-              {loading            ? 'Please wait…'   :
-               mode === 'magic'    ? 'Send magic link' :
-               mode === 'password' ? 'Sign in'         : 'Create account'}
+              {loading             ? 'Please wait…'        :
+               mode === 'magic'    ? 'Send magic link'     :
+               mode === 'password' ? 'Sign in'             :
+               mode === 'signup'   ? 'Create account'      :
+                                     'Send reset email'}
             </button>
           </form>
 
+          {/* Forgot password link (shown in password mode) */}
+          {mode === 'password' && (
+            <button
+              className="login-forgot-link"
+              onClick={() => { setMode('forgot'); setMsg(null); }}
+            >
+              Forgot password?
+            </button>
+          )}
+
+          {/* Back to sign in (shown in forgot mode) */}
+          {mode === 'forgot' && (
+            <button
+              className="login-forgot-link"
+              onClick={() => { setMode('password'); setMsg(null); }}
+            >
+              ← Back to sign in
+            </button>
+          )}
+
           <p className="login-hint">
             {mode === 'magic'
-              ? 'We’ll email you a one-click sign-in link. No password needed.'
+              ? "We'll email you a one-click sign-in link. No password needed."
               : mode === 'signup'
-              ? 'You’ll receive a confirmation email before you can sign in.'
+              ? "You'll receive a confirmation email. Click the link inside to activate your account."
+              : mode === 'forgot'
+              ? "We'll send a password reset link to your email."
               : null}
           </p>
         </div>
@@ -230,6 +287,100 @@ function LoginPage() {
           <span className="login-footer-sep">&middot;</span>
           <a href="https://github.com/jbrownsberger/Commitments"
              target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reset password page (shown after clicking email recovery link) ──────────────
+function ResetPasswordPage() {
+  const [pw,      setPw]      = useState('');
+  const [pw2,     setPw2]     = useState('');
+  const [msg,     setMsg]     = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [done,    setDone]    = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (pw !== pw2) {
+      setMsg({ type: 'error', text: "Passwords don't match." });
+      return;
+    }
+    setLoading(true);
+    setMsg(null);
+    try {
+      const { error } = await updatePassword(pw);
+      if (error) throw error;
+      setDone(true);
+      setMsg({ type: 'success', text: 'Password updated! Redirecting…' });
+      setTimeout(() => window.location.assign('/'), 2000);
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-hero">
+        <div className="login-hero-inner">
+          <div className="login-brand">
+            <span className="login-brand-mark"><img src="/logo.png" alt="Commitments logo" className="login-logo-img" /></span>
+            <span>Commitments</span>
+          </div>
+          <h1 className="login-hero-title">Set a new<br />password.</h1>
+          <p className="login-hero-tagline">
+            Choose a strong password (at least 6 characters) to protect your account.
+          </p>
+        </div>
+      </div>
+
+      <div className="login-card-wrap">
+        <div className="login-card">
+          <h2 className="login-card-title" style={{ fontFamily: 'inherit' }}>
+            Set new password
+          </h2>
+
+          {!done && (
+            <form onSubmit={submit} className="login-form" style={{ marginTop: '1.5rem' }}>
+              <div className="login-field">
+                <label className="login-label">New password</label>
+                <input
+                  type="password" required minLength={6}
+                  value={pw} onChange={e => setPw(e.target.value)}
+                  placeholder="Min. 6 characters"
+                  className="login-input"
+                />
+              </div>
+              <div className="login-field">
+                <label className="login-label">Confirm new password</label>
+                <input
+                  type="password" required minLength={6}
+                  value={pw2} onChange={e => setPw2(e.target.value)}
+                  placeholder="Repeat password"
+                  className="login-input"
+                />
+              </div>
+              {msg && (
+                <div className={`login-msg login-msg--${msg.type}`}>{msg.text}</div>
+              )}
+              <button
+                type="submit"
+                className="btn btn-primary login-submit"
+                disabled={loading}
+              >
+                {loading ? 'Saving…' : 'Update password'}
+              </button>
+            </form>
+          )}
+
+          {done && msg && (
+            <div className={`login-msg login-msg--${msg.type}`} style={{ marginTop: '1.5rem' }}>
+              {msg.text}
+            </div>
+          )}
         </div>
       </div>
     </div>

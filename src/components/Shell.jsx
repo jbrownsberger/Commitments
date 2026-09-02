@@ -22,6 +22,8 @@ import ImportExport from './ImportExport.jsx';
 import Search       from './Search.jsx';
 import Modal        from './Modal.jsx';
 import McpConnect   from './McpConnect.jsx';
+import Paywall      from './Paywall.jsx';
+import Tutorial     from './Tutorial.jsx';
 import '../styles/shell.css';
 
 // ── Tab definitions with inline SVG icons ────────────────────────────────────
@@ -493,10 +495,36 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
   const [editModal,  setEditModal]  = useState(null);   // { task, catId }
   const [panelTask,  setPanelTask]  = useState(null);   // task shown in TaskPanel
   const [searchOpen, setSearchOpen] = useState(false);
+  const [checkoutMsg, setCheckoutMsg] = useState(null); // 'success' | 'cancelled'
   const tabsRef    = useRef(null);
   const wrapperRef = useRef(null);
 
   const { categories, tasks, saveTask, removeTask, saveCategory, undo, redo, canUndo, canRedo } = appData;
+  const prefs     = appData?.preferences || {};
+  const isPremium = !!prefs.is_premium;
+  const hasTutorial = prefs.has_seen_tutorial === false;
+
+  // ── Handle Stripe redirect query params ─────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      setCheckoutMsg('success');
+      // Refresh preferences so is_premium updates immediately
+      appData.retryLoad && appData.retryLoad();
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setCheckoutMsg(null), 6000);
+    } else if (params.get('checkout') === 'cancelled') {
+      setCheckoutMsg('cancelled');
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setCheckoutMsg(null), 4000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Tutorial dismiss ──────────────────────────────────────────────────────
+  const dismissTutorial = async () => {
+    await appData.savePreferences({ ...prefs, user_id: userId, has_seen_tutorial: true });
+  };
 
   // ── ⌘K / Ctrl+K shortcut ────────────────────────────────────────────────
   useEffect(() => {
@@ -574,6 +602,18 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
   return (
     <div id="root">
       <div className="app">
+        {/* ── Checkout toast ── */}
+        {checkoutMsg === 'success' && (
+          <div className="shell-toast shell-toast--success">
+            🎉 You're now a Premium member! The Planner and Google Calendar are unlocked.
+          </div>
+        )}
+        {checkoutMsg === 'cancelled' && (
+          <div className="shell-toast shell-toast--info">
+            Checkout cancelled — your plan hasn't changed.
+          </div>
+        )}
+
         {/* ── Header ── */}
         <div className="header">
           <h1 className="app-brand">
@@ -620,11 +660,21 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
                 key={t.id}
                 role="tab"
                 aria-selected={tab === t.id}
-                className={`tab${tab === t.id ? ' active' : ''}`}
+                className={`tab${tab === t.id ? ' active' : ''}${
+                  (t.id === 'planner' || t.id === 'gcal') && !isPremium ? ' tab--locked' : ''
+                }`}
                 onClick={() => setTab(t.id)}
+                title={
+                  (t.id === 'planner' || t.id === 'gcal') && !isPremium
+                    ? `${t.label} — Premium feature`
+                    : undefined
+                }
               >
                 <t.Icon />
                 <span>{t.label}</span>
+                {(t.id === 'planner' || t.id === 'gcal') && !isPremium && (
+                  <span className="tab-lock-badge" aria-hidden="true">★</span>
+                )}
               </button>
             ))}
           </div>
@@ -634,10 +684,23 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         <div className="tab-content">
           {tab === 'overview'   && <Overview   appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
           {tab === 'categories' && <Categories appData={appData} userId={userId} onAddTask={openAdd} onEditTask={openEdit} />}
-          {tab === 'planner'    && <Planner    appData={appData} userId={userId} onEditTask={openEdit} />}
-          {tab === 'gcal'       && <GCalSync   appData={appData} userId={userId} />}
+          {tab === 'planner'    && (
+            isPremium
+              ? <Planner appData={appData} userId={userId} onEditTask={openEdit} />
+              : <Paywall featureName="Planner" />
+          )}
+          {tab === 'gcal'       && (
+            isPremium
+              ? <GCalSync appData={appData} userId={userId} />
+              : <Paywall featureName="Google Calendar sync" />
+          )}
         </div>
       </div>
+
+      {/* ── Tutorial (first login) ── */}
+      {hasTutorial && (
+        <Tutorial onClose={dismissTutorial} />
+      )}
 
       {/* ── Global add / edit task modal ── */}
       {editModal && categories.length > 0 && (
@@ -674,3 +737,4 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
     </div>
   );
 }
+
