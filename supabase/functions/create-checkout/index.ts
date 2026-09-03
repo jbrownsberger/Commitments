@@ -32,16 +32,16 @@ Deno.serve(async (req: Request) => {
   const priceId = plan === "monthly" ? PRICE_ID_MONTHLY : PRICE_ID_YEARLY;
 
   // Authenticate via Supabase JWT
-  const authHeader = req.headers.get("authorization") ?? "";
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization") ?? "";
   const supabase   = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { authorization: authHeader } } },
+    { global: { headers: { Authorization: authHeader } } },
   );
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    return new Response(JSON.stringify({ error: "Unauthorized", details: authError?.message || "No user found", header_length: authHeader.length }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

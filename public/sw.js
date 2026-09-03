@@ -31,6 +31,8 @@ self.addEventListener('push', (event) => {
   const title = n.title || 'Commitments';
   const options = {
     body: n.body || '',
+    icon: n.icon || '/logo.png',
+    badge: n.badge || '/logo.png',
     data: { url: n.navigate || '/' },
     silent: !!n.silent,
     lang: n.lang || 'en-US',

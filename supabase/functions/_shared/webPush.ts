@@ -43,6 +43,8 @@ export function buildDeclarativePayload(n: DeclarativeNotification): string {
     lang: n.lang ?? 'en-US',
     dir: n.dir ?? 'ltr',
     body: n.body ?? '',
+    icon: `${appUrl}/logo.png`,
+    badge: `${appUrl}/logo.png`,
     navigate: n.navigate ?? `${appUrl}/`,
     silent: n.silent ?? false,
   };
