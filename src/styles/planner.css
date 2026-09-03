@@ -1,4 +1,4 @@
-.planner { padding-bottom: 5rem; }
+.planner { }
 
 /* ── Week nav bar ─────────────────────────────────────────────────────────── */
 .planner-controls {
@@ -23,7 +23,7 @@
   align-items: start;
   min-width: 0;
   /* Fixed height so .planner-weeks is bounded and its scrollbar stays visible */
-  height: calc(100vh - 180px);
+  height: calc(100vh - 220px);
   min-height: 400px;
 }
 
