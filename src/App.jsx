@@ -90,12 +90,34 @@ const IconBolt = () => (
   </svg>
 );
 
+// ── Small inline SVG icons (additional) ──────────────────────────────────────────────────
+const IconRepeat = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M11.5 1.5l2 2-2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M2.5 7.5v-1a3 3 0 013-3h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M4.5 14.5l-2-2 2-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M13.5 8.5v1a3 3 0 01-3 3h-8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+const IconBell = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+    xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M6 13.5a2 2 0 004 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    <path d="M3.5 7a4.5 4.5 0 019 0c0 2.5.5 3.5 1.5 5H2c1-.9 1.5-2.5 1.5-5z"
+      stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
 // ── Feature list ─────────────────────────────────────────────────────────────────────────
 const FEATURES = [
-  { Icon: IconBolt,     title: 'Live Urgency Score', text: 'A dynamic score based on deadlines and effort tells you what to work on right now.' },
-  { Icon: IconCalendar, title: 'Workload-Aware Planner', text: 'Drag and drop tasks, or use Auto-fill to distribute work based on your real capacity.' },
-  { Icon: IconClock,    title: 'Google Calendar Sync', text: 'Pulls in your free/busy times and pushes scheduled work blocks directly to your calendar.' },
-  { Icon: IconBarChart, title: 'AI Assistant (MCP)', text: 'Connect any MCP-compatible AI assistant for hands-free task management.' },
+  { Icon: IconBolt,     title: 'Urgency Score',       text: 'A 0–100 score based on deadlines and effort surfaces what needs attention right now.' },
+  { Icon: IconCalendar, title: 'Weekly Planner',       text: 'Drag-and-drop tasks onto days, or Auto-fill to build a balanced schedule instantly.' },
+  { Icon: IconClock,    title: 'Google Calendar',      text: 'See free time from your calendars and push work blocks directly to Google Calendar.' },
+  { Icon: IconRepeat,   title: 'Recurring Tasks',      text: 'Rolling resets or pre-dated series — daily, weekly, monthly, or custom intervals.' },
+  { Icon: IconBell,     title: 'Push Notifications',   text: 'Daily digest of overdue and upcoming work, delivered at the hour you choose.' },
+  { Icon: IconBarChart, title: 'AI Assistant (MCP)',    text: 'Connect any MCP-compatible AI for hands-free task creation and management.' },
 ];
 
 // ── Login page ───────────────────────────────────────────────────────────────────────────────────
@@ -148,7 +170,7 @@ function LoginPage() {
 
   return (
     <div className="login-page">
-      {/* ── Intro ── */}
+      {/* ── Hero ── */}
       <div className="login-hero">
         <div className="login-hero-inner">
           <div className="login-brand">
@@ -156,9 +178,9 @@ function LoginPage() {
             <span>TaskTriage</span>
           </div>
           <p className="login-eyebrow">Workload-aware deadline tracker</p>
-          <h1 className="login-hero-title">A personal task planner that knows how much time you actually have.</h1>
+          <h1 className="login-hero-title">Stop guessing.<br />Start triaging.</h1>
           <p className="login-hero-tagline">
-            Most to-do apps let you pile on tasks forever. <strong>TaskTriage</strong> is different. It calculates a live <strong>Urgency Score</strong> and turns a chaotic pile of tasks into a realistic, time-blocked plan you can actually follow.
+            Most to-do apps let you pile on tasks forever. <strong>TaskTriage</strong> calculates a live <strong>Urgency Score</strong>, tracks your real capacity, and turns a chaotic pile of tasks into a time-blocked weekly plan you can actually follow.
           </p>
           <div className="login-preview" aria-hidden="true">
             <div className="login-preview-topbar">
@@ -168,14 +190,14 @@ function LoginPage() {
             </div>
             <div className="login-preview-body">
               <div className="login-preview-task complete"><span>✓</span> Draft project brief <small>Done</small></div>
-              <div className="login-preview-task"><span /> Prepare client review <small>2h · Thu</small></div>
-              <div className="login-preview-task"><span /> Research next steps <small>45m · Today</small></div>
-              <div className="login-preview-focus"><span>Focus time</span><strong>2h 45m available</strong></div>
+              <div className="login-preview-task"><span /> Prepare client review <small style={{color:'#B85B57',fontWeight:600}}>92 · 2h</small></div>
+              <div className="login-preview-task"><span /> Research next steps <small>45 · 1h</small></div>
+              <div className="login-preview-focus"><span>Weekly capacity</span><strong>14.5h / 20h planned</strong></div>
             </div>
           </div>
           <ul className="login-features">
             {FEATURES.map(({ Icon, title, text }) => (
-              <li key={text} className="login-feature-item">
+              <li key={title} className="login-feature-item">
                 <span className="login-feature-icon"><Icon /></span>
                 <span><strong>{title}</strong>{text}</span>
               </li>
