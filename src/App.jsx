@@ -183,16 +183,41 @@ function LoginPage() {
             Most to-do apps let you pile on tasks forever. <strong>TaskTriage</strong> calculates a live <strong>Urgency Score</strong>, tracks your real capacity, and turns a chaotic pile of tasks into a time-blocked weekly plan you can actually follow.
           </p>
           <div className="login-preview" aria-hidden="true">
-            <div className="login-preview-topbar">
-              <img src="/logo.png" alt="" className="login-preview-logo" />
-              <span>Today's plan</span>
-              <span className="login-preview-date">Tue, Aug 19</span>
-            </div>
-            <div className="login-preview-body">
-              <div className="login-preview-task complete"><span>✓</span> Draft project brief <small>Done</small></div>
-              <div className="login-preview-task"><span /> Prepare client review <small style={{color:'#B85B57',fontWeight:600}}>92 · 2h</small></div>
-              <div className="login-preview-task"><span /> Research next steps <small>45 · 1h</small></div>
-              <div className="login-preview-focus"><span>Weekly capacity</span><strong>14.5h / 20h planned</strong></div>
+            <div className="today-plan-panel">
+              <div className="today-plan-title">
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  <img src="/logo.png" alt="" style={{width: 14, height: 14, objectFit: 'contain'}} />
+                  <span>Today's plan</span>
+                </div>
+                <span className="today-plan-total">3.5h</span>
+              </div>
+              
+              <div className="today-plan-item" style={{'--today-task-color': '#4F6B5E'}}>
+                <div className="today-plan-dot" />
+                <div className="today-plan-content">
+                  <div className="today-plan-name done">Draft project brief</div>
+                  <div className="today-plan-meta">1.0h planned today</div>
+                </div>
+                <span className="task-check done">✓</span>
+              </div>
+
+              <div className="today-plan-item" style={{'--today-task-color': '#B85B57'}}>
+                <div className="today-plan-dot" />
+                <div className="today-plan-content">
+                  <div className="today-plan-name">Prepare client review</div>
+                  <div className="today-plan-meta in-progress">In progress · 2.0h planned today</div>
+                </div>
+                <span className="task-check in-progress"></span>
+              </div>
+
+              <div className="today-plan-item" style={{ borderBottom: 'none', '--today-task-color': '#658375' }}>
+                <div className="today-plan-dot" />
+                <div className="today-plan-content">
+                  <div className="today-plan-name">Research next steps</div>
+                  <div className="today-plan-meta">0.5h planned today</div>
+                </div>
+                <span className="task-check"></span>
+              </div>
             </div>
           </div>
           <ul className="login-features">
