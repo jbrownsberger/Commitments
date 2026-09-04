@@ -5,7 +5,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const CLIENT_ID     = Deno.env.get('VITE_GOOGLE_CLIENT_ID') ?? '';
 const CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET') ?? '';
 const REDIRECT_URI  = Deno.env.get('GCAL_REDIRECT_URI') ?? '';
-const APP_URL       = Deno.env.get('APP_URL') ?? 'https://commitments.app';
+const APP_URL       = Deno.env.get('APP_URL') ?? 'https://tasktriage.app';
 
 Deno.serve(async (req: Request) => {
   const url    = new URL(req.url);

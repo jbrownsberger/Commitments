@@ -1,4 +1,4 @@
-# Commitments
+# TaskTriage
 
 A workload-aware deadline tracker. Built with React, Vite, and Supabase.
 
@@ -165,7 +165,7 @@ curl "https://<project-ref>.supabase.co/functions/v1/mcp" \
 ```
 
 The response should be a JSON-RPC `result` containing `serverInfo.name` of
-`commitments` and `capabilities.tools`. Send `notifications/initialized`, then
+`task-triage` and `capabilities.tools`. Send `notifications/initialized`, then
 call `tools/list`; the server exposes task CRUD plus category listing. Revoke the
 token from the same app panel to confirm access is immediately denied.
 

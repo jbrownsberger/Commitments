@@ -12,8 +12,8 @@ import {
   revokeToken,
   fetchCalendarList,
   fetchFreeBusy,
-  fetchCommitmentsBlockIntervals,
-  subtractCommitmentsBlocks,
+  fetchTaskTriageBlockIntervals,
+  subtractTaskTriageBlocks,
   upsertWorkBlock,
   deleteTaskWorkBlock,
   deleteWorkBlock,
@@ -444,7 +444,7 @@ export default function GCalSync({ appData }) {
     const { end } = localDayBounds(endISO);
     const timeMin = start.toISOString();
     const timeMax = end.toISOString();
-    fetchCommitmentsBlockIntervals(timeMin, timeMax)
+    fetchTaskTriageBlockIntervals(timeMin, timeMax)
       .then(blocksByDay => {
         setBlockStatus(prev => {
           const next = { ...prev };
@@ -486,7 +486,7 @@ export default function GCalSync({ appData }) {
         fetchFreeBusy(calIds, timeMin, timeMax),
         isFallback
           ? (setSubtractingBlocks(true),
-             fetchCommitmentsBlockIntervals(timeMin, timeMax))
+             fetchTaskTriageBlockIntervals(timeMin, timeMax))
           : Promise.resolve({}),
       ]);
       setSubtractingBlocks(false);
@@ -505,7 +505,7 @@ export default function GCalSync({ appData }) {
         const iso     = addDays(todayISO, i);
         let   rawBusy = busyByDay[iso] || [];
         if (isFallback && blocksByDay[iso]?.length)
-          rawBusy = subtractCommitmentsBlocks(rawBusy, blocksByDay[iso]);
+          rawBusy = subtractTaskTriageBlocks(rawBusy, blocksByDay[iso]);
         result[iso] = effectiveFreeMinutes(iso, rawBusy, settings);
       }
 
@@ -564,7 +564,7 @@ export default function GCalSync({ appData }) {
   // ── Block CRUD ────────────────────────────────────────────────────────────────────
 
   // Uses the same placement path as Planner. The scheduler includes existing
-  // Commitments blocks as busy time and serializes same-day writes, so each
+  // TaskTriage blocks as busy time and serializes same-day writes, so each
   // individually added block follows the previous one with the configured buffer.
   const handleCreateBlock = useCallback(async (task, iso, hrs) => {
     const key = `${task.id}-${iso}`;
@@ -731,7 +731,7 @@ export default function GCalSync({ appData }) {
             <ol>
               <li>Click the <strong>Connect Google Calendar</strong> button above.</li>
               <li>Sign in with your Google account.</li>
-              <li>Grant Commitments permission to view and edit your calendar.</li>
+              <li>Grant TaskTriage permission to view and edit your calendar.</li>
               <li>Your availability will automatically sync, and you can schedule work blocks directly to your calendar!</li>
             </ol>
           </div>
@@ -868,7 +868,7 @@ export default function GCalSync({ appData }) {
                     <span className="gcal-write-cal-tip-icon">💡</span>
                     <span>
                       For the cleanest availability numbers, create a dedicated calendar
-                      in Google Calendar — e.g. <em>Commitments Work Blocks</em> — then
+                      in Google Calendar — e.g. <em>TaskTriage Work Blocks</em> — then
                       select it below.{' '}
                       <a href="https://calendar.google.com/calendar/r/settings/createcalendar"
                         target="_blank" rel="noopener noreferrer">Create one now ↗</a>
@@ -970,7 +970,7 @@ export default function GCalSync({ appData }) {
 
               {subtractingBlocks && (
                 <div className="gcal-info" style={{ marginBottom: 8 }}>
-                  Subtracting your Commitments work blocks from busy time…
+                  Subtracting your TaskTriage work blocks from busy time…
                 </div>
               )}
 

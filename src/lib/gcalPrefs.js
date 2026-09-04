@@ -6,10 +6,10 @@ import { supabase } from './supabase.js';
 
 const LS_SETTINGS = 'gcal_calc_settings';
 const LS_CALS = 'gcal_selected_cals';
-const LS_WRITE = 'gcal_commitments_cal_id';
+const LS_WRITE = 'gcal_task_triage_cal_id';
 const LS_OWNER = 'gcal_preferences_owner_id';
 const TRACKED = new Set([LS_SETTINGS, LS_CALS, LS_WRITE]);
-export const GCAL_PREFS_CHANGED_EVENT = 'commitments:gcal-preferences-changed';
+export const GCAL_PREFS_CHANGED_EVENT = 'task-triage:gcal-preferences-changed';
 
 const nativeSetItem = localStorage.setItem.bind(localStorage);
 const nativeRemoveItem = localStorage.removeItem.bind(localStorage);

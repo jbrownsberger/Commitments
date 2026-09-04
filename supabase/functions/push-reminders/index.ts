@@ -99,7 +99,7 @@ function buildDigest(
     ...(prefs.notify_due_today !== false ? dueToday : []),
     ...(lead > 0 ? dueSoon : []),
   ];
-  const body = formatTaskList(allForBody) || 'Open Commitments to review your tasks.';
+  const body = formatTaskList(allForBody) || 'Open TaskTriage to review your tasks.';
   const badge = overdue.length + dueToday.length;
 
   return {

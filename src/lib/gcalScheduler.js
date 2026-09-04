@@ -11,8 +11,8 @@ export const CALENDAR_ID = 'primary';
 export const LS_SETTINGS_KEY  = 'gcal_calc_settings';
 export const LS_CALS_KEY      = 'gcal_selected_cals';
 export const LS_PUSH_REGISTRY = 'gcal_push_registry';
-export const LS_WRITE_CAL_KEY       = 'gcal_commitments_cal_id';
-export const LS_COMMITMENTS_CAL_KEY = LS_WRITE_CAL_KEY;
+export const LS_WRITE_CAL_KEY       = 'gcal_task_triage_cal_id';
+export const LS_TASK_TRIAGE_CAL_KEY = LS_WRITE_CAL_KEY;
 const LS_TOKEN_KEY = 'gcal_access_token';
 const LS_TOKEN_EXPIRY_KEY = 'gcal_token_expiry';
 const LS_TOKEN_SCOPE_KEY = 'gcal_token_scope';
@@ -224,10 +224,10 @@ export function saveWriteCalId(id) {
 export function clearWriteCalId() {
   localStorage.removeItem(LS_WRITE_CAL_KEY);
 }
-export const loadCommitmentsCalId  = loadWriteCalId;
-export const saveCommitmentsCalId  = saveWriteCalId;
-export const clearCommitmentsCalId = clearWriteCalId;
-export async function ensureCommitmentsCalendar() {
+export const loadTaskTriageCalId  = loadWriteCalId;
+export const saveTaskTriageCalId  = saveWriteCalId;
+export const clearTaskTriageCalId = clearWriteCalId;
+export async function ensureTaskTriageCalendar() {
   return loadWriteCalId();
 }
 
@@ -370,12 +370,12 @@ export async function fetchFreeBusy(calendarIds, timeMin, timeMax) {
   }, { calendars: {} });
 }
 
-export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
+export async function fetchTaskTriageBlockIntervals(timeMin, timeMax) {
   const calId = loadWriteCalId();
   const blocksByDay = {};
   const seenEventIds = new Set();
   // Include v1 events so users do not suddenly see old work blocks as free time.
-  for (const property of ['commitments_work_block=true', 'commitments_task_id=true']) {
+  for (const property of ['task_triage_work_block=true', 'task_triage_task_id=true']) {
     let pageToken = null;
     do {
       const params = new URLSearchParams({
@@ -391,7 +391,7 @@ export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
         (blocksByDay[iso] ??= []).push({
           startMs: new Date(ev.start.dateTime).getTime(),
           endMs: new Date(ev.end.dateTime).getTime(),
-          taskId: ev.extendedProperties?.private?.commitments_task_id || null,
+          taskId: ev.extendedProperties?.private?.task_triage_task_id || null,
           eventId: ev.id,
         });
       }
@@ -401,7 +401,7 @@ export async function fetchCommitmentsBlockIntervals(timeMin, timeMax) {
   return blocksByDay;
 }
 
-export function subtractCommitmentsBlocks(busyIntervals, blockIntervals) {
+export function subtractTaskTriageBlocks(busyIntervals, blockIntervals) {
   if (!blockIntervals || !blockIntervals.length) return busyIntervals;
   return busyIntervals.flatMap(interval => {
     const startMs = new Date(interval.start).getTime();
@@ -440,7 +440,7 @@ export async function findFreeSlots(isoDate, notBeforeMs, settings, calIds) {
   const fbCalIds = calIds.filter(id => id !== writeCalId);
   const [fbResp, blocksByDay] = await Promise.all([
     fetchFreeBusy(fbCalIds, timeMin, timeMax),
-    fetchCommitmentsBlockIntervals(timeMin, timeMax),
+    fetchTaskTriageBlockIntervals(timeMin, timeMax),
   ]);
   let busy = [];
   for (const id of fbCalIds) busy.push(...(fbResp.calendars?.[id]?.busy || []));
@@ -516,7 +516,7 @@ export async function createChunkedWorkBlocks(task, isoDate, durationHours, notB
           start: { dateTime: start.toISOString(), timeZone: tz },
           end: { dateTime: end.toISOString(), timeZone: tz },
           colorId: '2',
-          extendedProperties: { private: { commitments_work_block: 'true', commitments_task_id: String(task.id) } },
+          extendedProperties: { private: { task_triage_work_block: 'true', task_triage_task_id: String(task.id) } },
         }),
       });
       events.push(ev);
@@ -571,7 +571,7 @@ export async function upsertWorkBlock(task, isoDate, durationHours, notBeforeMs,
 /**
  * Delete only the GCal event(s) for a specific task on a specific day,
  * using the push registry. This is the safe, task-scoped alternative to
- * deleteWorkBlock, which deletes ALL Commitments blocks on the day.
+ * deleteWorkBlock, which deletes ALL TaskTriage blocks on the day.
  */
 export async function deleteTaskWorkBlock(taskId, isoDate) {
   const calId = loadWriteCalId();
@@ -580,7 +580,7 @@ export async function deleteTaskWorkBlock(taskId, isoDate) {
   if (!idsToDelete.length) {
     const { start, end } = localDayBounds(isoDate);
     const params = new URLSearchParams({ timeMin: start.toISOString(), timeMax: end.toISOString(), singleEvents: 'true', maxResults: '250' });
-    params.append('privateExtendedProperty', `commitments_task_id=${String(taskId)}`);
+    params.append('privateExtendedProperty', `task_triage_task_id=${String(taskId)}`);
     const response = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
     idsToDelete = (response.items || []).map(event => event.id);
   }
@@ -600,9 +600,9 @@ export async function deleteWorkBlock(isoDate) {
   const timeMin = start.toISOString();
   const timeMax = end.toISOString();
   const params = new URLSearchParams({ timeMin, timeMax, singleEvents: 'true', maxResults: '50' });
-  params.append('privateExtendedProperty', 'commitments_work_block=true');
+  params.append('privateExtendedProperty', 'task_triage_work_block=true');
   const resp = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events?${params}`);
-  const matches = (resp.items || []).filter(ev => ev.extendedProperties?.private?.commitments_work_block === 'true');
+  const matches = (resp.items || []).filter(ev => ev.extendedProperties?.private?.task_triage_work_block === 'true');
   await Promise.all(matches.map(ev => gcalFetch(`/calendars/${encodeURIComponent(calId)}/events/${ev.id}`, { method: 'DELETE' })));
   const reg = getPushRegistry();
   for (const key of Object.keys(reg)) if (key.endsWith(`|${isoDate}`)) delete reg[key];

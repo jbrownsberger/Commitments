@@ -31,7 +31,7 @@ function tasksToICS(tasks, categories) {
       const cat   = catName ? `\nCATEGORIES:${escapeProp(catName)}` : '';
       return [
         'BEGIN:VTODO',
-        `UID:${uid()}@commitments`,
+        `UID:${uid()}@tasktriage`,
         `DTSTAMP:${stamp}`,
         `SUMMARY:${escapeProp(t.name)}`,
         `STATUS:${status}`,
@@ -46,7 +46,7 @@ function tasksToICS(tasks, categories) {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Commitments//EN',
+    'PRODID:-//TaskTriage//EN',
     'CALSCALE:GREGORIAN',
     ...vtodos,
     'END:VCALENDAR',
@@ -129,7 +129,7 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
       })),
     };
     const dateStr = new Date().toISOString().slice(0, 10);
-    download(`commitments-${dateStr}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    download(`task-triage-${dateStr}.json`, JSON.stringify(payload, null, 2), 'application/json');
     flash(true, 'JSON exported');
     onAction?.();
   };
@@ -137,7 +137,7 @@ export default function ImportExport({ appData, menuMode = false, onAction }) {
   const exportICS = () => {
     const ics = tasksToICS(tasks, categories);
     const dateStr = new Date().toISOString().slice(0, 10);
-    download(`commitments-${dateStr}.ics`, ics, 'text/calendar');
+    download(`task-triage-${dateStr}.ics`, ics, 'text/calendar');
     flash(true, 'ICS exported');
     onAction?.();
   };

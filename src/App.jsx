@@ -92,9 +92,10 @@ const IconBolt = () => (
 
 // ── Feature list ─────────────────────────────────────────────────────────────────────────
 const FEATURES = [
-  { Icon: IconCalendar, title: 'Plan around your calendar', text: 'Optionally connect Google Calendar to factor in your availability and add planned work blocks.' },
-  { Icon: IconClock,    title: 'Make time for what matters', text: 'Turn a long task list into realistic blocks of work that fit your actual days.' },
-  { Icon: IconBarChart, title: 'Stay ahead of deadlines', text: 'Track progress and spot overloaded weeks before they become a last-minute scramble.' },
+  { Icon: IconBolt,     title: 'Live Urgency Score', text: 'A dynamic score based on deadlines and effort tells you what to work on right now.' },
+  { Icon: IconCalendar, title: 'Workload-Aware Planner', text: 'Drag and drop tasks, or use Auto-fill to distribute work based on your real capacity.' },
+  { Icon: IconClock,    title: 'Google Calendar Sync', text: 'Pulls in your free/busy times and pushes scheduled work blocks directly to your calendar.' },
+  { Icon: IconBarChart, title: 'AI Assistant (MCP)', text: 'Connect any MCP-compatible AI assistant for hands-free task management.' },
 ];
 
 // ── Login page ───────────────────────────────────────────────────────────────────────────────────
@@ -151,19 +152,13 @@ function LoginPage() {
       <div className="login-hero">
         <div className="login-hero-inner">
           <div className="login-brand">
-            <span className="login-brand-mark"><img src="/logo.png" alt="Commitments logo" className="login-logo-img" /></span>
-            <span>Commitments</span>
+            <span className="login-brand-mark"><img src="/logo.png" alt="TaskTriage logo" className="login-logo-img" /></span>
+            <span>TaskTriage</span>
           </div>
-          <p className="login-eyebrow">Personal task and calendar planner</p>
-          <h1 className="login-hero-title">Keep every commitment<br />in view.</h1>
+          <p className="login-eyebrow">Workload-aware deadline tracker</p>
+          <h1 className="login-hero-title">A personal task planner that knows how much time you actually have.</h1>
           <p className="login-hero-tagline">
-            <strong>Commitments</strong> is a personal planning app for tracking tasks,
-            deadlines, and recurring work. It helps you turn those commitments into a
-            realistic weekly plan based on the time you have available.
-          </p>
-          <p className="login-google-note">
-            Google Calendar is optional: connect it to see your free time and add
-            Commitments work blocks to a calendar you choose.
+            Most to-do apps let you pile on tasks forever. <strong>TaskTriage</strong> is different. It calculates a live <strong>Urgency Score</strong> and turns a chaotic pile of tasks into a realistic, time-blocked plan you can actually follow.
           </p>
           <div className="login-preview" aria-hidden="true">
             <div className="login-preview-topbar">
@@ -285,7 +280,7 @@ function LoginPage() {
           <span className="login-footer-sep">&middot;</span>
           <a href="/terms.html"   target="_blank" rel="noopener noreferrer">Terms of Service</a>
           <span className="login-footer-sep">&middot;</span>
-          <a href="https://github.com/jbrownsberger/Commitments"
+          <a href="https://github.com/jbrownsberger/TaskTriage"
              target="_blank" rel="noopener noreferrer">GitHub</a>
         </div>
       </div>
@@ -327,8 +322,8 @@ function ResetPasswordPage() {
       <div className="login-hero">
         <div className="login-hero-inner">
           <div className="login-brand">
-            <span className="login-brand-mark"><img src="/logo.png" alt="Commitments logo" className="login-logo-img" /></span>
-            <span>Commitments</span>
+            <span className="login-brand-mark"><img src="/logo.png" alt="TaskTriage logo" className="login-logo-img" /></span>
+            <span>TaskTriage</span>
           </div>
           <h1 className="login-hero-title">Set a new<br />password.</h1>
           <p className="login-hero-tagline">

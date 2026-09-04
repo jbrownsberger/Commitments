@@ -48,8 +48,8 @@ const MockupCategory = () => (
 const SLIDES = [
   {
     emoji: '👋',
-    title: 'Welcome to Commitments!',
-    body:  "Commitments helps you track every task and deadline, then turn them into a realistic weekly plan. Here's a quick tour to get you started.",
+    title: 'Welcome to TaskTriage!',
+    body:  "TaskTriage helps you track every task and deadline, then turn them into a realistic weekly plan. Here's a quick tour to get you started.",
     mockup: null,
   },
   {

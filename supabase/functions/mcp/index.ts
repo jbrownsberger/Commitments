@@ -1,5 +1,5 @@
 /**
- * mcp — remote MCP server for Commitments (Streamable HTTP, stateless).
+ * mcp — remote MCP server for TaskTriage (Streamable HTTP, stateless).
  *
  * Clients connect with a personal token from mcp-token (Authorization: Bearer cmt_…).
  * Exposes tools to list/create/update/delete tasks and list categories.
@@ -22,7 +22,7 @@ import {
 } from '../_shared/mcpAuth.ts';
 import { TOOL_DEFINITIONS, callTool } from '../_shared/mcpTools.ts';
 
-const SERVER_INFO = { name: 'commitments', version: '1.0.0' };
+const SERVER_INFO = { name: 'task-triage', version: '1.0.0' };
 const SUPPORTED_PROTOCOL_VERSIONS = ['2025-03-26', '2025-06-18', '2025-11-25'];
 
 function pickProtocolVersion(requested?: unknown): string {

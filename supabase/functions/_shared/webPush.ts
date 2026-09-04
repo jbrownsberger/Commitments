@@ -27,7 +27,7 @@ export function ensureVapid(): void {
   if (vapidConfigured) return;
   const publicKey  = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
   const privateKey = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
-  const subject    = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:support@commitments.app';
+  const subject    = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:support@tasktriage.app';
   if (!publicKey || !privateKey) {
     throw new Error('VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set');
   }
@@ -37,7 +37,7 @@ export function ensureVapid(): void {
 
 /** Build the Declarative Web Push JSON body (web_push: 8030). */
 export function buildDeclarativePayload(n: DeclarativeNotification): string {
-  const appUrl = (Deno.env.get('APP_URL') ?? 'https://commitments.app').replace(/\/$/, '');
+  const appUrl = (Deno.env.get('APP_URL') ?? 'https://tasktriage.app').replace(/\/$/, '');
   const notification: Record<string, unknown> = {
     title: n.title,
     lang: n.lang ?? 'en-US',

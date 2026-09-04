@@ -1,7 +1,7 @@
 {
-  "name": "Commitments",
-  "short_name": "Commitments",
-  "description": "Commitments is a personal task and calendar planning app for deadlines, recurring work, and realistic weekly plans.",
+  "name": "TaskTriage",
+  "short_name": "TaskTriage",
+  "description": "TaskTriage is a personal task and calendar planning app for deadlines, recurring work, and realistic weekly plans.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

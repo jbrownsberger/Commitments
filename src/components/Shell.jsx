@@ -471,7 +471,7 @@ function UserDropdown({
           <div className="user-dropdown-divider" />
           
           <a
-            href="mailto:jbrownsberger@gmail.com?subject=Commitments%20Feedback"
+            href="mailto:jbrownsberger@gmail.com?subject=TaskTriage%20Feedback"
             className="user-dropdown-item"
             role="menuitem"
             style={{ textDecoration: 'none', color: 'inherit' }}
@@ -630,7 +630,7 @@ export default function Shell({ appData, userId, userEmail, darkMode, onToggleDa
         <div className="header">
           <h1 className="app-brand">
             <img src="/logo.png" alt="" className="app-brand-logo" />
-            <span>Commitments</span>
+            <span>TaskTriage</span>
           </h1>
           <div className="header-actions">
             <button

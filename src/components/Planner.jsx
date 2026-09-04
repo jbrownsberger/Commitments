@@ -657,7 +657,7 @@ export default function Planner({ appData, userId, onEditTask }) {
   }, [scheduledOnDay, todayISO, gcalSettings, gcalSelCals]);
 
   const handleDeleteDayFromGCal = useCallback(async (iso) => {
-    if (!window.confirm(`Remove all Commitments work blocks from ${fmtAgendaDay(iso)}? Your Planner assignments will remain.`)) return;
+    if (!window.confirm(`Remove all TaskTriage work blocks from ${fmtAgendaDay(iso)}? Your Planner assignments will remain.`)) return;
     setGcalPushStatus(s => ({ ...s, [iso]: 'deleting' }));
     try {
       await deleteWorkBlock(iso);

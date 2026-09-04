@@ -7,7 +7,7 @@ const MCP_ENDPOINT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp`
 
 /**
  * Lets the signed-in user generate, view, and revoke personal MCP tokens
- * used to connect Commitments to Perplexity (or any MCP-compatible client)
+ * used to connect TaskTriage to Perplexity (or any MCP-compatible client)
  * as a custom remote connector.
  */
 export default function McpConnect({ embedded = false }) {

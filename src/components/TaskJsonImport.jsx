@@ -31,7 +31,7 @@ export default function TaskJsonImport({ categories, onSave, onClose, onStatus }
   const report = (next) => onStatus?.(next);
 
   const downloadTemplate = () => {
-    downloadJson('commitments-new-tasks-template.json', buildNewTasksTemplate());
+    downloadJson('task-triage-new-tasks-template.json', buildNewTasksTemplate());
     report({ ok: true, text: 'Template downloaded' });
   };
 

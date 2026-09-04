@@ -1,5 +1,5 @@
 /**
- * QuickTasks — standing weekly commitments panel.
+ * QuickTasks — standing weekly task triage panel.
  * Lives in the right column. Tasks persist to DB via onSave/onDelete props.
  * NOTE: Do NOT pass a client-generated id for new tasks — let the DB generate it.
  */

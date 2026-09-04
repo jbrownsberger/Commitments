@@ -175,7 +175,7 @@ export async function unsubscribePush(_userId) {
  * Ask the send-push edge function to deliver a test notification.
  */
 export async function sendTestPush({
-  title = 'Commitments is connected',
+  title = 'TaskTriage is connected',
   body = 'Notifications are working on this Mac. You will get daily digests for due and overdue tasks.',
 } = {}) {
   const { data: { session } } = await supabase.auth.getSession();

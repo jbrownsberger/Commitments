@@ -522,7 +522,7 @@ export function generateICS(tasks, categories) {
   const catMap = Object.fromEntries((categories || []).map(c => [c.id, c]));
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0',
-    'PRODID:-//Commitments//EN', 'CALSCALE:GREGORIAN',
+    'PRODID:-//TaskTriage//EN', 'CALSCALE:GREGORIAN',
   ];
   for (const task of tasks) {
     if (!task.due_date) continue;
@@ -531,7 +531,7 @@ export function generateICS(tasks, categories) {
     const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
     lines.push(
       'BEGIN:VEVENT',
-      `UID:due-${task.id}@commitments`,
+      `UID:due-${task.id}@tasktriage`,
       `DTSTAMP:${now}`,
       `DTSTART;VALUE=DATE:${due}`,
       `DTEND;VALUE=DATE:${due}`,
@@ -544,7 +544,7 @@ export function generateICS(tasks, categories) {
       const d = day.replace(/-/g, '');
       lines.push(
         'BEGIN:VEVENT',
-        `UID:session-${task.id}-${d}@commitments`,
+        `UID:session-${task.id}-${d}@tasktriage`,
         `DTSTAMP:${now}`,
         `DTSTART;VALUE=DATE:${d}`,
         `DTEND;VALUE=DATE:${d}`,
@@ -562,7 +562,7 @@ export function downloadICS(tasks, categories) {
   const blob = new Blob([ics], { type: 'text/calendar' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = 'commitments.ics';
+  a.download = 'task-triage.ics';
   a.click();
   URL.revokeObjectURL(a.href);
 }

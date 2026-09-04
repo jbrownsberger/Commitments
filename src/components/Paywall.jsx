@@ -101,7 +101,7 @@ export default function Paywall({ featureName }) {
         </h2>
 
         <p className="paywall-subtitle">
-          Upgrade to <strong>Commitments Premium</strong> to unlock the full
+          Upgrade to <strong>TaskTriage Premium</strong> to unlock the full
           planning experience.
         </p>
 

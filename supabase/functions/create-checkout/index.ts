@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const PRICE_ID_MONTHLY  = Deno.env.get("STRIPE_PRICE_ID_MONTHLY") ?? "";
 const PRICE_ID_YEARLY   = Deno.env.get("STRIPE_PRICE_ID_YEARLY") ?? "";
-const APP_URL           = Deno.env.get("APP_URL") ?? "https://commitments.app";
+const APP_URL           = Deno.env.get("APP_URL") ?? "https://tasktriage.app";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

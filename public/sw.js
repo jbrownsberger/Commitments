@@ -19,7 +19,7 @@ self.addEventListener('push', (event) => {
     data = event.data ? event.data.json() : {};
   } catch {
     try {
-      data = { notification: { title: 'Commitments', body: event.data?.text() || '' } };
+      data = { notification: { title: 'TaskTriage', body: event.data?.text() || '' } };
     } catch {
       data = {};
     }
@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
   // Declarative payload: { web_push: 8030, notification: { title, body, navigate, ... } }
   // Also accept a bare notification object for flexibility.
   const n = data.notification || data;
-  const title = n.title || 'Commitments';
+  const title = n.title || 'TaskTriage';
   const options = {
     body: n.body || '',
     icon: n.icon || '/logo.png',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { intervalLocalDates, subtractCommitmentsBlocks } from './gcalScheduler.js';
+import { intervalLocalDates, subtractTaskTriageBlocks } from './gcalScheduler.js';
 
-const split = subtractCommitmentsBlocks([
+const split = subtractTaskTriageBlocks([
   { start: '2026-08-18T09:00:00.000Z', end: '2026-08-18T12:00:00.000Z' },
 ], [{ startMs: Date.parse('2026-08-18T10:00:00.000Z'), endMs: Date.parse('2026-08-18T11:00:00.000Z') }]);
 assert.deepEqual(split, [
