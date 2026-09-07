@@ -221,7 +221,7 @@ body.substring(0, 8000);
         'anthropic-version': '2023-06-01'
       },
       payload: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-3-5-haiku-20241022',
         max_tokens: 2048,
         system: "You are a helpful assistant that extracts actionable tasks from emails. Return ONLY a valid JSON object containing a 'tasks' array. Do not include any conversational text.",
         messages: [{ role: 'user', content: prompt }]
