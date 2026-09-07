@@ -39,10 +39,9 @@ function buildMainCard(e) {
   
   var extractAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
-    .setParameters({ messageId: messageId });
-
+    .setParameters({ messageId: messageId, mode: "email" });
   var extractButton = CardService.newTextButton()
-    .setText('Extract Tasks')
+    .setText('Extract from Email')
     .setOnClickAction(extractAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
     .setBackgroundColor('#4F6B5E');
@@ -50,7 +49,6 @@ function buildMainCard(e) {
   var settingsAction = CardService.newAction()
     .setFunctionName('openSettings')
     .setParameters({ messageId: messageId });
-    
   var settingsButton = CardService.newTextButton()
     .setText('Settings')
     .setOnClickAction(settingsAction)
@@ -59,9 +57,38 @@ function buildMainCard(e) {
   var buttonSet = CardService.newButtonSet()
     .addButton(extractButton)
     .addButton(settingsButton);
-    
   section.addWidget(buttonSet);
   card.addSection(section);
+
+  var customSection = CardService.newCardSection()
+    .setHeader("Advanced Options");
+    
+  var manualAction = CardService.newAction()
+    .setFunctionName('draftManualTask')
+    .setParameters({ messageId: messageId });
+  var manualButton = CardService.newTextButton()
+    .setText('Draft Manual Task')
+    .setOnClickAction(manualAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+  customSection.addWidget(manualButton);
+
+  var customTextInput = CardService.newTextInput()
+    .setFieldName('custom_text')
+    .setTitle('Or paste specific text to extract from:')
+    .setMultiline(true);
+  customSection.addWidget(customTextInput);
+  
+  var extractTextAction = CardService.newAction()
+    .setFunctionName('extractTasksFromEmail')
+    .setParameters({ messageId: messageId, mode: "text" });
+  var extractTextButton = CardService.newTextButton()
+    .setText('Extract from Text')
+    .setOnClickAction(extractTextAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
+  customSection.addWidget(extractTextButton);
+  
+  card.addSection(customSection);
 
   return card.build();
 }
@@ -70,13 +97,26 @@ function buildMainCard(e) {
  * Action triggered by "Extract Tasks" button.
  */
 function extractTasksFromEmail(e) {
-  var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
-  var accessToken = e.gmail.accessToken;
-  GmailApp.setCurrentMessageAccessToken(accessToken);
+  var mode = (e.parameters && e.parameters.mode) || "email";
+  var subject = "";
+  var body = "";
   
-  var message = GmailApp.getMessageById(messageId);
-  var subject = message.getSubject();
-  var body = message.getPlainBody();
+  if (mode === "text") {
+    body = (e.formInput && e.formInput.custom_text) ? e.formInput.custom_text : "";
+    if (!body.trim()) {
+      return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText("Please paste some text first."))
+        .build();
+    }
+  } else {
+    var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
+    var accessToken = e.gmail.accessToken;
+    GmailApp.setCurrentMessageAccessToken(accessToken);
+    
+    var message = GmailApp.getMessageById(messageId);
+    subject = message.getSubject();
+    body = message.getPlainBody();
+  }
   
   // Call AI to extract tasks
   var tasks = [];
@@ -90,10 +130,31 @@ function extractTasksFromEmail(e) {
   
   if (!tasks || tasks.length === 0) {
     return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText("No tasks found in this email."))
+      .setNotification(CardService.newNotification().setText("No tasks found."))
       .build();
   }
   
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().pushCard(buildTaskReviewCard(tasks)))
+    .build();
+}
+
+function draftManualTask(e) {
+  var emptyTask = {
+    name: "",
+    notes: "",
+    priority: "med",
+    due_date: "",
+    estimated_hours: 1,
+    substeps: [],
+    links: []
+  };
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().pushCard(buildTaskReviewCard([emptyTask])))
+    .build();
+}
+
+function buildTaskReviewCard(tasks) {
   var categories = [];
   try {
     categories = getCategories();
@@ -101,9 +162,8 @@ function extractTasksFromEmail(e) {
     Logger.log("Failed to load categories: " + err.message);
   }
 
-  // Build a new card to review tasks
   var card = CardService.newCardBuilder()
-    .setHeader(CardService.newCardHeader().setTitle('Proposed Tasks'));
+    .setHeader(CardService.newCardHeader().setTitle('Review Tasks'));
     
   tasks.forEach(function(task, index) {
     var section = CardService.newCardSection();
@@ -209,9 +269,7 @@ function extractTasksFromEmail(e) {
   actionSection.addWidget(saveButton);
   card.addSection(actionSection);
   
-  return CardService.newActionResponseBuilder()
-    .setNavigation(CardService.newNavigation().pushCard(card.build()))
-    .build();
+  return card.build();
 }
 
 /**
