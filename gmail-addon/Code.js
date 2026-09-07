@@ -80,11 +80,11 @@ function extractTasksFromEmail(e) {
     
   const section = CardService.newCardSection();
   
-  tasks.forEach((task, index) => {
+  tasks.forEach(function(task, index) {
     // We use a checkbox group for each task so we can pass data along
     const checkboxGroup = CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setFieldName(`task_${index}`)
+      .setFieldName("task_" + index)
       .addItem(task.name, JSON.stringify(task), true);
     
     section.addWidget(checkboxGroup);
@@ -112,7 +112,7 @@ function saveTasks(e) {
   const tasksToSave = [];
   
   // Extract checked tasks from form data
-  Object.keys(formInputs).forEach(key => {
+  Object.keys(formInputs).forEach(function(key) {
     if (key.startsWith('task_')) {
       const taskJson = formInputs[key]; // This is the stringified task
       // Note: Apps Script formInputs gives arrays for checkboxes if multiple selected
@@ -134,7 +134,7 @@ function saveTasks(e) {
   let successCount = 0;
   
   // Loop through tasks and call the MCP endpoint to create them
-  tasksToSave.forEach(task => {
+  tasksToSave.forEach(function(task) {
     const payload = {
       jsonrpc: "2.0",
       id: Utilities.getUuid(),
