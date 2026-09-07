@@ -92,11 +92,32 @@ function extractTasksFromEmail(e) {
   var section = CardService.newCardSection();
   
   tasks.forEach(function(task, index) {
+    var details = "";
+    if (task.priority) details += "Priority: " + task.priority + "\n";
+    if (task.due_date) details += "Due: " + task.due_date + "\n";
+    if (task.estimated_hours || task.estimatedHours) details += "Est. Hours: " + (task.estimated_hours || task.estimatedHours) + "\n";
+    if (task.notes) details += "Notes: " + task.notes + "\n";
+    if (task.substeps && task.substeps.length > 0) {
+      details += "Substeps:\n";
+      task.substeps.forEach(function(s, i) {
+        details += "  " + (i+1) + ". " + s.text + "\n";
+      });
+    }
+    if (task.links && task.links.length > 0) {
+      details += "Links:\n";
+      task.links.forEach(function(l) {
+        details += "  - " + (l.label || l.value) + "\n";
+      });
+    }
+    
+    var textWidget = CardService.newTextParagraph().setText("<b>" + task.name + "</b>\n" + details);
+    section.addWidget(textWidget);
+    
     // We use a checkbox group for each task so we can pass data along
     var checkboxGroup = CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
       .setFieldName("task_" + index)
-      .addItem(task.name, JSON.stringify(task), true);
+      .addItem("Add this task", JSON.stringify(task), true);
     
     section.addWidget(checkboxGroup);
   });
@@ -145,40 +166,59 @@ function saveTasks(e) {
   var successCount = 0;
   
   // Loop through tasks and call the MCP endpoint to create them
-  tasksToSave.forEach(function(task) {
-    var payload = {
-      jsonrpc: "2.0",
-      id: Utilities.getUuid(),
-      method: "tools/call",
-      params: {
-        name: "create_task",
-        arguments: {
-          name: task.name,
-          notes: task.notes || "",
-          priority: task.priority || "med",
-          due_date: task.due_date || null,
-          estimated_hours: task.estimated_hours || task.estimatedHours || 1,
-          links: task.links || [],
-          substeps: task.substeps || []
+  try {
+    tasksToSave.forEach(function(task) {
+      var payload = {
+        jsonrpc: "2.0",
+        id: Utilities.getUuid(),
+        method: "tools/call",
+        params: {
+          name: "create_task",
+          arguments: {
+            name: task.name,
+            notes: task.notes || "",
+            priority: task.priority || "med",
+            due_date: task.due_date || null,
+            estimated_hours: task.estimated_hours || task.estimatedHours || 1,
+            links: task.links || [],
+            substeps: task.substeps || []
+          }
         }
+      };
+      
+      var options = {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          'Authorization': "Bearer " + mcpToken
+        },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+      
+      var response = UrlFetchApp.fetch(supabaseUrl + "/functions/v1/mcp", options);
+      var responseCode = response.getResponseCode();
+      var responseBody = response.getContentText();
+      
+      if (responseCode !== 200) {
+        throw new Error("HTTP Error " + responseCode + ": " + responseBody);
       }
-    };
-    
-    var options = {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {
-        'Authorization': "Bearer " + mcpToken
-      },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    };
-    
-    var response = UrlFetchApp.fetch(supabaseUrl + "/functions/v1/mcp", options);
-    if (response.getResponseCode() === 200) {
+      
+      var json = JSON.parse(responseBody);
+      if (json.error) {
+        throw new Error("RPC Error: " + JSON.stringify(json.error));
+      }
+      if (json.result && json.result.isError) {
+        throw new Error("Tool Error: " + JSON.stringify(json.result.content));
+      }
+      
       successCount++;
-    }
-  });
+    });
+  } catch (err) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("Save failed: " + err.message))
+      .build();
+  }
   
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification().setText("Saved " + successCount + " tasks successfully!"))
