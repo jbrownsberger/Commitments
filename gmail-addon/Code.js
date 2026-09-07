@@ -15,7 +15,8 @@ function onGmailMessageOpen(e) {
   var aiApiKey = PROPERTIES.getProperty('AI_API_KEY');
 
   if (!supabaseUrl || !mcpToken || !aiApiKey) {
-    return buildSettingsCard();
+    var messageId = (e && e.gmail && e.gmail.messageId) ? e.gmail.messageId : '';
+    return buildSettingsCard(messageId);
   }
 
   return buildMainCard(e);
@@ -31,9 +32,10 @@ function buildMainCard(e) {
   var section = CardService.newCardSection()
     .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks from this email and save them to your TaskTriage inbox.'));
 
+  var messageId = (e && e.gmail && e.gmail.messageId) ? e.gmail.messageId : '';
   var extractAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
-    .setParameters({ messageId: e.gmail.messageId });
+    .setParameters({ messageId: messageId });
 
   var extractButton = CardService.newTextButton()
     .setText('✨ Extract Tasks')
@@ -256,13 +258,14 @@ body.substring(0, 8000);
 // Settings UI
 // ----------------------------------------------------------------------
 
-function openSettings() {
+function openSettings(e) {
+  var messageId = (e && e.parameters && e.parameters.messageId) ? e.parameters.messageId : '';
   return CardService.newActionResponseBuilder()
-    .setNavigation(CardService.newNavigation().pushCard(buildSettingsCard()))
+    .setNavigation(CardService.newNavigation().pushCard(buildSettingsCard(messageId)))
     .build();
 }
 
-function buildSettingsCard() {
+function buildSettingsCard(messageId) {
   var card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle('Configuration'));
     
@@ -292,6 +295,10 @@ function buildSettingsCard() {
   section.addWidget(aiApiKeyInput);
   
   var saveAction = CardService.newAction().setFunctionName('saveSettings');
+  if (messageId) {
+    saveAction.setParameters({ messageId: messageId });
+  }
+  
   var saveButton = CardService.newTextButton()
     .setText('Save Settings')
     .setOnClickAction(saveAction)
@@ -305,13 +312,16 @@ function buildSettingsCard() {
 
 function saveSettings(e) {
   var form = e.formInput;
+  var messageId = (e && e.parameters && e.parameters.messageId) ? e.parameters.messageId : '';
   
   if (form.supabaseUrl) PROPERTIES.setProperty('SUPABASE_URL', form.supabaseUrl.trim());
   if (form.mcpToken) PROPERTIES.setProperty('MCP_TOKEN', form.mcpToken.trim());
   if (form.aiApiKey) PROPERTIES.setProperty('AI_API_KEY', form.aiApiKey.trim());
   
+  var dummyE = { gmail: { messageId: messageId } };
+  
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification().setText("Settings saved!"))
-    .setNavigation(CardService.newNavigation().popToRoot().updateCard(buildMainCard({})))
+    .setNavigation(CardService.newNavigation().popToRoot().updateCard(buildMainCard(dummyE)))
     .build();
 }
