@@ -32,11 +32,12 @@ function buildMainCard(e) {
       .setSubtitle('AI Task Extraction')
       .setImageUrl('https://raw.githubusercontent.com/jbrownsberger/Commitments/main/public/logo.png'));
 
-  var section = CardService.newCardSection()
-    .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks from this email and save them to your Commitments inbox.'));
-
   var messageId = (e && e.gmail && e.gmail.messageId) ? e.gmail.messageId : '';
-  
+
+  // SECTION 1: Primary Email Extraction
+  var section1 = CardService.newCardSection()
+    .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks directly from this email thread.'));
+
   var extractAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
     .setParameters({ messageId: messageId, mode: "email" });
@@ -46,35 +47,16 @@ function buildMainCard(e) {
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
     .setBackgroundColor('#4F6B5E');
     
-  var manualAction = CardService.newAction()
-    .setFunctionName('draftManualTask')
-    .setParameters({ messageId: messageId });
-  var manualButton = CardService.newTextButton()
-    .setText('Draft Manual Task')
-    .setOnClickAction(manualAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-    .setBackgroundColor('#4F6B5E');
+  section1.addWidget(CardService.newButtonSet().addButton(extractButton));
+  card.addSection(section1);
 
-  var settingsAction = CardService.newAction()
-    .setFunctionName('openSettings')
-    .setParameters({ messageId: messageId });
-  var settingsButton = CardService.newTextButton()
-    .setText('Settings')
-    .setOnClickAction(settingsAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
-
-  var topButtonSet = CardService.newButtonSet()
-    .addButton(extractButton)
-    .addButton(manualButton)
-    .addButton(settingsButton);
-    
-  section.addWidget(topButtonSet);
-
+  // SECTION 2: Custom Text Extraction
+  var section2 = CardService.newCardSection();
   var customTextInput = CardService.newTextInput()
     .setFieldName('custom_text')
-    .setTitle('Or paste specific text to extract from:')
+    .setTitle('Or extract from custom text snippet:')
     .setMultiline(true);
-  section.addWidget(customTextInput);
+  section2.addWidget(customTextInput);
   
   var extractTextAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
@@ -84,11 +66,32 @@ function buildMainCard(e) {
     .setOnClickAction(extractTextAction)
     .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
     
-  var bottomButtonSet = CardService.newButtonSet()
-    .addButton(extractTextButton);
-  section.addWidget(bottomButtonSet);
-  
-  card.addSection(section);
+  section2.addWidget(CardService.newButtonSet().addButton(extractTextButton));
+  card.addSection(section2);
+
+  // SECTION 3: Utilities
+  var section3 = CardService.newCardSection();
+  var manualAction = CardService.newAction()
+    .setFunctionName('draftManualTask')
+    .setParameters({ messageId: messageId });
+  var manualButton = CardService.newTextButton()
+    .setText('Draft Manual Task')
+    .setOnClickAction(manualAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+
+  var settingsAction = CardService.newAction()
+    .setFunctionName('openSettings')
+    .setParameters({ messageId: messageId });
+  var settingsButton = CardService.newTextButton()
+    .setText('Settings')
+    .setOnClickAction(settingsAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+
+  section3.addWidget(CardService.newButtonSet()
+    .addButton(manualButton)
+    .addButton(settingsButton));
+    
+  card.addSection(section3);
 
   return card.build();
 }
