@@ -189,7 +189,8 @@ function saveTasks(e) {
  */
 function getTasksFromAI(subject, body) {
   var apiKey = PROPERTIES.getProperty('AI_API_KEY');
-  var isOpenAI = apiKey.indexOf('sk-') === 0;
+  var isClaude = apiKey.indexOf('sk-ant-') === 0;
+  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
   
   var prompt = "You are a helpful assistant that extracts actionable tasks from emails.\n" +
 "Return a JSON object containing a single key \"tasks\" which is a JSON array of objects.\n" +
@@ -208,7 +209,24 @@ body.substring(0, 8000);
 
   var url, options;
 
-  if (isOpenAI) {
+  if (isClaude) {
+    url = 'https://api.anthropic.com/v1/messages';
+    options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: 'claude-3-5-sonnet-20240620',
+        max_tokens: 2048,
+        system: "You are a helpful assistant that extracts actionable tasks from emails. Return ONLY a valid JSON object containing a 'tasks' array. Do not include any conversational text.",
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    };
+  } else if (isOpenAI) {
     url = 'https://api.openai.com/v1/chat/completions';
     options = {
       method: 'post',
@@ -222,7 +240,7 @@ body.substring(0, 8000);
       muteHttpExceptions: true
     };
   } else {
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
     options = {
       method: 'post',
       contentType: 'application/json',
@@ -243,7 +261,11 @@ body.substring(0, 8000);
     var json = JSON.parse(responseBody);
     
     var text = "";
-    if (isOpenAI) {
+    if (isClaude) {
+      if (json.content && json.content[0] && json.content[0].text) {
+        text = json.content[0].text.trim();
+      }
+    } else if (isOpenAI) {
       if (json.choices && json.choices[0].message.content) {
         text = json.choices[0].message.content.trim();
       }
@@ -299,8 +321,8 @@ function buildSettingsCard(messageId) {
     
   var aiApiKeyInput = CardService.newTextInput()
     .setFieldName('aiApiKey')
-    .setTitle('AI API Key (Gemini or OpenAI)')
-    .setHint('Starts with sk- for OpenAI')
+    .setTitle('AI API Key (Gemini, OpenAI, or Claude)')
+    .setHint('Starts with sk- or sk-ant-')
     .setValue(PROPERTIES.getProperty('AI_API_KEY') || '');
     
   section.addWidget(supabaseUrlInput);
