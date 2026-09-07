@@ -17,7 +17,7 @@
         "onTriggerFunction": "onGmailMessageOpen"
       }
     ],
-    "primaryColor": "#2f56d0",
-    "secondaryColor": "#2f56d0"
+    "primaryColor": "#4F6B5E",
+    "secondaryColor": "#4F6B5E"
   }
 }
