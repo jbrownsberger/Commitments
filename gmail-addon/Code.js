@@ -30,7 +30,7 @@ function buildMainCard(e) {
     .setHeader(CardService.newCardHeader()
       .setTitle('TaskTriage')
       .setSubtitle('AI Task Extraction')
-      .setImageUrl('https://www.gstatic.com/images/icons/material/system/2x/check_circle_black_24dp.png'));
+      .setImageUrl('https://raw.githubusercontent.com/jbrownsberger/Commitments/main/public/logo.png'));
 
   var section = CardService.newCardSection()
     .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks from this email and save them to your Commitments inbox.'));

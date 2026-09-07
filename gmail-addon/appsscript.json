@@ -10,7 +10,7 @@
   ],
   "gmail": {
     "name": "TaskTriage",
-    "logoUrl": "https://www.gstatic.com/images/icons/material/system/2x/check_circle_black_24dp.png",
+    "logoUrl": "https://raw.githubusercontent.com/jbrownsberger/Commitments/main/public/logo.png",
     "contextualTriggers": [
       {
         "unconditional": {},
