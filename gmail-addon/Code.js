@@ -45,6 +45,15 @@ function buildMainCard(e) {
     .setOnClickAction(extractAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
     .setBackgroundColor('#4F6B5E');
+    
+  var manualAction = CardService.newAction()
+    .setFunctionName('draftManualTask')
+    .setParameters({ messageId: messageId });
+  var manualButton = CardService.newTextButton()
+    .setText('Draft Manual Task')
+    .setOnClickAction(manualAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
 
   var settingsAction = CardService.newAction()
     .setFunctionName('openSettings')
@@ -54,29 +63,18 @@ function buildMainCard(e) {
     .setOnClickAction(settingsAction)
     .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
 
-  var buttonSet = CardService.newButtonSet()
+  var topButtonSet = CardService.newButtonSet()
     .addButton(extractButton)
+    .addButton(manualButton)
     .addButton(settingsButton);
-  section.addWidget(buttonSet);
-  card.addSection(section);
-
-  var customSection = CardService.newCardSection()
-    .setHeader("Advanced Options");
     
-  var manualAction = CardService.newAction()
-    .setFunctionName('draftManualTask')
-    .setParameters({ messageId: messageId });
-  var manualButton = CardService.newTextButton()
-    .setText('Draft Manual Task')
-    .setOnClickAction(manualAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
-  customSection.addWidget(manualButton);
+  section.addWidget(topButtonSet);
 
   var customTextInput = CardService.newTextInput()
     .setFieldName('custom_text')
     .setTitle('Or paste specific text to extract from:')
     .setMultiline(true);
-  customSection.addWidget(customTextInput);
+  section.addWidget(customTextInput);
   
   var extractTextAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
@@ -84,11 +82,13 @@ function buildMainCard(e) {
   var extractTextButton = CardService.newTextButton()
     .setText('Extract from Text')
     .setOnClickAction(extractTextAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-    .setBackgroundColor('#4F6B5E');
-  customSection.addWidget(extractTextButton);
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+    
+  var bottomButtonSet = CardService.newButtonSet()
+    .addButton(extractTextButton);
+  section.addWidget(bottomButtonSet);
   
-  card.addSection(customSection);
+  card.addSection(section);
 
   return card.build();
 }
