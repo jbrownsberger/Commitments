@@ -44,7 +44,8 @@ function buildMainCard(e) {
   var extractButton = CardService.newTextButton()
     .setText('Extract Tasks')
     .setOnClickAction(extractAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
 
   var settingsAction = CardService.newAction()
     .setFunctionName('openSettings')
@@ -202,7 +203,8 @@ function extractTasksFromEmail(e) {
   var saveButton = CardService.newTextButton()
     .setText('Save Selected Tasks')
     .setOnClickAction(saveAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
     
   actionSection.addWidget(saveButton);
   card.addSection(actionSection);
@@ -564,7 +566,8 @@ function buildSettingsCard(messageId) {
   var saveButton = CardService.newTextButton()
     .setText('Save')
     .setOnClickAction(saveAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
     
   section.addWidget(saveButton);
   card.addSection(section);
