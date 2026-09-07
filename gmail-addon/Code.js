@@ -27,31 +27,39 @@ function onGmailMessageOpen(e) {
  */
 function buildMainCard(e) {
   var card = CardService.newCardBuilder()
-    .setHeader(CardService.newCardHeader().setTitle('TaskTriage AI'));
+    .setHeader(CardService.newCardHeader()
+      .setTitle('TaskTriage')
+      .setSubtitle('AI Task Extraction')
+      .setImageUrl('https://www.gstatic.com/images/icons/material/system/2x/check_circle_black_24dp.png'));
 
   var section = CardService.newCardSection()
-    .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks from this email and save them to your TaskTriage inbox.'));
+    .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks from this email and save them to your Commitments inbox.'));
 
   var messageId = (e && e.gmail && e.gmail.messageId) ? e.gmail.messageId : '';
+  
   var extractAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
     .setParameters({ messageId: messageId });
 
   var extractButton = CardService.newTextButton()
-    .setText('✨ Extract Tasks')
+    .setText('Extract Tasks')
     .setOnClickAction(extractAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
-
-  section.addWidget(extractButton);
 
   var settingsAction = CardService.newAction()
     .setFunctionName('openSettings')
     .setParameters({ messageId: messageId });
+    
   var settingsButton = CardService.newTextButton()
-    .setText('⚙️ Settings')
-    .setOnClickAction(settingsAction);
-  
-  section.addWidget(settingsButton);
+    .setText('Settings')
+    .setOnClickAction(settingsAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+
+  var buttonSet = CardService.newButtonSet()
+    .addButton(extractButton)
+    .addButton(settingsButton);
+    
+  section.addWidget(buttonSet);
   card.addSection(section);
 
   return card.build();
@@ -134,10 +142,17 @@ function extractTasksFromEmail(e) {
     priorityInput.addItem("High", "high", task.priority === "high");
     section.addWidget(priorityInput);
 
-    var dueInput = CardService.newTextInput()
+    var dueInput = CardService.newDatePicker()
       .setFieldName("task_due_" + index)
-      .setTitle("Due Date (YYYY-MM-DD)")
-      .setValue(task.due_date || "");
+      .setTitle("Due Date");
+    if (task.due_date) {
+      // Create date at noon UTC to avoid timezone shift issues on pure dates
+      var parts = task.due_date.split('-');
+      if (parts.length === 3) {
+        var dateObj = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
+        dueInput.setValueInMsSinceEpoch(dateObj.getTime());
+      }
+    }
     section.addWidget(dueInput);
     
     var hoursInput = CardService.newTextInput()
@@ -153,22 +168,31 @@ function extractTasksFromEmail(e) {
       .setValue(task.notes || "");
     section.addWidget(notesInput);
     
-    var readOnlyDetails = "";
+    var substepsText = "";
     if (task.substeps && task.substeps.length > 0) {
-      readOnlyDetails += "<b>Substeps:</b>\n";
-      task.substeps.forEach(function(s, i) {
-        readOnlyDetails += (i+1) + ". " + s.text + "\n";
+      task.substeps.forEach(function(s) {
+        substepsText += s.text + "\n";
       });
     }
+    var substepsInput = CardService.newTextInput()
+      .setFieldName("task_substeps_" + index)
+      .setTitle("Substeps (one per line)")
+      .setMultiline(true)
+      .setValue(substepsText.trim());
+    section.addWidget(substepsInput);
+    
+    var linksText = "";
     if (task.links && task.links.length > 0) {
-      readOnlyDetails += "<b>Links:</b>\n";
       task.links.forEach(function(l) {
-        readOnlyDetails += l.label + ": " + l.value + "\n";
+        linksText += (l.label || "Link") + ": " + l.value + "\n";
       });
     }
-    if (readOnlyDetails !== "") {
-      section.addWidget(CardService.newTextParagraph().setText(readOnlyDetails));
-    }
+    var linksInput = CardService.newTextInput()
+      .setFieldName("task_links_" + index)
+      .setTitle("Links (Label: URL)")
+      .setMultiline(true)
+      .setValue(linksText.trim());
+    section.addWidget(linksInput);
     
     card.addSection(section);
   });
@@ -218,7 +242,28 @@ function saveTasks(e) {
       }
       if (formInputs["task_due_" + index]) {
         var d = formInputs["task_due_" + index];
-        task.due_date = Array.isArray(d) ? d[0] : d;
+        var dateObj = null;
+        if (d.msSinceEpoch) {
+          dateObj = new Date(Number(d.msSinceEpoch));
+        } else if (typeof d === 'string') {
+          if (d.indexOf('{') === 0) {
+            try { var p = JSON.parse(d); if (p.msSinceEpoch) dateObj = new Date(Number(p.msSinceEpoch)); } catch(e){}
+          }
+          if (!dateObj && d.indexOf('-') > 0) {
+            var parts = d.split('-');
+            if (parts.length === 3) dateObj = new Date(parts[0], parts[1]-1, parts[2]);
+          }
+          if (!dateObj && !isNaN(Number(d))) {
+            dateObj = new Date(Number(d));
+          }
+        } else if (e.commonEventObject && e.commonEventObject.formInputs && e.commonEventObject.formInputs["task_due_" + index]) {
+           var di = e.commonEventObject.formInputs["task_due_" + index].dateInput;
+           if (di && di.msSinceEpoch) dateObj = new Date(Number(di.msSinceEpoch));
+        }
+        
+        if (dateObj && !isNaN(dateObj.getTime())) {
+          task.due_date = Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+        }
       }
       if (formInputs["task_hours_" + index]) {
         var h = formInputs["task_hours_" + index];
@@ -227,6 +272,33 @@ function saveTasks(e) {
       if (formInputs["task_notes_" + index]) {
         var nt = formInputs["task_notes_" + index];
         task.notes = Array.isArray(nt) ? nt[0] : nt;
+      }
+      if (formInputs["task_substeps_" + index]) {
+        var s = formInputs["task_substeps_" + index];
+        var sLines = (Array.isArray(s) ? s[0] : s).split('\n');
+        task.substeps = [];
+        sLines.forEach(function(line, i) {
+          if (line.trim()) {
+            task.substeps.push({ text: line.trim(), weight: 1, position: i + 1, done: false });
+          }
+        });
+      }
+      if (formInputs["task_links_" + index]) {
+        var l = formInputs["task_links_" + index];
+        var lLines = (Array.isArray(l) ? l[0] : l).split('\n');
+        task.links = [];
+        lLines.forEach(function(line) {
+          if (line.trim()) {
+            var parts = line.split(':');
+            if (parts.length > 1) {
+              var label = parts[0].trim();
+              var value = parts.slice(1).join(':').trim();
+              task.links.push({ type: "web", label: label, value: value });
+            } else {
+              task.links.push({ type: "web", label: "Link", value: line.trim() });
+            }
+          }
+        });
       }
       
       tasksToSave.push(task);
@@ -490,7 +562,7 @@ function buildSettingsCard(messageId) {
   }
   
   var saveButton = CardService.newTextButton()
-    .setText('Save Settings')
+    .setText('Save')
     .setOnClickAction(saveAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
     
