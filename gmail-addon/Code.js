@@ -85,51 +85,103 @@ function extractTasksFromEmail(e) {
       .build();
   }
   
+  var categories = [];
+  try {
+    categories = getCategories();
+  } catch (err) {
+    Logger.log("Failed to load categories: " + err.message);
+  }
+
   // Build a new card to review tasks
   var card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle('Proposed Tasks'));
     
-  var section = CardService.newCardSection();
-  
   tasks.forEach(function(task, index) {
-    var details = "";
-    if (task.priority) details += "Priority: " + task.priority + "\n";
-    if (task.due_date) details += "Due: " + task.due_date + "\n";
-    if (task.estimated_hours || task.estimatedHours) details += "Est. Hours: " + (task.estimated_hours || task.estimatedHours) + "\n";
-    if (task.notes) details += "Notes: " + task.notes + "\n";
+    var section = CardService.newCardSection();
+    
+    var checkboxGroup = CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .setFieldName("task_include_" + index)
+      .addItem("Include this task", JSON.stringify(task), true);
+    section.addWidget(checkboxGroup);
+
+    var nameInput = CardService.newTextInput()
+      .setFieldName("task_name_" + index)
+      .setTitle("Task Name")
+      .setValue(task.name || "");
+    section.addWidget(nameInput);
+    
+    var catInput = CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.DROPDOWN)
+      .setFieldName("task_category_" + index)
+      .setTitle("Category");
+      
+    if (categories.length === 0) {
+      catInput.addItem("No categories found", "", true);
+    } else {
+      categories.forEach(function(cat, cIdx) {
+        catInput.addItem(cat.name, cat.id, cIdx === 0);
+      });
+    }
+    section.addWidget(catInput);
+
+    var priorityInput = CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.DROPDOWN)
+      .setFieldName("task_priority_" + index)
+      .setTitle("Priority");
+    priorityInput.addItem("Low", "low", task.priority === "low");
+    priorityInput.addItem("Medium", "med", task.priority !== "low" && task.priority !== "high");
+    priorityInput.addItem("High", "high", task.priority === "high");
+    section.addWidget(priorityInput);
+
+    var dueInput = CardService.newTextInput()
+      .setFieldName("task_due_" + index)
+      .setTitle("Due Date (YYYY-MM-DD)")
+      .setValue(task.due_date || "");
+    section.addWidget(dueInput);
+    
+    var hoursInput = CardService.newTextInput()
+      .setFieldName("task_hours_" + index)
+      .setTitle("Estimated Hours")
+      .setValue(String(task.estimated_hours || task.estimatedHours || 1));
+    section.addWidget(hoursInput);
+
+    var notesInput = CardService.newTextInput()
+      .setFieldName("task_notes_" + index)
+      .setTitle("Notes")
+      .setMultiline(true)
+      .setValue(task.notes || "");
+    section.addWidget(notesInput);
+    
+    var readOnlyDetails = "";
     if (task.substeps && task.substeps.length > 0) {
-      details += "Substeps:\n";
+      readOnlyDetails += "<b>Substeps:</b>\n";
       task.substeps.forEach(function(s, i) {
-        details += "  " + (i+1) + ". " + s.text + "\n";
+        readOnlyDetails += (i+1) + ". " + s.text + "\n";
       });
     }
     if (task.links && task.links.length > 0) {
-      details += "Links:\n";
+      readOnlyDetails += "<b>Links:</b>\n";
       task.links.forEach(function(l) {
-        details += "  - " + (l.label || l.value) + "\n";
+        readOnlyDetails += l.label + ": " + l.value + "\n";
       });
     }
+    if (readOnlyDetails !== "") {
+      section.addWidget(CardService.newTextParagraph().setText(readOnlyDetails));
+    }
     
-    var textWidget = CardService.newTextParagraph().setText("<b>" + task.name + "</b>\n" + details);
-    section.addWidget(textWidget);
-    
-    // We use a checkbox group for each task so we can pass data along
-    var checkboxGroup = CardService.newSelectionInput()
-      .setType(CardService.SelectionInputType.CHECK_BOX)
-      .setFieldName("task_" + index)
-      .addItem("Add this task", JSON.stringify(task), true);
-    
-    section.addWidget(checkboxGroup);
+    card.addSection(section);
   });
   
+  var actionSection = CardService.newCardSection();
   var saveAction = CardService.newAction().setFunctionName('saveTasks');
   var saveButton = CardService.newTextButton()
     .setText('Save Selected Tasks')
     .setOnClickAction(saveAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED);
     
-  section.addWidget(saveButton);
-  card.addSection(section);
+  actionSection.addWidget(saveButton);
+  card.addSection(actionSection);
   
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().pushCard(card.build()))
@@ -145,12 +197,39 @@ function saveTasks(e) {
   
   // Extract checked tasks from form data
   Object.keys(formInputs).forEach(function(key) {
-    if (key.indexOf('task_') === 0) {
-      var taskJson = formInputs[key]; // This is the stringified task
-      // Note: Apps Script formInputs gives arrays for checkboxes if multiple selected
-      // But we made one group per item, so it might be a single string or array
+    if (key.indexOf('task_include_') === 0) {
+      var index = key.replace('task_include_', '');
+      var taskJson = formInputs[key];
       var val = Array.isArray(taskJson) ? taskJson[0] : taskJson;
-      tasksToSave.push(JSON.parse(val));
+      var task = JSON.parse(val);
+      
+      // Override with form inputs
+      if (formInputs["task_name_" + index]) {
+        var n = formInputs["task_name_" + index];
+        task.name = Array.isArray(n) ? n[0] : n;
+      }
+      if (formInputs["task_category_" + index]) {
+        var c = formInputs["task_category_" + index];
+        task.category_id = Array.isArray(c) ? c[0] : c;
+      }
+      if (formInputs["task_priority_" + index]) {
+        var p = formInputs["task_priority_" + index];
+        task.priority = Array.isArray(p) ? p[0] : p;
+      }
+      if (formInputs["task_due_" + index]) {
+        var d = formInputs["task_due_" + index];
+        task.due_date = Array.isArray(d) ? d[0] : d;
+      }
+      if (formInputs["task_hours_" + index]) {
+        var h = formInputs["task_hours_" + index];
+        task.estimated_hours = parseFloat(Array.isArray(h) ? h[0] : h) || 1;
+      }
+      if (formInputs["task_notes_" + index]) {
+        var nt = formInputs["task_notes_" + index];
+        task.notes = Array.isArray(nt) ? nt[0] : nt;
+      }
+      
+      tasksToSave.push(task);
     }
   });
   
@@ -178,6 +257,7 @@ function saveTasks(e) {
             name: task.name,
             notes: task.notes || "",
             priority: task.priority || "med",
+            category_id: task.category_id || null,
             due_date: task.due_date || null,
             estimated_hours: task.estimated_hours || task.estimatedHours || 1,
             links: task.links || [],
@@ -224,6 +304,39 @@ function saveTasks(e) {
     .setNotification(CardService.newNotification().setText("Saved " + successCount + " tasks successfully!"))
     .setNavigation(CardService.newNavigation().popToRoot())
     .build();
+}
+
+function getCategories() {
+  var supabaseUrl = PROPERTIES.getProperty('SUPABASE_URL');
+  var mcpToken = PROPERTIES.getProperty('MCP_TOKEN');
+  
+  var payload = {
+    jsonrpc: "2.0",
+    id: Utilities.getUuid(),
+    method: "tools/call",
+    params: {
+      name: "list_categories",
+      arguments: {}
+    }
+  };
+  
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': "Bearer " + mcpToken },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  var response = UrlFetchApp.fetch(supabaseUrl + "/functions/v1/mcp", options);
+  if (response.getResponseCode() === 200) {
+    var json = JSON.parse(response.getContentText());
+    if (json.result && !json.result.isError && json.result.content && json.result.content.length > 0) {
+      var data = JSON.parse(json.result.content[0].text);
+      return data.categories || [];
+    }
+  }
+  return [];
 }
 
 /**
