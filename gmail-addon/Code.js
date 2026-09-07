@@ -44,7 +44,9 @@ function buildMainCard(e) {
 
   section.addWidget(extractButton);
 
-  var settingsAction = CardService.newAction().setFunctionName('openSettings');
+  var settingsAction = CardService.newAction()
+    .setFunctionName('openSettings')
+    .setParameters({ messageId: messageId });
   var settingsButton = CardService.newTextButton()
     .setText('⚙️ Settings')
     .setOnClickAction(settingsAction);
@@ -59,7 +61,7 @@ function buildMainCard(e) {
  * Action triggered by "Extract Tasks" button.
  */
 function extractTasksFromEmail(e) {
-  var messageId = e.parameters.messageId;
+  var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
   var accessToken = e.gmail.accessToken;
   GmailApp.setCurrentMessageAccessToken(accessToken);
   
