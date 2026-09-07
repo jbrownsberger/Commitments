@@ -68,7 +68,14 @@ function extractTasksFromEmail(e) {
   var body = message.getPlainBody();
   
   // Call AI to extract tasks
-  var tasks = getTasksFromAI(subject, body);
+  var tasks = [];
+  try {
+    tasks = getTasksFromAI(subject, body);
+  } catch (err) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText(err.message))
+      .build();
+  }
   
   if (!tasks || tasks.length === 0) {
     return CardService.newActionResponseBuilder()
@@ -226,7 +233,14 @@ body.substring(0, 8000);
   
   try {
     var response = UrlFetchApp.fetch(url, options);
-    var json = JSON.parse(response.getContentText());
+    var responseCode = response.getResponseCode();
+    var responseBody = response.getContentText();
+    
+    if (responseCode !== 200) {
+      throw new Error("API Error (" + responseCode + "): " + responseBody);
+    }
+    
+    var json = JSON.parse(responseBody);
     
     var text = "";
     if (isOpenAI) {
@@ -249,8 +263,7 @@ body.substring(0, 8000);
     }
     return [];
   } catch (e) {
-    Logger.log("AI Extraction Error: " + e.toString());
-    return [];
+    throw new Error("AI Extraction Error: " + e.message);
   }
 }
 
