@@ -240,7 +240,7 @@ body.substring(0, 8000);
       muteHttpExceptions: true
     };
   } else {
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + apiKey;
     options = {
       method: 'post',
       contentType: 'application/json',
