@@ -70,6 +70,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         category_id: { type: 'string', description: 'Category UUID' },
         notes: { type: 'string' },
         estimated_hours: { type: 'number', description: 'Defaults to 1' },
+        links: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              label: { type: 'string' },
+              value: { type: 'string' }
+            }
+          }
+        },
+        substeps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              text: { type: 'string' },
+              weight: { type: 'number' }
+            }
+          }
+        }
       },
       required: ['name'],
     },
@@ -141,7 +162,7 @@ function errResult(message: string): ToolResult {
 }
 
 const TASK_COLUMNS =
-  'id, name, status, priority, due_date, category_id, notes, progress, estimated_hours, position, recurring, is_recurring_template, updated_at';
+  'id, name, status, priority, due_date, category_id, notes, progress, estimated_hours, position, recurring, is_recurring_template, updated_at, links';
 
 export async function callTool(
   name: string,
@@ -245,13 +266,31 @@ async function createTask(
     is_recurring_template: false,
   };
 
-  if (typeof args.due_date === 'string') row.due_date = args.due_date;
+  if (typeof args.due_date === 'string' && args.due_date.trim() !== '') row.due_date = args.due_date.trim();
   if (typeof args.category_id === 'string') row.category_id = args.category_id;
   if (typeof args.notes === 'string') row.notes = args.notes;
+  if (Array.isArray(args.links)) row.links = args.links;
 
-  const { data, error } = await supabase.from('tasks').insert(row).select(TASK_COLUMNS).single();
+  const { data: taskData, error } = await supabase.from('tasks').insert(row).select(TASK_COLUMNS).single();
   if (error) return errResult(error.message);
-  return textResult({ task: data });
+
+  let substepsResult = [];
+  if (Array.isArray(args.substeps) && args.substeps.length > 0) {
+    const subRows = args.substeps.map((s: any, i: number) => ({
+      task_id: taskData.id,
+      user_id: userId,
+      text: s.text || '',
+      weight: s.weight || 1,
+      position: i + 1,
+      done: false
+    }));
+    const { data: subData, error: subError } = await supabase.from('substeps').insert(subRows).select('id, text, done, weight, position');
+    if (!subError && subData) {
+      substepsResult = subData;
+    }
+  }
+
+  return textResult({ task: { ...taskData, substeps: substepsResult } });
 }
 
 async function updateTask(
@@ -269,7 +308,7 @@ async function updateTask(
   if (typeof args.notes === 'string') fields.notes = args.notes;
   if (typeof args.progress === 'number') fields.progress = args.progress;
   if (typeof args.estimated_hours === 'number') fields.estimated_hours = args.estimated_hours;
-  if (args.due_date === null) fields.due_date = null;
+  if (args.due_date === null || (typeof args.due_date === 'string' && args.due_date.trim() === '')) fields.due_date = null;
   else if (typeof args.due_date === 'string') fields.due_date = args.due_date;
   if (args.category_id === null) fields.category_id = null;
   else if (typeof args.category_id === 'string') fields.category_id = args.category_id;

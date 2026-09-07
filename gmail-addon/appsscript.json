@@ -1,0 +1,22 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "gmail": {
+    "name": "TaskTriage",
+    "logoUrl": "https://www.gstatic.com/images/icons/material/system/2x/check_circle_black_24dp.png",
+    "contextualTriggers": [
+      {
+        "unconditional": {},
+        "onTriggerFunction": "onGmailMessageOpen"
+      }
+    ],
+    "primaryColor": "#2f56d0",
+    "secondaryColor": "#2f56d0"
+  }
+}
