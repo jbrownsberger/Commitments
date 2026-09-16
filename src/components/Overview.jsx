@@ -135,8 +135,8 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const [panelTask, setPanelTask] = useState(null);
   const [editingCapacity, setEditingCapacity] = useState(false);
   const [excludedCategories, setExcludedCategories] = useState(() => new Set());
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [dueFilter, setDueFilter] = useState('all');
+  const [excludedPriorities, setExcludedPriorities] = useState(() => new Set());
+  const [excludedDue, setExcludedDue] = useState(() => new Set());
   const [sortBy, setSortBy] = useState('urgency');
   const [showFilters, setShowFilters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -225,15 +225,17 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const taskScore = (task) => task.recurring ? recurringUrgency(task) : urgencyScore(task);
   const focusQueue = allInc
     .filter(t => !excludedCategories.has(t.category_id))
-    .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
+    .filter(t => !excludedPriorities.has(t.priority))
     .filter(t => {
-      if (dueFilter === 'all') return true;
-      if (dueFilter === 'none') return !t.due_date;
-      if (!t.due_date) return false;
-      const days = daysUntil(t.due_date);
-      if (dueFilter === 'overdue') return days < 0;
-      if (dueFilter === 'today') return days === 0;
-      return days >= 0 && days <= 7;
+      let bucket = 'none';
+      if (t.due_date) {
+        const d = daysUntil(t.due_date);
+        if (d < 0) bucket = 'overdue';
+        else if (d === 0) bucket = 'today';
+        else if (d <= 7) bucket = 'week';
+        else bucket = 'later';
+      }
+      return !excludedDue.has(bucket);
     })
     .sort((a, b) => {
       if (sortBy === 'due-asc') return (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31');
@@ -302,8 +304,8 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
     setShowFilters(current => {
       if (current) {
         setExcludedCategories(new Set());
-        setPriorityFilter('all');
-        setDueFilter('all');
+        setExcludedPriorities(new Set());
+        setExcludedDue(new Set());
         setSortBy('urgency');
       }
       return !current;
@@ -457,26 +459,39 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             {showFilters && (
               <div className="focus-controls" aria-label="Task filters and sorting">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: '1 1 100%' }}>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>Include categories</span>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                    Categories
+                    <span style={{ marginLeft: 6, opacity: 0.7 }}>
+                      (<span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedCategories(new Set())}>all</span>
+                      {' / '}
+                      <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedCategories(new Set(categoryList.map(c=>c.id)))}>none</span>)
+                    </span>
+                  </span>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {categoryList.map(c => {
                       const excluded = excludedCategories.has(c.id);
                       return (
                         <button
                           key={c.id}
-                          onClick={() => setExcludedCategories(prev => {
-                            const next = new Set(prev);
-                            if (next.has(c.id)) next.delete(c.id);
-                            else next.add(c.id);
-                            return next;
-                          })}
+                          onClick={(e) => {
+                            if (e.altKey || e.metaKey) {
+                              setExcludedCategories(new Set(categoryList.map(x => x.id).filter(id => id !== c.id)));
+                            } else {
+                              setExcludedCategories(prev => {
+                                const next = new Set(prev);
+                                if (next.has(c.id)) next.delete(c.id);
+                                else next.add(c.id);
+                                return next;
+                              });
+                            }
+                          }}
                           style={{
                             fontSize: 11, padding: '2px 8px', borderRadius: 12, border: '1px solid ' + c.color,
                             background: excluded ? 'transparent' : c.color,
                             color: excluded ? c.color : '#fff',
                             cursor: 'pointer'
                           }}
-                          title={excluded ? `Click to include ${c.name}` : `Click to exclude ${c.name}`}
+                          title={excluded ? `Click to include ${c.name}` : `Click to exclude ${c.name} (Alt-click to solo)`}
                         >
                           {c.name}
                         </button>
@@ -484,9 +499,109 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                     })}
                   </div>
                 </div>
-                <label>Importance<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="all">All importance</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                <label>Due date<select value={dueFilter} onChange={e => setDueFilter(e.target.value)}><option value="all">Any due date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="none">No due date</option></select></label>
-                <label>Sort<select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="urgency">Urgency</option><option value="due-asc">Due date (soonest)</option><option value="due-desc">Due date (latest)</option><option value="priority">Importance (highest)</option><option value="name">Name</option></select></label>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: '1 1 100%', marginTop: '6px' }}>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                    Importance
+                    <span style={{ marginLeft: 6, opacity: 0.7 }}>
+                      (<span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedPriorities(new Set())}>all</span>
+                      {' / '}
+                      <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedPriorities(new Set(PRIORITIES.map(p=>p[0])))}>none</span>)
+                    </span>
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {PRIORITIES.map(([val, label]) => {
+                      const excluded = excludedPriorities.has(val);
+                      return (
+                        <button
+                          key={val}
+                          onClick={(e) => {
+                            if (e.altKey || e.metaKey) {
+                              setExcludedPriorities(new Set(PRIORITIES.map(x => x[0]).filter(id => id !== val)));
+                            } else {
+                              setExcludedPriorities(prev => {
+                                const next = new Set(prev);
+                                if (next.has(val)) next.delete(val); else next.add(val);
+                                return next;
+                              });
+                            }
+                          }}
+                          style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 12, border: '1px solid var(--color-border-secondary)',
+                            background: excluded ? 'transparent' : 'var(--color-bg-secondary)',
+                            color: excluded ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+                            cursor: 'pointer'
+                          }}
+                          title={excluded ? `Click to include ${label}` : `Click to exclude ${label} (Alt-click to solo)`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: '1 1 100%', marginTop: '6px' }}>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                    Due Date
+                    <span style={{ marginLeft: 6, opacity: 0.7 }}>
+                      (<span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedDue(new Set())}>all</span>
+                      {' / '}
+                      <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setExcludedDue(new Set(['overdue', 'today', 'week', 'later', 'none']))}>none</span>)
+                    </span>
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'overdue', label: 'Overdue', color: 'var(--color-text-danger)' },
+                      { id: 'today', label: 'Today', color: 'var(--color-text-info)' },
+                      { id: 'week', label: 'Next 7 days' },
+                      { id: 'later', label: 'Later' },
+                      { id: 'none', label: 'No date' }
+                    ].map(b => {
+                      const excluded = excludedDue.has(b.id);
+                      const isSpecialColor = b.id === 'overdue' || b.id === 'today';
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={(e) => {
+                            if (e.altKey || e.metaKey) {
+                              setExcludedDue(new Set(['overdue', 'today', 'week', 'later', 'none'].filter(id => id !== b.id)));
+                            } else {
+                              setExcludedDue(prev => {
+                                const next = new Set(prev);
+                                if (next.has(b.id)) next.delete(b.id); else next.add(b.id);
+                                return next;
+                              });
+                            }
+                          }}
+                          style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 12, 
+                            border: `1px solid ${isSpecialColor ? b.color : 'var(--color-border-secondary)'}`,
+                            background: excluded ? 'transparent' : (isSpecialColor ? b.color : 'var(--color-bg-secondary)'),
+                            color: excluded ? (isSpecialColor ? b.color : 'var(--color-text-secondary)') : (isSpecialColor ? '#fff' : 'var(--color-text-primary)'),
+                            cursor: 'pointer'
+                          }}
+                          title={excluded ? `Click to include ${b.label}` : `Click to exclude ${b.label} (Alt-click to solo)`}
+                        >
+                          {b.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', width: '100%', alignItems: 'center', marginTop: 10 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>
+                    Sort by
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: '3px 7px', fontSize: 11 }}>
+                      <option value="urgency">Urgency</option>
+                      <option value="due-asc">Due date (soonest)</option>
+                      <option value="due-desc">Due date (latest)</option>
+                      <option value="priority">Importance (highest)</option>
+                      <option value="name">Name</option>
+                    </select>
+                  </label>
+                </div>
               </div>
             )}
             {selectionMode && (
