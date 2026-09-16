@@ -443,7 +443,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
           )}
         </div>
 
-        {focusQueue.length > 0 ? (
+        {allInc.length > 0 ? (
           <div>
             <div className="focus-heading">
               <div className="section-label" style={{ marginBottom: 0 }}>Suggested focus</div>
@@ -616,22 +616,24 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 <button className="btn btn-sm btn-danger" onClick={deleteSelected} disabled={!selectedIds.size}>Delete selected</button>
               </div>
             )}
-            {focusQueue.map(t => (
-              <FocusCard
-                key={t.id}
-                task={t}
-                weekISOs={weekISOs}
-                onCycle={cycleStatus}
-                onOpen={() => setPanelTask(t)}
-                onToggleNextSubstep={toggleNextSubstep}
-                selectionMode={selectionMode}
-                selected={selectedIds.has(t.id)}
-                onSelect={() => toggleSelected(t.id)}
-              />
-            ))}
+            {focusQueue.length > 0 ? (
+              focusQueue.map(t => (
+                <FocusCard
+                  key={t.id}
+                  task={t}
+                  weekISOs={weekISOs}
+                  onCycle={cycleStatus}
+                  onOpen={() => setPanelTask(t)}
+                  onToggleNextSubstep={toggleNextSubstep}
+                  selectionMode={selectionMode}
+                  selected={selectedIds.has(t.id)}
+                  onSelect={() => toggleSelected(t.id)}
+                />
+              ))
+            ) : (
+              <div className="focus-empty"><p className="focus-empty-title">No tasks match these filters.</p><button className="btn btn-sm" onClick={() => { setExcludedCategories(new Set()); setExcludedPriorities(new Set()); setExcludedDue(new Set()); }}>Clear filters</button></div>
+            )}
           </div>
-        ) : allInc.length > 0 ? (
-          <div className="focus-empty"><p className="focus-empty-title">No tasks match these filters.</p><button className="btn btn-sm" onClick={() => { setExcludedCategories(new Set()); setPriorityFilter('all'); setDueFilter('all'); }}>Clear filters</button></div>
         ) : (
           <div className="focus-empty">
             <div className="focus-empty-icon">✅</div>
