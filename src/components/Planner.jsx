@@ -959,8 +959,17 @@ export default function Planner({ appData, userId, onEditTask }) {
             <div className="planner-weeks">
               {Array.from({ length: SHOW_WEEKS }, (_, w) => {
                 const weekISOs = allISOs.slice(w * 7, w * 7 + 7);
+                const weekLoad = weekISOs.reduce((s, iso) => s + (dayLoad[iso] || 0), 0);
+                const weekAvail = weekISOs.reduce((s, iso) => s + (dayAvailMap[iso] ?? (weeklyHours / 7)), 0);
+                const weekOver = weekLoad > weekAvail + 0.1;
                 return (
                   <div key={w} className="planner-week">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6, padding: '0 4px', color: 'var(--color-text-secondary)' }}>
+                      <span>Week of {fmtShort(weekISOs[0])} &ndash; {fmtShort(weekISOs[6])}</span>
+                      <span style={weekOver ? { color: 'var(--color-text-danger)', fontWeight: 600 } : {}}>
+                        {weekLoad.toFixed(1)}h / {weekAvail.toFixed(1)}h
+                      </span>
+                    </div>
                     <div className="planner-week-grid">
                       {weekISOs.map((iso, i) => {
                         const isToday  = iso === todayISO;

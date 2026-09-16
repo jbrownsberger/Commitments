@@ -134,7 +134,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const [panelTask, setPanelTask] = useState(null);
   const [editingCapacity, setEditingCapacity] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [excludedCategories, setExcludedCategories] = useState(() => new Set());
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState('all');
   const [sortBy, setSortBy] = useState('urgency');
@@ -224,7 +224,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
 
   const taskScore = (task) => task.recurring ? recurringUrgency(task) : urgencyScore(task);
   const focusQueue = allInc
-    .filter(t => categoryFilter === 'all' || t.category_id === categoryFilter)
+    .filter(t => !excludedCategories.has(t.category_id))
     .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
     .filter(t => {
       if (dueFilter === 'all') return true;
@@ -301,7 +301,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const toggleFilters = () => {
     setShowFilters(current => {
       if (current) {
-        setCategoryFilter('all');
+        setExcludedCategories(new Set());
         setPriorityFilter('all');
         setDueFilter('all');
         setSortBy('urgency');
@@ -456,7 +456,34 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             </div>
             {showFilters && (
               <div className="focus-controls" aria-label="Task filters and sorting">
-                <label>Category<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option value="all">All categories</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: '1 1 100%' }}>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>Include categories</span>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {categoryList.map(c => {
+                      const excluded = excludedCategories.has(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => setExcludedCategories(prev => {
+                            const next = new Set(prev);
+                            if (next.has(c.id)) next.delete(c.id);
+                            else next.add(c.id);
+                            return next;
+                          })}
+                          style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 12, border: '1px solid ' + c.color,
+                            background: excluded ? 'transparent' : c.color,
+                            color: excluded ? c.color : '#fff',
+                            cursor: 'pointer'
+                          }}
+                          title={excluded ? `Click to include ${c.name}` : `Click to exclude ${c.name}`}
+                        >
+                          {c.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <label>Importance<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="all">All importance</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                 <label>Due date<select value={dueFilter} onChange={e => setDueFilter(e.target.value)}><option value="all">Any due date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="none">No due date</option></select></label>
                 <label>Sort<select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="urgency">Urgency</option><option value="due-asc">Due date (soonest)</option><option value="due-desc">Due date (latest)</option><option value="priority">Importance (highest)</option><option value="name">Name</option></select></label>
@@ -489,7 +516,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
             ))}
           </div>
         ) : allInc.length > 0 ? (
-          <div className="focus-empty"><p className="focus-empty-title">No tasks match these filters.</p><button className="btn btn-sm" onClick={() => { setCategoryFilter('all'); setPriorityFilter('all'); setDueFilter('all'); }}>Clear filters</button></div>
+          <div className="focus-empty"><p className="focus-empty-title">No tasks match these filters.</p><button className="btn btn-sm" onClick={() => { setExcludedCategories(new Set()); setPriorityFilter('all'); setDueFilter('all'); }}>Clear filters</button></div>
         ) : (
           <div className="focus-empty">
             <div className="focus-empty-icon">✅</div>
