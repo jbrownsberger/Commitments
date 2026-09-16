@@ -590,17 +590,36 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', width: '100%', alignItems: 'center', marginTop: 10 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: '1 1 100%', marginTop: '6px' }}>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
                     Sort by
-                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: '3px 7px', fontSize: 11 }}>
-                      <option value="urgency">Urgency</option>
-                      <option value="due-asc">Due date (soonest)</option>
-                      <option value="due-desc">Due date (latest)</option>
-                      <option value="priority">Importance (highest)</option>
-                      <option value="name">Name</option>
-                    </select>
-                  </label>
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'urgency', label: 'Urgency' },
+                      { id: 'due-asc', label: 'Due (soonest)' },
+                      { id: 'due-desc', label: 'Due (latest)' },
+                      { id: 'priority', label: 'Importance' },
+                      { id: 'name', label: 'Name' }
+                    ].map(s => {
+                      const active = sortBy === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setSortBy(s.id)}
+                          style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 12, border: '1px solid var(--color-border-secondary)',
+                            background: active ? 'var(--color-bg-secondary)' : 'transparent',
+                            color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                            cursor: 'pointer',
+                            fontWeight: active ? 500 : 400
+                          }}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
