@@ -677,14 +677,26 @@ function runAIInstruction(e) {
   }
   
   var mcpTools = getMcpTools();
-  if (!mcpTools || mcpTools.length === 0) {
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText("Could not load tools from Supabase."))
-      .build();
-  }
+  if (!mcpTools) mcpTools = []; // Handle if Supabase is down, we still have Calendar
+  
+  mcpTools.push({
+    name: "create_google_calendar_event",
+    description: "Create an event in the user's primary Google Calendar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Title of the event" },
+        startTime: { type: "string", description: "ISO 8601 format, e.g. 2026-10-01T14:30:00Z" },
+        endTime: { type: "string", description: "ISO 8601 format, e.g. 2026-10-01T15:30:00Z" },
+        description: { type: "string", description: "Optional description or context from email" },
+        location: { type: "string", description: "Optional location or meeting link" }
+      },
+      required: ["title", "startTime", "endTime"]
+    }
+  });
   
   var messages = [
-    { role: 'user', content: "Email Subject: " + subject + "\nEmail Body:\n" + body + "\n\nInstruction: " + instruction }
+    { role: 'user', content: "Current Time: " + new Date().toISOString() + "\nEmail Subject: " + subject + "\nEmail Body:\n" + body + "\n\nInstruction: " + instruction }
   ];
   
   try {
@@ -739,7 +751,22 @@ function runAIInstruction(e) {
           
           var toolResults = [];
           toolCalls.forEach(function(tc) {
-            var resultText = callMcpTool(tc.name, tc.input);
+            var resultText;
+            if (tc.name === "create_google_calendar_event") {
+              try {
+                var event = CalendarApp.getDefaultCalendar().createEvent(
+                  tc.input.title,
+                  new Date(tc.input.startTime),
+                  new Date(tc.input.endTime),
+                  { description: tc.input.description || "", location: tc.input.location || "" }
+                );
+                resultText = "Successfully scheduled event: " + tc.input.title;
+              } catch (e) {
+                resultText = "Error scheduling event: " + e.message;
+              }
+            } else {
+              resultText = callMcpTool(tc.name, tc.input);
+            }
             toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: resultText });
           });
           messages.push({ role: 'user', content: toolResults });
@@ -756,7 +783,22 @@ function runAIInstruction(e) {
         if (msg.tool_calls && msg.tool_calls.length > 0) {
           msg.tool_calls.forEach(function(tc) {
             var args = JSON.parse(tc.function.arguments);
-            var resultText = callMcpTool(tc.function.name, args);
+            var resultText;
+            if (tc.function.name === "create_google_calendar_event") {
+              try {
+                var event = CalendarApp.getDefaultCalendar().createEvent(
+                  args.title,
+                  new Date(args.startTime),
+                  new Date(args.endTime),
+                  { description: args.description || "", location: args.location || "" }
+                );
+                resultText = "Successfully scheduled event: " + args.title;
+              } catch (e) {
+                resultText = "Error scheduling event: " + e.message;
+              }
+            } else {
+              resultText = callMcpTool(tc.function.name, args);
+            }
             messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: resultText });
           });
         } else {
