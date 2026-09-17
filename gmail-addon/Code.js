@@ -232,6 +232,7 @@ function saveEvents(e) {
     .setNavigation(CardService.newNavigation().popToRoot())
     .build();
 }
+function draftManualTask(e) {
   var emptyTask = {
     name: "",
     notes: "",
