@@ -48,8 +48,8 @@ function buildMainCard(e) {
     .setBackgroundColor('#4F6B5E');
     
   var extractEventsAction = CardService.newAction()
-    .setFunctionName('runAIInstruction')
-    .setParameters({ messageId: messageId, preset: "Extract any calendar events or meetings mentioned in this email and schedule them on my calendar." });
+    .setFunctionName('extractEventsFromEmail')
+    .setParameters({ messageId: messageId, mode: "email" });
   var extractEventsButton = CardService.newTextButton()
     .setText('Events')
     .setOnClickAction(extractEventsAction)
@@ -149,7 +149,89 @@ function extractTasksFromEmail(e) {
     .build();
 }
 
-function draftManualTask(e) {
+function extractEventsFromEmail(e) {
+  var subject = "";
+  var body = "";
+  var customText = e.formInput ? (e.formInput.ai_instruction || "") : "";
+  if (customText.trim()) body = customText;
+  else {
+    var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
+    GmailApp.setCurrentMessageAccessToken(e.gmail.accessToken);
+    var message = GmailApp.getMessageById(messageId);
+    subject = message.getSubject();
+    body = message.getPlainBody();
+  }
+  
+  try {
+    var events = getEventsFromAI(subject, body);
+    if (!events || events.length === 0) {
+      return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText("No events found.")).build();
+    }
+    return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().pushCard(buildEventReviewCard(events))).build();
+  } catch (err) {
+    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText(err.message)).build();
+  }
+}
+
+function buildEventReviewCard(events) {
+  var card = CardService.newCardBuilder().setHeader(CardService.newCardHeader().setTitle('Review Events'));
+  
+  events.forEach(function(ev, index) {
+    var section = CardService.newCardSection();
+    
+    section.addWidget(CardService.newSelectionInput().setType(CardService.SelectionInputType.CHECK_BOX).setFieldName("ev_include_" + index).addItem("Schedule this event", JSON.stringify(ev), true));
+    section.addWidget(CardService.newTextInput().setFieldName("ev_title_" + index).setTitle("Title").setValue(ev.title || ""));
+    section.addWidget(CardService.newTextInput().setFieldName("ev_start_" + index).setTitle("Start Time (ISO 8601)").setValue(ev.start || ""));
+    section.addWidget(CardService.newTextInput().setFieldName("ev_end_" + index).setTitle("End Time (ISO 8601)").setValue(ev.end || ""));
+    section.addWidget(CardService.newTextInput().setFieldName("ev_desc_" + index).setTitle("Description").setMultiline(true).setValue(ev.description || ""));
+    section.addWidget(CardService.newTextInput().setFieldName("ev_loc_" + index).setTitle("Location").setValue(ev.location || ""));
+    
+    card.addSection(section);
+  });
+  
+  var actionSection = CardService.newCardSection();
+  var saveAction = CardService.newAction().setFunctionName('saveEvents').setParameters({ count: events.length.toString() });
+  var saveButton = CardService.newTextButton().setText('Schedule Selected Events').setOnClickAction(saveAction).setTextButtonStyle(CardService.TextButtonStyle.FILLED).setBackgroundColor('#4F6B5E');
+  actionSection.addWidget(saveButton);
+  card.addSection(actionSection);
+  
+  return card.build();
+}
+
+function saveEvents(e) {
+  var count = parseInt(e.parameters.count, 10);
+  var scheduledCount = 0;
+  var errors = [];
+  
+  for (var i = 0; i < count; i++) {
+    if (e.formInput["ev_include_" + i]) {
+      var title = e.formInput["ev_title_" + i];
+      var startStr = e.formInput["ev_start_" + i];
+      var endStr = e.formInput["ev_end_" + i];
+      var desc = e.formInput["ev_desc_" + i] || "";
+      var loc = e.formInput["ev_loc_" + i] || "";
+      
+      try {
+        var start = new Date(startStr);
+        var end = new Date(endStr);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates");
+        
+        CalendarApp.getDefaultCalendar().createEvent(title, start, end, { description: desc, location: loc });
+        scheduledCount++;
+      } catch (err) {
+        errors.push("Failed to schedule '" + title + "': " + err.message);
+      }
+    }
+  }
+  
+  var msg = "Scheduled " + scheduledCount + " events.";
+  if (errors.length > 0) msg += " (" + errors.length + " errors)";
+  
+  return CardService.newActionResponseBuilder()
+    .setNotification(CardService.newNotification().setText(msg))
+    .setNavigation(CardService.newNavigation().popToRoot())
+    .build();
+}
   var emptyTask = {
     name: "",
     notes: "",
@@ -632,6 +714,77 @@ body.substring(0, 8000);
       
       var parsed = JSON.parse(text.trim());
       return parsed.tasks || [];
+    }
+    return [];
+  } catch (e) {
+    throw new Error("AI Extraction Error: " + e.message);
+  }
+}
+
+function getEventsFromAI(subject, body) {
+  var apiKey = PROPERTIES.getProperty('AI_API_KEY');
+  var isClaude = apiKey.indexOf('sk-ant-') === 0;
+  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
+  
+  var prompt = "You are a helpful assistant that extracts calendar events from emails.\n" +
+"Return a JSON object containing a single key \"events\" which is a JSON array of objects.\n" +
+"Each object must have the following structure:\n" +
+"- \"title\": A concise title for the event (string)\n" +
+"- \"start\": ISO 8601 string for start time, e.g. 2026-10-01T14:30:00Z. Assume UTC if unspecified. (string)\n" +
+"- \"end\": ISO 8601 string for end time (string)\n" +
+"- \"description\": Context or notes for the meeting (string)\n" +
+"- \"location\": Physical location or meeting link (string)\n\n" +
+"Only return events that are definitively being scheduled. If no events, return {\"events\":[]}.\n" +
+"Do not use markdown blocks. Return raw JSON.\n\n" +
+"Email Subject: " + subject + "\n" +
+"Email Body:\n" +
+body.substring(0, 8000);
+
+  var url, options;
+  if (isClaude) {
+    url = 'https://api.anthropic.com/v1/messages';
+    options = {
+      method: 'post', contentType: 'application/json',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      payload: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001', max_tokens: 2048,
+        system: "You are a helpful assistant that extracts calendar events from emails. Return ONLY a valid JSON object containing an 'events' array.",
+        messages: [{ role: 'user', content: prompt }]
+      }), muteHttpExceptions: true
+    };
+  } else if (isOpenAI) {
+    url = 'https://api.openai.com/v1/chat/completions';
+    options = {
+      method: 'post', contentType: 'application/json',
+      headers: { 'Authorization': "Bearer " + apiKey },
+      payload: JSON.stringify({
+        model: 'gpt-4o-mini', response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }]
+      }), muteHttpExceptions: true
+    };
+  } else {
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + apiKey;
+    options = {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }), muteHttpExceptions: true
+    };
+  }
+  
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() !== 200) throw new Error("API Error: " + response.getContentText());
+    var json = JSON.parse(response.getContentText());
+    var text = "";
+    if (isClaude) text = (json.content && json.content[0]) ? json.content[0].text : "";
+    else if (isOpenAI) text = json.choices ? json.choices[0].message.content : "";
+    else text = (json.candidates && json.candidates[0].content.parts[0]) ? json.candidates[0].content.parts[0].text : "";
+    
+    if (text) {
+      if (text.indexOf('```json') === 0) text = text.substring(7);
+      if (text.indexOf('```') === 0) text = text.substring(3);
+      if (text.substring(text.length - 3) === '```') text = text.substring(0, text.length - 3);
+      var parsed = JSON.parse(text.trim());
+      return parsed.events || [];
     }
     return [];
   } catch (e) {
