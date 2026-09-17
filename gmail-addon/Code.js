@@ -29,54 +29,47 @@ function buildMainCard(e) {
   var card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader()
       .setTitle('TaskTriage')
-      .setSubtitle('AI Task Extraction')
+      .setSubtitle('AI Task & Calendar Agent')
       .setImageUrl('https://raw.githubusercontent.com/jbrownsberger/Commitments/main/public/logo.png'));
 
   var messageId = (e && e.gmail && e.gmail.messageId) ? e.gmail.messageId : '';
 
-  // SECTION 1: Primary Email Extraction
+  // SECTION 1: Quick Actions
   var section1 = CardService.newCardSection()
-    .addWidget(CardService.newTextParagraph().setText('Extract actionable tasks directly from this email thread.'));
+    .addWidget(CardService.newTextParagraph().setText('Analyze this email thread and automatically generate:'));
 
-  var extractAction = CardService.newAction()
+  var extractTasksAction = CardService.newAction()
     .setFunctionName('extractTasksFromEmail')
     .setParameters({ messageId: messageId, mode: "email" });
-  var extractButton = CardService.newTextButton()
-    .setText('Extract from Email')
-    .setOnClickAction(extractAction)
+  var extractTasksButton = CardService.newTextButton()
+    .setText('Tasks')
+    .setOnClickAction(extractTasksAction)
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
     .setBackgroundColor('#4F6B5E');
     
-  section1.addWidget(CardService.newButtonSet().addButton(extractButton));
+  var extractEventsAction = CardService.newAction()
+    .setFunctionName('runAIInstruction')
+    .setParameters({ messageId: messageId, preset: "Extract any calendar events or meetings mentioned in this email and schedule them on my calendar." });
+  var extractEventsButton = CardService.newTextButton()
+    .setText('Events')
+    .setOnClickAction(extractEventsAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
+    
+  section1.addWidget(CardService.newButtonSet()
+    .addButton(extractTasksButton)
+    .addButton(extractEventsButton));
   card.addSection(section1);
 
-  // SECTION 2: Custom Text Extraction
-  var section2 = CardService.newCardSection();
-  var customTextInput = CardService.newTextInput()
-    .setFieldName('custom_text')
-    .setTitle('Or extract from custom text snippet:')
-    .setMultiline(true);
-  section2.addWidget(customTextInput);
-  
-  var extractTextAction = CardService.newAction()
-    .setFunctionName('extractTasksFromEmail')
-    .setParameters({ messageId: messageId, mode: "text" });
-  var extractTextButton = CardService.newTextButton()
-    .setText('Extract from Text')
-    .setOnClickAction(extractTextAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+  // SECTION 2: Custom AI Agent
+  var section2 = CardService.newCardSection()
+    .addWidget(CardService.newTextParagraph().setText('Or type an instruction, or paste custom text:'));
     
-  section2.addWidget(CardService.newButtonSet().addButton(extractTextButton));
-  card.addSection(section2);
-
-  // SECTION 3: Instruct AI
-  var section3 = CardService.newCardSection()
-    .addWidget(CardService.newTextParagraph().setText('Ask AI to manage tasks for you:'));
   var instructionInput = CardService.newTextInput()
     .setFieldName("ai_instruction")
-    .setTitle("Instruction (e.g. 'Create a high priority task for the main action item')")
+    .setTitle("Instruction (e.g. 'Delete tasks') or text to analyze")
     .setMultiline(true);
-  section3.addWidget(instructionInput);
+  section2.addWidget(instructionInput);
   
   var instructAction = CardService.newAction()
     .setFunctionName('runAIInstruction')
@@ -84,13 +77,12 @@ function buildMainCard(e) {
   var instructButton = CardService.newTextButton()
     .setText('Run AI')
     .setOnClickAction(instructAction)
-    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-    .setBackgroundColor('#4F6B5E');
-  section3.addWidget(CardService.newButtonSet().addButton(instructButton));
-  card.addSection(section3);
+    .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
+  section2.addWidget(CardService.newButtonSet().addButton(instructButton));
+  card.addSection(section2);
 
-  // SECTION 4: Utilities
-  var section4 = CardService.newCardSection();
+  // SECTION 3: Utilities
+  var section3 = CardService.newCardSection();
   var manualAction = CardService.newAction()
     .setFunctionName('draftManualTask')
     .setParameters({ messageId: messageId });
@@ -107,11 +99,11 @@ function buildMainCard(e) {
     .setOnClickAction(settingsAction)
     .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
 
-  section4.addWidget(CardService.newButtonSet()
+  section3.addWidget(CardService.newButtonSet()
     .addButton(manualButton)
     .addButton(settingsButton));
     
-  card.addSection(section4);
+  card.addSection(section3);
 
   return card.build();
 }
@@ -120,17 +112,12 @@ function buildMainCard(e) {
  * Action triggered by "Extract Tasks" button.
  */
 function extractTasksFromEmail(e) {
-  var mode = (e.parameters && e.parameters.mode) || "email";
   var subject = "";
   var body = "";
   
-  if (mode === "text") {
-    body = (e.formInput && e.formInput.custom_text) ? e.formInput.custom_text : "";
-    if (!body.trim()) {
-      return CardService.newActionResponseBuilder()
-        .setNotification(CardService.newNotification().setText("Please paste some text first."))
-        .build();
-    }
+  var customText = e.formInput ? (e.formInput.ai_instruction || "") : "";
+  if (customText.trim()) {
+    body = customText;
   } else {
     var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
     var accessToken = e.gmail.accessToken;
@@ -653,7 +640,7 @@ body.substring(0, 8000);
 }
 
 function runAIInstruction(e) {
-  var instruction = e.formInput.ai_instruction || "";
+  var instruction = (e.parameters && e.parameters.preset) ? e.parameters.preset : (e.formInput.ai_instruction || "");
   if (!instruction.trim()) {
     return CardService.newActionResponseBuilder()
       .setNotification(CardService.newNotification().setText("Please enter an instruction first."))
