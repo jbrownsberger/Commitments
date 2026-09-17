@@ -69,8 +69,28 @@ function buildMainCard(e) {
   section2.addWidget(CardService.newButtonSet().addButton(extractTextButton));
   card.addSection(section2);
 
-  // SECTION 3: Utilities
-  var section3 = CardService.newCardSection();
+  // SECTION 3: Instruct AI
+  var section3 = CardService.newCardSection()
+    .addWidget(CardService.newTextParagraph().setText('Ask AI to manage tasks for you:'));
+  var instructionInput = CardService.newTextInput()
+    .setFieldName("ai_instruction")
+    .setTitle("Instruction (e.g. 'Create a high priority task for the main action item')")
+    .setMultiline(true);
+  section3.addWidget(instructionInput);
+  
+  var instructAction = CardService.newAction()
+    .setFunctionName('runAIInstruction')
+    .setParameters({ messageId: messageId });
+  var instructButton = CardService.newTextButton()
+    .setText('Run AI')
+    .setOnClickAction(instructAction)
+    .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+    .setBackgroundColor('#4F6B5E');
+  section3.addWidget(CardService.newButtonSet().addButton(instructButton));
+  card.addSection(section3);
+
+  // SECTION 4: Utilities
+  var section4 = CardService.newCardSection();
   var manualAction = CardService.newAction()
     .setFunctionName('draftManualTask')
     .setParameters({ messageId: messageId });
@@ -87,11 +107,11 @@ function buildMainCard(e) {
     .setOnClickAction(settingsAction)
     .setTextButtonStyle(CardService.TextButtonStyle.TEXT);
 
-  section3.addWidget(CardService.newButtonSet()
+  section4.addWidget(CardService.newButtonSet()
     .addButton(manualButton)
     .addButton(settingsButton));
     
-  card.addSection(section3);
+  card.addSection(section4);
 
   return card.build();
 }
@@ -474,6 +494,59 @@ function getCategories() {
   return [];
 }
 
+function getMcpTools() {
+  var supabaseUrl = PROPERTIES.getProperty('SUPABASE_URL');
+  var mcpToken = PROPERTIES.getProperty('MCP_TOKEN');
+  if (!supabaseUrl || !mcpToken) return [];
+  
+  var payload = { jsonrpc: "2.0", id: Utilities.getUuid(), method: "tools/list" };
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': "Bearer " + mcpToken },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    var response = UrlFetchApp.fetch(supabaseUrl + "/functions/v1/mcp", options);
+    var json = JSON.parse(response.getContentText());
+    if (json.result && json.result.tools) return json.result.tools;
+  } catch(e) {}
+  return [];
+}
+
+function callMcpTool(name, args) {
+  var supabaseUrl = PROPERTIES.getProperty('SUPABASE_URL');
+  var mcpToken = PROPERTIES.getProperty('MCP_TOKEN');
+  
+  var payload = {
+    jsonrpc: "2.0",
+    id: Utilities.getUuid(),
+    method: "tools/call",
+    params: { name: name, arguments: args }
+  };
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': "Bearer " + mcpToken },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    var response = UrlFetchApp.fetch(supabaseUrl + "/functions/v1/mcp", options);
+    var json = JSON.parse(response.getContentText());
+    if (json.result && json.result.content) {
+      return json.result.content[0].text;
+    }
+    if (json.error) return JSON.stringify(json.error);
+    return JSON.stringify(json);
+  } catch (e) {
+    return "Error calling tool: " + e.message;
+  }
+}
+
 /**
  * Uses Gemini AI API to extract tasks from the email text.
  */
@@ -576,6 +649,128 @@ body.substring(0, 8000);
     return [];
   } catch (e) {
     throw new Error("AI Extraction Error: " + e.message);
+  }
+}
+
+function runAIInstruction(e) {
+  var instruction = e.formInput.ai_instruction || "";
+  if (!instruction.trim()) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("Please enter an instruction first."))
+      .build();
+  }
+  
+  var messageId = (e.parameters && e.parameters.messageId) ? e.parameters.messageId : e.gmail.messageId;
+  GmailApp.setCurrentMessageAccessToken(e.gmail.accessToken);
+  var message = GmailApp.getMessageById(messageId);
+  var subject = message.getSubject();
+  var body = message.getPlainBody().substring(0, 5000);
+  
+  var apiKey = PROPERTIES.getProperty('AI_API_KEY');
+  var isClaude = apiKey.indexOf('sk-ant-') === 0;
+  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
+  
+  if (!isClaude && !isOpenAI) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("This feature currently requires a Claude or OpenAI API key."))
+      .build();
+  }
+  
+  var mcpTools = getMcpTools();
+  if (!mcpTools || mcpTools.length === 0) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("Could not load tools from Supabase."))
+      .build();
+  }
+  
+  var messages = [
+    { role: 'user', content: "Email Subject: " + subject + "\nEmail Body:\n" + body + "\n\nInstruction: " + instruction }
+  ];
+  
+  try {
+    for (var i = 0; i < 5; i++) {
+      var url, options, payload;
+      
+      if (isClaude) {
+        var anthropicTools = mcpTools.map(function(t) {
+          return { name: t.name, description: t.description, input_schema: t.inputSchema };
+        });
+        payload = {
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2048,
+          system: "You are an AI assistant interacting with the user's task manager (Supabase MCP) based on an email. Complete their instruction by calling the necessary tools. Return a brief human-readable summary of what you did.",
+          tools: anthropicTools,
+          messages: messages
+        };
+        options = {
+          method: 'post', contentType: 'application/json',
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          payload: JSON.stringify(payload), muteHttpExceptions: true
+        };
+        url = 'https://api.anthropic.com/v1/messages';
+      } else {
+        var openAiTools = mcpTools.map(function(t) {
+          return { type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } };
+        });
+        payload = {
+          model: 'gpt-4o-mini',
+          tools: openAiTools,
+          messages: [{ role: 'system', content: "You are an AI assistant interacting with the user's task manager (Supabase MCP) based on an email. Complete their instruction by calling tools. Summarize what you did." }].concat(messages)
+        };
+        options = {
+          method: 'post', contentType: 'application/json',
+          headers: { 'Authorization': "Bearer " + apiKey },
+          payload: JSON.stringify(payload), muteHttpExceptions: true
+        };
+        url = 'https://api.openai.com/v1/chat/completions';
+      }
+      
+      var response = UrlFetchApp.fetch(url, options);
+      if (response.getResponseCode() !== 200) {
+        throw new Error("API Error: " + response.getContentText());
+      }
+      
+      var json = JSON.parse(response.getContentText());
+      
+      if (isClaude) {
+        if (json.stop_reason === 'tool_use') {
+          var toolCalls = json.content.filter(function(c) { return c.type === 'tool_use'; });
+          messages.push({ role: 'assistant', content: json.content });
+          
+          var toolResults = [];
+          toolCalls.forEach(function(tc) {
+            var resultText = callMcpTool(tc.name, tc.input);
+            toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: resultText });
+          });
+          messages.push({ role: 'user', content: toolResults });
+        } else {
+          var textContent = json.content.filter(function(c) { return c.type === 'text'; })[0];
+          return CardService.newActionResponseBuilder()
+            .setNotification(CardService.newNotification().setText("Success! " + (textContent ? textContent.text : "")))
+            .build();
+        }
+      } else {
+        var msg = json.choices[0].message;
+        messages.push(msg);
+        
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          msg.tool_calls.forEach(function(tc) {
+            var args = JSON.parse(tc.function.arguments);
+            var resultText = callMcpTool(tc.function.name, args);
+            messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: resultText });
+          });
+        } else {
+          return CardService.newActionResponseBuilder()
+            .setNotification(CardService.newNotification().setText("Success! " + msg.content))
+            .build();
+        }
+      }
+    }
+    throw new Error("Exceeded maximum tool call iterations.");
+  } catch (err) {
+    return CardService.newActionResponseBuilder()
+      .setNotification(CardService.newNotification().setText("AI Error: " + err.message))
+      .build();
   }
 }
 
