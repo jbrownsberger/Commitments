@@ -622,8 +622,10 @@ function callMcpTool(name, args) {
  */
 function getTasksFromAI(subject, body) {
   var apiKey = PROPERTIES.getProperty('AI_API_KEY');
+  var isGroq = apiKey.indexOf('gsk_') === 0;
   var isClaude = apiKey.indexOf('sk-ant-') === 0;
-  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
+  var isOpenAI = !isClaude && !isGroq && apiKey.indexOf('sk-') === 0;
+  var isOpenAICompatible = isOpenAI || isGroq;
   
   var prompt = "You are a helpful assistant that extracts actionable tasks from emails.\n" +
 "Return a JSON object containing a single key \"tasks\" which is a JSON array of objects.\n" +
@@ -659,14 +661,15 @@ body.substring(0, 8000);
       }),
       muteHttpExceptions: true
     };
-  } else if (isOpenAI) {
-    url = 'https://api.openai.com/v1/chat/completions';
+  } else if (isOpenAICompatible) {
+    url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+    var model = isGroq ? 'llama-3.1-70b-versatile' : 'gpt-4o-mini';
     options = {
       method: 'post',
       contentType: 'application/json',
       headers: { 'Authorization': "Bearer " + apiKey },
       payload: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: model,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }]
       }),
@@ -684,21 +687,18 @@ body.substring(0, 8000);
   
   try {
     var response = UrlFetchApp.fetch(url, options);
-    var responseCode = response.getResponseCode();
-    var responseBody = response.getContentText();
-    
-    if (responseCode !== 200) {
-      throw new Error("API Error (" + responseCode + "): " + responseBody);
+    if (response.getResponseCode() !== 200) {
+      throw new Error("API Error: " + response.getContentText());
     }
     
-    var json = JSON.parse(responseBody);
-    
+    var json = JSON.parse(response.getContentText());
     var text = "";
+    
     if (isClaude) {
       if (json.content && json.content[0] && json.content[0].text) {
         text = json.content[0].text.trim();
       }
-    } else if (isOpenAI) {
+    } else if (isOpenAICompatible) {
       if (json.choices && json.choices[0].message.content) {
         text = json.choices[0].message.content.trim();
       }
@@ -724,8 +724,10 @@ body.substring(0, 8000);
 
 function getEventsFromAI(subject, body) {
   var apiKey = PROPERTIES.getProperty('AI_API_KEY');
+  var isGroq = apiKey.indexOf('gsk_') === 0;
   var isClaude = apiKey.indexOf('sk-ant-') === 0;
-  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
+  var isOpenAI = !isClaude && !isGroq && apiKey.indexOf('sk-') === 0;
+  var isOpenAICompatible = isOpenAI || isGroq;
   
   var prompt = "You are a helpful assistant that extracts calendar events from emails.\n" +
 "Return a JSON object containing a single key \"events\" which is a JSON array of objects.\n" +
@@ -753,13 +755,14 @@ body.substring(0, 8000);
         messages: [{ role: 'user', content: prompt }]
       }), muteHttpExceptions: true
     };
-  } else if (isOpenAI) {
-    url = 'https://api.openai.com/v1/chat/completions';
+  } else if (isOpenAICompatible) {
+    url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+    var model = isGroq ? 'llama-3.1-70b-versatile' : 'gpt-4o-mini';
     options = {
       method: 'post', contentType: 'application/json',
       headers: { 'Authorization': "Bearer " + apiKey },
       payload: JSON.stringify({
-        model: 'gpt-4o-mini', response_format: { type: 'json_object' },
+        model: model, response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }]
       }), muteHttpExceptions: true
     };
@@ -777,7 +780,7 @@ body.substring(0, 8000);
     var json = JSON.parse(response.getContentText());
     var text = "";
     if (isClaude) text = (json.content && json.content[0]) ? json.content[0].text : "";
-    else if (isOpenAI) text = json.choices ? json.choices[0].message.content : "";
+    else if (isOpenAICompatible) text = json.choices ? json.choices[0].message.content : "";
     else text = (json.candidates && json.candidates[0].content.parts[0]) ? json.candidates[0].content.parts[0].text : "";
     
     if (text) {
@@ -808,12 +811,14 @@ function runAIInstruction(e) {
   var body = message.getPlainBody().substring(0, 5000);
   
   var apiKey = PROPERTIES.getProperty('AI_API_KEY');
+  var isGroq = apiKey.indexOf('gsk_') === 0;
   var isClaude = apiKey.indexOf('sk-ant-') === 0;
-  var isOpenAI = !isClaude && apiKey.indexOf('sk-') === 0;
+  var isOpenAI = !isClaude && !isGroq && apiKey.indexOf('sk-') === 0;
+  var isOpenAICompatible = isOpenAI || isGroq;
   
-  if (!isClaude && !isOpenAI) {
+  if (!isClaude && !isOpenAICompatible) {
     return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText("This feature currently requires a Claude or OpenAI API key."))
+      .setNotification(CardService.newNotification().setText("This feature currently requires a Claude, OpenAI, or Groq API key."))
       .build();
   }
   
@@ -865,8 +870,10 @@ function runAIInstruction(e) {
         var openAiTools = mcpTools.map(function(t) {
           return { type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } };
         });
+        url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+        var model = isGroq ? 'llama-3.1-70b-versatile' : 'gpt-4o-mini';
         payload = {
-          model: 'gpt-4o-mini',
+          model: model,
           tools: openAiTools,
           messages: [{ role: 'system', content: "You are an AI assistant interacting with the user's task manager (Supabase MCP) based on an email. Complete their instruction by calling tools. Summarize what you did." }].concat(messages)
         };
@@ -875,7 +882,6 @@ function runAIInstruction(e) {
           headers: { 'Authorization': "Bearer " + apiKey },
           payload: JSON.stringify(payload), muteHttpExceptions: true
         };
-        url = 'https://api.openai.com/v1/chat/completions';
       }
       
       var response = UrlFetchApp.fetch(url, options);
