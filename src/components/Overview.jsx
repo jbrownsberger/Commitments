@@ -139,6 +139,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const [excludedDue, setExcludedDue] = useState(() => new Set());
   const [sortBy, setSortBy] = useState('urgency');
   const [showFilters, setShowFilters] = useState(false);
+  const [showNeglected, setShowNeglected] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchCategory, setBatchCategory] = useState('');
@@ -185,13 +186,14 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
   const allTasks = (tasks || []).filter(isWorkTask);
 
   // Rolling recurring tasks are first-class citizens of the incomplete list.
-  const allInc = allTasks.filter(t => t.status !== 'done').map(enrich);
+  const allInc = allTasks.filter(t => t.status !== 'done' && t.status !== 'neglected').map(enrich);
+  const neglectedTasks = allTasks.filter(t => t.status === 'neglected').map(enrich);
 
   // Stats
   const total        = allTasks.length;
   const doneCount    = allTasks.filter(t => t.status === 'done').length;
-  const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
-  const overdueCount = allTasks.filter(t => t.status !== 'done' && t.due_date && daysUntil(t.due_date) < 0).length;
+  const dueWeek      = allTasks.filter(t => t.status !== 'done' && t.status !== 'neglected' && t.due_date && daysUntil(t.due_date) >= 0 && daysUntil(t.due_date) <= 7).length;
+  const overdueCount = allTasks.filter(t => t.status !== 'done' && t.status !== 'neglected' && t.due_date && daysUntil(t.due_date) < 0).length;
 
   const plannedThisWeek = allInc.reduce((s, t) => {
     if (!t.scheduled_days?.length) return s;
@@ -629,7 +631,7 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
                 <span>{selectedIds.size} selected</span>
                 <select aria-label="New category" value={batchCategory} onChange={e => setBatchCategory(e.target.value)}><option value="">Category…</option>{categoryList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
                 <select aria-label="New importance" value={batchPriority} onChange={e => setBatchPriority(e.target.value)}><option value="">Importance…</option>{PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-                <select aria-label="New status" value={batchStatus} onChange={e => setBatchStatus(e.target.value)}><option value="">Status…</option><option value="not started">Not started</option><option value="in progress">In progress</option><option value="done">Done</option></select>
+                <select aria-label="New status" value={batchStatus} onChange={e => setBatchStatus(e.target.value)}><option value="">Status…</option><option value="not started">Not started</option><option value="in progress">In progress</option><option value="done">Done</option><option value="neglected">Neglected</option></select>
                 <input aria-label="New due date" type="date" value={batchDueDate} onChange={e => setBatchDueDate(e.target.value)} />
                 <button className="btn btn-sm btn-primary" onClick={applyBatchChanges} disabled={!selectedIds.size || !(batchCategory || batchPriority || batchStatus || batchDueDate)}>Apply</button>
                 <button className="btn btn-sm btn-danger" onClick={deleteSelected} disabled={!selectedIds.size}>Delete selected</button>
@@ -662,6 +664,32 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
               <button className="btn btn-sm btn-primary" onClick={onAddTask}>
                 + Add task
               </button>
+            )}
+          </div>
+        )}
+
+        {neglectedTasks.length > 0 && (
+          <div style={{ marginTop: 24, borderTop: '1px solid var(--color-border-secondary)', paddingTop: 16 }}>
+            <div className="focus-heading" style={{ cursor: 'pointer' }} onClick={() => setShowNeglected(!showNeglected)}>
+              <div className="section-label" style={{ marginBottom: 0 }}>Neglected tasks</div>
+              <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{showNeglected ? 'Hide' : `Show (${neglectedTasks.length})`}</span>
+            </div>
+            {showNeglected && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {neglectedTasks.map(t => (
+                  <FocusCard
+                    key={t.id}
+                    task={t}
+                    weekISOs={weekISOs}
+                    onCycle={cycleStatus}
+                    onOpen={() => setPanelTask(t)}
+                    onToggleNextSubstep={toggleNextSubstep}
+                    selectionMode={false}
+                    selected={false}
+                    onSelect={() => {}}
+                  />
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -728,8 +756,9 @@ function FocusCard({ task, weekISOs, onCycle, onOpen, onToggleNextSubstep, selec
     : urgencyScore(task);
   const isDone    = task.status === 'done';
   const isInProg  = task.status === 'in progress';
+  const isNeglected = task.status === 'neglected';
   const days      = daysUntil(task.due_date);
-  const isOverdue = !isDone && task.due_date && days < 0;
+  const isOverdue = !isDone && !isNeglected && task.due_date && days < 0;
   const daysStr   = !task.due_date ? ''
     : days < 0  ? `${Math.abs(days)}d overdue`
     : days === 0 ? 'today'
@@ -767,8 +796,8 @@ function FocusCard({ task, weekISOs, onCycle, onOpen, onToggleNextSubstep, selec
 
   return (
     <div
-      className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}`}
-      style={{ '--focus-category-color': task.catColor || '#82979B', '--focus-urgency-tint': `${urgencyTint}%` }}
+      className={`focus-card${isOverdue ? ' focus-card--overdue' : ''}${isNeglected ? ' focus-card--neglected' : ''}`}
+      style={{ '--focus-category-color': task.catColor || '#82979B', '--focus-urgency-tint': `${urgencyTint}%`, opacity: isNeglected ? 0.6 : 1 }}
       onClick={onOpen}
     >
       <div className="focus-card-cat-strip" aria-hidden="true" />
@@ -784,7 +813,7 @@ function FocusCard({ task, weekISOs, onCycle, onOpen, onToggleNextSubstep, selec
             {selectionMode ? (
               <input className="focus-card-select" type="checkbox" checked={selected} onChange={onSelect} onClick={e => e.stopPropagation()} aria-label={`Select ${task.name}`} />
             ) : (
-              <span className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : ''}`} onClick={e => { e.stopPropagation(); onCycle(task); }} title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'} role="button" aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : 'Mark in progress'}>{isDone ? '✓' : isInProg ? '◑' : ''}</span>
+              <span className={`focus-card-check${isDone ? ' done' : isInProg ? ' in-progress' : isNeglected ? ' neglected' : ''}`} onClick={e => { e.stopPropagation(); onCycle(task); }} title={isDone ? 'Mark not started' : isInProg ? 'Mark done' : isNeglected ? 'Restore task' : 'Mark in progress'} role="button" aria-label={isDone ? 'Mark not started' : isInProg ? 'Mark done' : isNeglected ? 'Restore task' : 'Mark in progress'}>{isDone ? '✓' : isInProg ? '◑' : isNeglected ? '⊘' : ''}</span>
             )}
           </div>
 

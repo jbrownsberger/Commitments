@@ -4,7 +4,7 @@
  */
 import { normaliseTaskLinks } from './taskLinks.js';
 
-const STATUSES = new Set(['not started', 'in progress', 'done', 'not-started', 'in-progress']);
+const STATUSES = new Set(['not started', 'in progress', 'done', 'not-started', 'in-progress', 'neglected']);
 const PRIORITIES = new Set(['low', 'med', 'medium', 'high', 'critical']);
 
 export function buildNewTasksTemplate() {

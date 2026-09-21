@@ -38,3 +38,4 @@
 .task-panel-snooze > span { color: var(--color-text-secondary); font-size: 12px; }
 .task-panel-body .modal-actions { border-top-color: var(--color-border-primary); }
 @media (max-width: 480px) { .task-panel-body { padding: 18px 16px; } .task-panel-title { font-size: 18px; } }
+.task-panel-status.neglected { background: var(--color-bg-tertiary); color: var(--color-text-danger); opacity: 0.8; }

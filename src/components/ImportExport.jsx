@@ -20,13 +20,14 @@ function tasksToICS(tasks, categories) {
   const stamp  = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
   const vtodos = tasks
-    .filter(t => !t.is_recurring_template && t.status !== 'done')
+    .filter(t => !t.is_recurring_template && t.status !== 'done' && t.status !== 'neglected')
     .map(t => {
       const catName = catMap[t.category_id]?.name || '';
       const due = t.due_date ? `\nDUE;VALUE=DATE:${toICSDate(t.due_date)}` : '';
       const pct = t.manual_progress ?? 0;
       const status = t.status === 'in progress' ? 'IN-PROCESS'
-        : t.status === 'done' ? 'COMPLETED' : 'NEEDS-ACTION';
+        : t.status === 'done' ? 'COMPLETED'
+        : t.status === 'neglected' ? 'CANCELLED' : 'NEEDS-ACTION';
       const notes = t.notes ? `\nDESCRIPTION:${escapeProp(t.notes)}` : '';
       const cat   = catName ? `\nCATEGORIES:${escapeProp(catName)}` : '';
       return [

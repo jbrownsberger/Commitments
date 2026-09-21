@@ -92,7 +92,7 @@ export default function Categories({ appData, userId, onAddTask, onEditTask }) {
 
         {categories.map(cat => {
           const catTasks   = tasksFor(cat.id).map(norm);
-          const incomplete = catTasks.filter(t => t.status !== 'done');
+          const incomplete = catTasks.filter(t => t.status !== 'done' && t.status !== 'neglected');
           const completed  = catTasks.filter(t => t.status === 'done');
           const isOpen     = !!openCats[cat.id];
           const complOpen  = !!openCompl[cat.id];

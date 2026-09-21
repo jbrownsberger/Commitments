@@ -276,7 +276,12 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
         <button className="task-panel-close" type="button" onClick={onClose} aria-label="Close">✕</button>
       </div>
 
-      <button className={`task-panel-status ${local.status || 'not-started'}`} onClick={cycleStatus}>{isDone ? '✓ Reopen' : local.status === 'in progress' ? '● In progress — mark done' : '○ Not started — start'}</button>
+      <button className={`task-panel-status ${local.status || 'not-started'}`} onClick={cycleStatus}>
+        {local.status === 'done' ? '✓ Reopen' 
+          : local.status === 'neglected' ? '⊘ Neglected — restore'
+          : local.status === 'in progress' ? '● In progress — mark done' 
+          : '○ Not started — start'}
+      </button>
 
       {/* ── Meta row ── */}
       <div className="task-panel-stats">
@@ -411,6 +416,13 @@ export default function TaskPanel({ task, cat, onClose, onSave, onDelete, onEdit
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Close</button>
         <button className="btn" onClick={() => { onEdit(local); onClose(); }}>Edit</button>
+        <button
+          className="btn"
+          onClick={() => {
+            save({ status: 'neglected' });
+            onClose();
+          }}
+        >Neglect</button>
         <button
           className="btn btn-danger"
           onClick={() => {

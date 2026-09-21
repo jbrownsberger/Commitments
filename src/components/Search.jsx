@@ -104,6 +104,9 @@ function SearchResult({ task, query, regex, catName, catColor, focused, onClick 
             {task.status === 'done' && (
               <span className="search-result-done-badge">Done</span>
             )}
+            {task.status === 'neglected' && (
+              <span className="search-result-done-badge" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-danger)' }}>Neglected</span>
+            )}
           </span>
         </div>
 

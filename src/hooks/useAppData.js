@@ -195,13 +195,42 @@ export function useAppData(userId) {
 
     saved = { ...saved, substeps: savedSubs };
 
-    // ── Rolling: advance immediately when the task becomes done ──────────────
+    // ── Rolling: advance immediately when the task becomes done or neglected ──────────────
     const nowDone = saved.status === 'done';
     const becameDone = nowDone && !wasDone;
+    
+    const wasNeglected = prevTask?.status === 'neglected';
+    const nowNeglected = saved.status === 'neglected';
+    const becameNeglected = nowNeglected && !wasNeglected;
+
+    let neglectedClone = null;
+
     // Also treat progress hitting 100 / explicit done on a rolling task as complete
     // even if prev was already done (no double-advance).
-    if (isRollingTask(saved) && becameDone) {
+    if (isRollingTask(saved) && (becameDone || becameNeglected)) {
       try {
+        if (becameNeglected) {
+          // Clone the neglected instance so it stays in history
+          const { id, ...cloneData } = saved;
+          cloneData.recurring = false;
+          cloneData.recurring_type = null;
+          cloneData.is_recurring_template = false;
+          cloneData.recurring_template_id = null;
+          cloneData.status = 'neglected';
+          cloneData.due_date = saved.due_date; // Keep the date it was neglected on
+          
+          neglectedClone = await dbSaveTask({ ...cloneData, user_id: userId });
+          // Copy substeps to clone if any
+          if (savedSubs && savedSubs.length > 0) {
+            const cloneSubs = await Promise.all(
+              savedSubs.map((s, i) => dbSaveSubstep({ ...s, id: undefined, task_id: neglectedClone.id, user_id: userId, position: i }))
+            );
+            neglectedClone.substeps = cloneSubs;
+          } else {
+            neglectedClone.substeps = [];
+          }
+        }
+
         const advanced = await advanceRollingTask(
           { ...saved, substeps: savedSubs },
           userId,
@@ -239,7 +268,7 @@ export function useAppData(userId) {
       };
 
       // When rolling advanced, also clear scheduled days in local state.
-      if (isRollingTask(withSubs) && becameDone) {
+      if (isRollingTask(withSubs) && (becameDone || becameNeglected)) {
         withSubs.scheduled_days = [];
         withSubs.scheduled_day_hours = {};
       }
@@ -247,6 +276,10 @@ export function useAppData(userId) {
       let base = task.id
         ? prev.map(t => t.id === saved.id ? withSubs : t)
         : [...prev, withSubs];
+
+      if (neglectedClone) {
+        base = [...base, neglectedClone];
+      }
 
       if (newInstances.length > 0) {
         // Avoid duplicates if extend re-ran

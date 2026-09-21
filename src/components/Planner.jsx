@@ -260,7 +260,7 @@ function autoFill(tasks, weeklyHours, afSettings, perDayAvail) {
 
   // Exclude expand templates (meta-rows); include recurring reset tasks.
   const unscheduled = tasks
-    .filter(t => t.status !== 'done' && !isExpandTemplate(t) &&
+    .filter(t => t.status !== 'done' && t.status !== 'neglected' && !isExpandTemplate(t) &&
       (!t.scheduled_days || !t.scheduled_days.some(d => d >= todayISO)))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
@@ -569,7 +569,7 @@ export default function Planner({ appData, userId, onEditTask }) {
   const windowStart = allISOs[0];
   const windowEnd   = allISOs[allISOs.length - 1];
   const catMap   = Object.fromEntries(categories.map(c => [c.id, c]));
-  const allActive = tasks.filter(t => t.status !== 'done');
+  const allActive = tasks.filter(t => t.status !== 'done' && t.status !== 'neglected');
 
   const dayLoad        = {};
   const scheduledOnDay = {};

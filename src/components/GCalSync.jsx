@@ -594,7 +594,7 @@ export default function GCalSync({ appData }) {
 
   // ── Derived data ──────────────────────────────────────────────────────────────────
   const scheduled = tasks
-    .filter(t => t.status !== 'done' && t.scheduled_days?.some(d => d >= todayISO))
+    .filter(t => t.status !== 'done' && t.status !== 'neglected' && t.scheduled_days?.some(d => d >= todayISO))
     .map(t => ({ ...t, futureDays: (t.scheduled_days || []).filter(d => d >= todayISO) }))
     .sort((a, b) => (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1);
 
@@ -612,7 +612,7 @@ export default function GCalSync({ appData }) {
   const plannedHoursByDay = React.useMemo(() => {
     const map = {};
     for (const task of tasks) {
-      if (task.status === 'done') continue;
+      if (task.status === 'done' || task.status === 'neglected') continue;
       const hrs = remainingHours(task);
       const days = (task.scheduled_days || []).filter(d => d >= todayISO);
       if (!days.length) continue;
