@@ -214,9 +214,13 @@ function saveEvents(e) {
       try {
         var start = new Date(startStr);
         var end = new Date(endStr);
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates");
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates provided: " + startStr + " to " + endStr);
         
-        CalendarApp.getDefaultCalendar().createEvent(title, start, end, { description: desc, location: loc });
+        var cal = CalendarApp.getDefaultCalendar();
+        if (!cal) cal = CalendarApp.getCalendarById(Session.getActiveUser().getEmail());
+        if (!cal) throw new Error("Could not access your Google Calendar.");
+        
+        cal.createEvent(title, start, end, { description: desc, location: loc });
         scheduledCount++;
       } catch (err) {
         errors.push("Failed to schedule '" + title + "': " + err.message);
@@ -225,7 +229,10 @@ function saveEvents(e) {
   }
   
   var msg = "Scheduled " + scheduledCount + " events.";
-  if (errors.length > 0) msg += " (" + errors.length + " errors)";
+  if (errors.length > 0) {
+    var errorDetails = errors.join(" | ");
+    msg += " " + errorDetails;
+  }
   
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification().setText(msg))
@@ -901,10 +908,15 @@ function runAIInstruction(e) {
             var resultText;
             if (tc.name === "create_google_calendar_event") {
               try {
-                var event = CalendarApp.getDefaultCalendar().createEvent(
-                  tc.input.title,
-                  new Date(tc.input.startTime),
-                  new Date(tc.input.endTime),
+                var start = new Date(tc.input.startTime);
+                var end = new Date(tc.input.endTime);
+                if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates provided: " + tc.input.startTime + " to " + tc.input.endTime);
+                var cal = CalendarApp.getDefaultCalendar();
+                if (!cal) cal = CalendarApp.getCalendarById(Session.getActiveUser().getEmail());
+                if (!cal) throw new Error("Could not access your Google Calendar.");
+                
+                cal.createEvent(
+                  tc.input.title, start, end,
                   { description: tc.input.description || "", location: tc.input.location || "" }
                 );
                 resultText = "Successfully scheduled event: " + tc.input.title;
@@ -933,10 +945,15 @@ function runAIInstruction(e) {
             var resultText;
             if (tc.function.name === "create_google_calendar_event") {
               try {
-                var event = CalendarApp.getDefaultCalendar().createEvent(
-                  args.title,
-                  new Date(args.startTime),
-                  new Date(args.endTime),
+                var start = new Date(args.startTime);
+                var end = new Date(args.endTime);
+                if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates provided: " + args.startTime + " to " + args.endTime);
+                var cal = CalendarApp.getDefaultCalendar();
+                if (!cal) cal = CalendarApp.getCalendarById(Session.getActiveUser().getEmail());
+                if (!cal) throw new Error("Could not access your Google Calendar.");
+                
+                cal.createEvent(
+                  args.title, start, end,
                   { description: args.description || "", location: args.location || "" }
                 );
                 resultText = "Successfully scheduled event: " + args.title;
