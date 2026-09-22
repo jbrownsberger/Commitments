@@ -48,14 +48,26 @@ export function daysUntil(dateStr) {
   );
 }
 
+export function urgencyBonus(task) {
+  return { critical: 15, high: 5, low: -5 }[task.priority] || 0;
+}
+
 export function urgencyScore(task) {
   if (task.status === 'done') return 0;
   const days = daysUntil(task.due_date ?? task.dueDate);
-  if (days === null) return 1;
-  if (days < 0)  return 0;
-  const rem = remainingHours(task);
-  if (days === 0) return 100;
-  return Math.min(100, Math.round((rem / Math.max(days, 0.5)) * 20));
+  if (days < 0) return 0;
+
+  let baseScore;
+  if (days === null) {
+    baseScore = 1;
+  } else if (days === 0) {
+    baseScore = 100;
+  } else {
+    const rem = remainingHours(task);
+    baseScore = Math.round((rem / Math.max(days, 0.5)) * 20);
+  }
+
+  return Math.max(0, Math.min(100, baseScore + urgencyBonus(task)));
 }
 
 export function urgencyColor(score) {

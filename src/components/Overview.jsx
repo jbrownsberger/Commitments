@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, cadenceLabel } from './TaskPanel.jsx';
+import TaskPanel, { taskProgress, remainingHours, daysUntil, urgencyScore, urgencyBonus, cadenceLabel } from './TaskPanel.jsx';
 import QuickTasks from './QuickTasks.jsx';
 import { isWorkTask, isSeriesInstance } from '../lib/recurrence.js';
 import '../styles/overview.css';
@@ -117,7 +117,8 @@ const RECURRING_FLOOR_SCORE = { daily: 30, weekday: 25, weekly: 15 };
 
 function recurringUrgency(task) {
   if (task.due_date) return urgencyScore(task);
-  return RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20;
+  const baseScore = RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20;
+  return Math.max(0, Math.min(100, baseScore + urgencyBonus(task)));
 }
 
 const CAP_MODE_KEY = 'capacity_mode';
@@ -751,9 +752,7 @@ function Metric({ label, val, danger }) {
 
 /* ── FocusCard ──────────────────────────────────────────────────────────────────── */
 function FocusCard({ task, weekISOs, onCycle, onOpen, onToggleNextSubstep, selectionMode, selected, onSelect }) {
-  const score     = task.recurring && !task.due_date
-    ? (RECURRING_FLOOR_SCORE[task.recurring_cadence] ?? 20)
-    : urgencyScore(task);
+  const score = task.recurring ? recurringUrgency(task) : urgencyScore(task);
   const isDone    = task.status === 'done';
   const isInProg  = task.status === 'in progress';
   const isNeglected = task.status === 'neglected';
