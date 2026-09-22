@@ -249,12 +249,12 @@ export default function Overview({ appData, userId, onAddTask, onEditTask }) {
       const aBucket = !a.due_date ? 2 : daysUntil(a.due_date) < 0 ? 0 : 1;
       const bBucket = !b.due_date ? 2 : daysUntil(b.due_date) < 0 ? 0 : 1;
       return aBucket - bBucket || (aBucket === 0
-        ? daysUntil(a.due_date) - daysUntil(b.due_date)
-        : taskScore(b) - taskScore(a));
+        ? (daysUntil(a.due_date) - daysUntil(b.due_date) || PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority])
+        : (taskScore(b) - taskScore(a) || PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority]));
     });
   const todayPlan = allTasks.map(enrich)
     .filter(t => t.status !== 'done' && t.scheduled_days?.includes(todayISO))
-    .sort((a, b) => hoursToday(b) - hoursToday(a));
+    .sort((a, b) => (hoursToday(b) - hoursToday(a)) || (PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority]));
   const todayPlanHours = todayPlan.reduce((s, t) => s + hoursToday(t), 0);
 
   const today = new Date().toLocaleDateString('en-US',
